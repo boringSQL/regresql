@@ -20,7 +20,7 @@ against a known PostgreSQL database content.
 
 The `regresql` tool is written in Go, so:
 
-    go get github.com/dimitri/regresql
+    go get github.com/boringsql/regresql
 
 This command will compile and install the command in your `$GOPATH/bin`,
 which defaults to `~/go/bin`. See <https://golang.org/doc/install> if you're
@@ -31,31 +31,31 @@ new to the Go language.
 Basic usage or regresql:
 
   - `regresql init [ -C dir ]`
-  
+
     Creates the regresql main directories and runs all SQL queries found in
     your target code base (defaults to current directory).
-    
+
     The -C option changes current directory to *dir* before running the
     command.
-  
+
   - `regresql plan [ -C dir ]`
-  
+
     Create query plan files for all queries. Run that command when you add
     new queries to your repository.
-  
+
   - `regresql update [ -C dir ]`
-  
+
     Updates the *expected* files from the queries, considering that the
     output is valid.
-  
+
   - `regresql test [ -C dir ]`
-  
+
     Runs all the SQL queries found in current directory.
-    
+
     The -C option changes the current directory before running the tests.
-    
+
   - `regresql list [ -C dir ]`
-  
+
     List all SQL files found in current directory.
 
     The -C option changes the current directory before listing the files.
@@ -95,33 +95,33 @@ By default a Test Suite is a source directory.
 RegreSQL needs the following files and directories to run:
 
   - `./regresql` where to register needed files
-  
+
   - `./regresql/regresql.yaml`
-  
+
     Configuration file for the directory in which it's installed. It
     contains the PostgreSQL connection string where to connect to for
     running the regression tests and the top level directory where to find
     the SQL files to test against.
-  
+
   - `./regresql/expected/path/to/file_query-name.yaml`
-  
+
     For each file *file.sql* found in your source tree, RegreSQL creates a
     subpath in `./regresql/plans` with a *file_query-name.yaml* file. This YAML file
     contains query plans: that's a list of SQL parameters values to use when
     testing.
-  
+
   - `./regresql/expected/path/to/file_query-name.out`
-  
+
     For each file *query.sql* found in your source tree, RegreSQL creates a
     subpath in `./regresql/expected` directory and stores in *file_query-name.out* the
     expected result set of the query,
-    
+
   - `./regresql/out/path/to/file_query-name.sql`
-  
+
     The result of running the query in *file_query-name.sql* is stored in *query.out*
     in the `regresql/out` directory subpath for it, so that it is possible
     to compare this result to the expected one in `regresql/expected`.
-    
+
 In all cases `query_name` is replaced by the tagged query name. If not present, name
 `default` is used.
 
@@ -167,7 +167,7 @@ $ cat src/sql/album_by_artist.sql
 group by album
 order by album;
 
-$ cat regresql/plans/src/sql/album_by_artist_album-by-artist.yaml 
+$ cat regresql/plans/src/sql/album_by_artist_album-by-artist.yaml
 "1":
   name: "Red Hot Chili Peppers"
 ```
@@ -186,7 +186,7 @@ ok 5 - src/sql/genre-topn.genre-top-n.top-1.out
 ok 6 - src/sql/genre-tracks_tracks-by-genre.1.out
 ```
 
-We can see the following files have been created by the RegreSQL tool: 
+We can see the following files have been created by the RegreSQL tool:
 
 ```
 $ tree regresql/

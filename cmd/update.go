@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dimitri/regresql/regresql"
+	"github.com/boringsql/regresql/regresql"
 	"github.com/spf13/cobra"
 )
 
@@ -34,5 +34,4 @@ func init() {
 	// is called directly, e.g.:
 	// updateCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	updateCmd.Flags().StringVarP(&cwd, "cwd", "C", ".", "Change to Directory")
-
 }
