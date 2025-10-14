@@ -3,7 +3,6 @@ module github.com/boringsql/regresql
 go 1.25.2
 
 require (
-	github.com/boringsql/regresql v0.0.0-20240904100231-1da5b1d108b4
 	github.com/lib/pq v1.10.9
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mndrix/tap-go v0.0.0-20171203230836-629fa407e90b
@@ -14,6 +13,7 @@ require (
 )
 
 require (
+	github.com/boringsql/queries v1.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -34,3 +34,4 @@ require (
 	golang.org/x/text v0.28.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+

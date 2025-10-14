@@ -2,36 +2,46 @@ package regresql
 
 import (
 	"testing"
+
+	"github.com/boringsql/queries"
 )
 
 func TestParseQueryString(t *testing.T) {
 	queryString := `select * from foo where id = :user_id`
-	q := parseQueryString("no/path", "default", queryString)
+	q := queries.NewQuery("default", "", queryString, nil)
 
-	if len(q.Vars) != 1 || q.Vars[0] != "user_id" {
-		t.Error("Expected [\"user_id\"], got ", q.Vars)
+	if len(q.NamedArgs) != 1 || q.NamedArgs[0].Name != "user_id" {
+		t.Error("Expected unique arg [\"user_id\"], got ", q.NamedArgs)
+	}
+	if len(q.Args) != 1 || q.Args[0] != "user_id" {
+		t.Error("Expected args [\"user_id\"], got ", q.Args)
 	}
 }
 
 func TestParseQueryStringWithTypeCast(t *testing.T) {
 	queryString := `select name::text from foo where id = :user_id`
-	q := parseQueryString("no/path", "default", queryString)
+	q := queries.NewQuery("default", "", queryString, nil)
 
-	if len(q.Vars) != 1 || q.Vars[0] != "user_id" {
-		t.Error("Expected only [\"user_id\"], got ", q.Vars)
+	if len(q.NamedArgs) != 1 || q.NamedArgs[0].Name != "user_id" {
+		t.Error("Expected unique arg [\"user_id\"], got ", q.NamedArgs)
+	}
+	if len(q.Args) != 1 || q.Args[0] != "user_id" {
+		t.Error("Expected args [\"user_id\"], got ", q.Args)
 	}
 }
 
 func TestPrepareOneParam(t *testing.T) {
 	queryString := `select * from foo where id = :id`
-	q := parseQueryString("no/path", "default", queryString)
+	bq := queries.NewQuery("default", "", queryString, nil)
+	q := &Query{Query: bq}
 	b := make(map[string]string)
 	b["id"] = "1"
 
 	sql, params := q.Prepare(b)
 
-	if sql != "select * from foo where id = $1" {
-		t.Error("Query string not as expected ", sql)
+	expected := "-- name: default\nselect * from foo where id = $1"
+	if sql != expected {
+		t.Errorf("Query string not as expected.\nGot:\n%s\n\nExpected:\n%s", sql, expected)
 	}
 
 	if !(len(params) == 1 &&
@@ -42,15 +52,17 @@ func TestPrepareOneParam(t *testing.T) {
 
 func TestPrepareTwoParams(t *testing.T) {
 	queryString := `select * from foo where a = :a and b between :a and :b`
-	q := parseQueryString("no/path", "default", queryString)
+	bq := queries.NewQuery("default", "", queryString, nil)
+	q := &Query{Query: bq}
 	b := make(map[string]string)
 	b["a"] = "a"
 	b["b"] = "b"
 
 	sql, params := q.Prepare(b)
 
-	if sql != "select * from foo where a = $1 and b between $1 and $2" {
-		t.Error("Query string not as expected ", sql)
+	expected := "-- name: default\nselect * from foo where a = $1 and b between $1 and $2"
+	if sql != expected {
+		t.Errorf("Query string not as expected.\nGot:\n%s\n\nExpected:\n%s", sql, expected)
 	}
 
 	if !(len(params) == 3 &&

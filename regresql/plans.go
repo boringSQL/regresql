@@ -40,14 +40,14 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 		return &p, fmt.Errorf("Plan file '%s' already exists", pfile)
 	}
 
-	if len(q.Vars) > 0 {
+	if len(q.NamedArgs) > 0 {
 		names = make([]string, 1)
 		bindings = make([]map[string]string, 1)
 
 		names[0] = "1"
 		bindings[0] = make(map[string]string)
-		for _, varname := range q.Vars {
-			bindings[0][varname] = ""
+		for _, namedArg := range q.NamedArgs {
+			bindings[0][namedArg.Name] = ""
 		}
 	} else {
 		names = []string{}
@@ -67,7 +67,7 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	pfile := getPlanPath(q, planDir)
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
-		if len(q.Params) == 0 {
+		if len(q.Args) == 0 {
 			// no Params, no Plan file, it's good
 			return &Plan{q, pfile,
 				[]string{},
@@ -128,15 +128,15 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 // Executes a plan and returns the filepath where the output has been
 // written, for later comparing
 func (p *Plan) Execute(db *sql.DB) error {
-	if len(p.Query.Params) == 0 {
+	if len(p.Query.Args) == 0 {
 		// this Query has no plans, so don't loop over the bindings
 		args := make([]interface{}, 0)
-		res, err := QueryDB(db, p.Query.Query, args...)
+		res, err := QueryDB(db, p.Query.OrdinalQuery, args...)
 
 		if err != nil {
 			e := fmt.Errorf("Error executing query: %s\n%s\n",
 				err,
-				p.Query.Query)
+				p.Query.OrdinalQuery)
 			return e
 		}
 		result := make([]ResultSet, 1)
@@ -218,7 +218,7 @@ func getResultSetPath(p *Plan, targetdir string, index int) string {
 	var rsFileName string
 	basename := strings.TrimSuffix(filepath.Base(p.Path), path.Ext(p.Path))
 
-	if len(p.Query.Params) == 0 {
+	if len(p.Query.Args) == 0 {
 		rsFileName = fmt.Sprintf("%s.out", basename)
 	} else {
 		rsFileName = fmt.Sprintf("%s.%s.out", basename, p.Names[index])
