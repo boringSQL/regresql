@@ -3,7 +3,7 @@ module github.com/boringsql/regresql
 go 1.25.2
 
 require (
-	github.com/boringsql/queries v1.2.1
+	github.com/boringsql/queries v1.3.0
 	github.com/lib/pq v1.10.9
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mndrix/tap-go v0.0.0-20171203230836-629fa407e90b
