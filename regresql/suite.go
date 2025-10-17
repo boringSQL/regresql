@@ -139,6 +139,13 @@ func (s *Suite) initRegressHierarchy() error {
 			}
 
 			for _, q := range queries {
+				// Skip queries with notest option
+				opts := q.GetRegressQLOptions()
+				if opts.NoTest {
+					fmt.Printf("Skipping query '%s' (notest)\n", q.Name)
+					continue
+				}
+
 				if _, err := q.CreateEmptyPlan(rdir); err != nil {
 					fmt.Println("Skipping:", err)
 				}
@@ -176,6 +183,11 @@ func (s *Suite) createExpectedResults(pguri string) error {
 			}
 
 			for _, q := range queries {
+				// Skip queries with notest option
+				opts := q.GetRegressQLOptions()
+				if opts.NoTest {
+					continue
+				}
 
 				p, err := q.GetPlan(rdir)
 				if err != nil {
@@ -224,6 +236,12 @@ func (s *Suite) testQueries(pguri string) error {
 			}
 
 			for _, q := range queries {
+				// Skip queries with notest option
+				opts := q.GetRegressQLOptions()
+				if opts.NoTest {
+					continue
+				}
+
 				p, err := q.GetPlan(rdir)
 				if err != nil {
 					return err
@@ -236,8 +254,10 @@ func (s *Suite) testQueries(pguri string) error {
 				}
 				p.CompareResultSets(s.RegressDir, edir, t)
 
-				// Compare against baselines with default threshold
-				p.CompareBaselines(bdir, db, t, DefaultCostThresholdPercent)
+				// Compare against baselines with default threshold (unless nobaseline)
+				if !opts.NoBaseline {
+					p.CompareBaselines(bdir, db, t, DefaultCostThresholdPercent)
+				}
 			}
 		}
 	}

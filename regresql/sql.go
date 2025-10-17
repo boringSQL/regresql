@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/boringsql/queries"
 )
@@ -21,6 +22,33 @@ all the parsing and parameter handling functionality.
 */
 type Query struct {
 	*queries.Query
+}
+
+// RegressQLOptions holds parsed regresql metadata options
+type RegressQLOptions struct {
+	NoTest     bool
+	NoBaseline bool
+}
+
+// GetRegressQLOptions parses the regresql metadata and returns options
+func (q *Query) GetRegressQLOptions() RegressQLOptions {
+	opts := RegressQLOptions{}
+
+	if metadata, ok := q.GetMetadata("regresql"); ok {
+		// Parse comma-separated options
+		parts := strings.Split(metadata, ",")
+		for _, part := range parts {
+			option := strings.TrimSpace(strings.ToLower(part))
+			switch option {
+			case "notest":
+				opts.NoTest = true
+			case "nobaseline":
+				opts.NoBaseline = true
+			}
+		}
+	}
+
+	return opts
 }
 
 // Parse a SQL file and returns map of Queries instances, with variables

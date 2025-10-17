@@ -221,6 +221,17 @@ func BaselineQueries(root string) {
 			}
 
 			for _, q := range queries {
+				// Skip queries with notest or nobaseline options
+				opts := q.GetRegressQLOptions()
+				if opts.NoTest {
+					fmt.Printf("  Skipping query '%s' (notest)\n", q.Name)
+					continue
+				}
+				if opts.NoBaseline {
+					fmt.Printf("  Skipping query '%s' (nobaseline)\n", q.Name)
+					continue
+				}
+
 				if err := q.CreateBaseline(folderBaselineDir, folderPlanDir, db); err != nil {
 					fmt.Printf("  Error creating baseline for %s: %s\n", q.Name, err.Error())
 				}
