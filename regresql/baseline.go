@@ -1,9 +1,11 @@
 package regresql
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,10 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/theherk/viper"
 )
+
+// DefaultCostThresholdPercent is the default maximum allowed percentage increase
+// for query costs compared to baseline (10% = queries can cost up to 110% of baseline)
+const DefaultCostThresholdPercent = 10.0
 
 // Baseline stores the EXPLAIN analysis results for a query
 type Baseline struct {
@@ -224,4 +230,55 @@ func BaselineQueries(root string) {
 
 	fmt.Println("\nBaselines have been created successfully!")
 	fmt.Printf("Baseline files are stored in: %s\n", baselineDir)
+}
+
+// LoadBaseline loads a baseline YAML file
+func LoadBaseline(baselinePath string) (*Baseline, error) {
+	if _, err := os.Stat(baselinePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("baseline file not found: %s", baselinePath)
+	}
+
+	v := viper.New()
+	v.SetConfigType("yaml")
+
+	data, err := ioutil.ReadFile(baselinePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read baseline file '%s': %w", baselinePath, err)
+	}
+
+	if err := v.ReadConfig(bytes.NewBuffer(data)); err != nil {
+		return nil, fmt.Errorf("failed to parse baseline YAML '%s': %w", baselinePath, err)
+	}
+
+	baseline := &Baseline{
+		Query:     v.GetString("query"),
+		Timestamp: v.GetString("timestamp"),
+		Plan:      make(map[string]interface{}),
+	}
+
+	// Load plan fields
+	if v.IsSet("plan.startup_cost") {
+		baseline.Plan["startup_cost"] = v.Get("plan.startup_cost")
+	}
+	if v.IsSet("plan.total_cost") {
+		baseline.Plan["total_cost"] = v.Get("plan.total_cost")
+	}
+	if v.IsSet("plan.plan_rows") {
+		baseline.Plan["plan_rows"] = v.Get("plan.plan_rows")
+	}
+
+	return baseline, nil
+}
+
+// CompareCost compares actual cost against baseline with a threshold percentage
+// Returns (isOk bool, actual float64, baseline float64, percentage float64)
+func CompareCost(actualCost, baselineCost, thresholdPercent float64) (bool, float64) {
+	if baselineCost == 0 {
+		return actualCost == 0, 0
+	}
+
+	percentageIncrease := ((actualCost - baselineCost) / baselineCost) * 100
+	isOk := percentageIncrease <= thresholdPercent
+
+	return isOk, percentageIncrease
 }

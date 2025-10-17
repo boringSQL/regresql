@@ -39,6 +39,7 @@ type Suite struct {
 	PlanDir     string
 	ExpectedDir string
 	OutDir      string
+	BaselineDir string
 }
 
 /*
@@ -57,7 +58,8 @@ func newSuite(root string) *Suite {
 	planDir := filepath.Join(root, "regresql", "plans")
 	expectedDir := filepath.Join(root, "regresql", "expected")
 	outDir := filepath.Join(root, "regresql", "out")
-	return &Suite{root, regressDir, folders, planDir, expectedDir, outDir}
+	baselineDir := filepath.Join(root, "regresql", "baselines")
+	return &Suite{root, regressDir, folders, planDir, expectedDir, outDir, baselineDir}
 }
 
 // newFolder created a new Folder instance
@@ -210,6 +212,7 @@ func (s *Suite) testQueries(pguri string) error {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
 		edir := filepath.Join(s.ExpectedDir, folder.Dir)
 		odir := filepath.Join(s.OutDir, folder.Dir)
+		bdir := filepath.Join(s.BaselineDir, folder.Dir)
 		maybeMkdirAll(odir)
 
 		for _, name := range folder.Files {
@@ -232,6 +235,9 @@ func (s *Suite) testQueries(pguri string) error {
 					return err
 				}
 				p.CompareResultSets(s.RegressDir, edir, t)
+
+				// Compare against baselines with default threshold
+				p.CompareBaselines(bdir, db, t, DefaultCostThresholdPercent)
 			}
 		}
 	}
