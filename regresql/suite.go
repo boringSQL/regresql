@@ -193,7 +193,9 @@ func (s *Suite) createExpectedResults(pguri string) error {
 				if err != nil {
 					return err
 				}
-				p.Execute(db)
+				if err := p.Execute(db); err != nil {
+					return err
+				}
 				p.WriteResultSets(edir)
 
 				for _, rs := range p.ResultSets {
