@@ -1,7 +1,6 @@
 package regresql
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/theherk/viper"
 )
 
 // DefaultCostThresholdPercent is the default maximum allowed percentage increase
@@ -21,12 +19,12 @@ const DefaultCostThresholdPercent = 10.0
 
 // Baseline stores the EXPLAIN analysis results for a query
 type Baseline struct {
-	Query     string                 `yaml:"query"`
-	Timestamp string                 `yaml:"timestamp"`
-	Plan      map[string]interface{} `yaml:"plan"`
+	Query     string                 `json:"query"`
+	Timestamp string                 `json:"timestamp"`
+	Plan      map[string]interface{} `json:"plan"`
 }
 
-// GetBaselinePath returns the path where baseline YAML file should be stored
+// GetBaselinePath returns the path where baseline JSON file should be stored
 func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
 	baselinePath := filepath.Join(baselineDir, filepath.Base(q.Path))
 	baselinePath = strings.TrimSuffix(baselinePath, filepath.Ext(baselinePath))
@@ -37,7 +35,7 @@ func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
 		baselinePath = baselinePath + "." + bindingName
 	}
 
-	baselinePath = baselinePath + ".yaml"
+	baselinePath = baselinePath + ".json"
 	return baselinePath
 }
 
@@ -70,7 +68,7 @@ func ExecuteExplain(db *sql.DB, query string, args ...interface{}) (map[string]i
 	return plan[0], nil
 }
 
-// CreateBaseline creates a baseline YAML file for a query
+// CreateBaseline creates a baseline JSON file for a query
 func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) error {
 	// For queries without parameters, create a single baseline
 	if len(q.Args) == 0 {
@@ -127,7 +125,7 @@ func (q *Query) createBaselineWithBindings(baselineDir string, bindingName strin
 	return writeBaselineFile(q.Name, baselinePath, explainPlan)
 }
 
-// writeBaselineFile writes the baseline YAML file
+// writeBaselineFile writes the baseline JSON file
 func writeBaselineFile(queryName string, baselinePath string, explainPlan map[string]interface{}) error {
 	// Extract the inner Plan object and filter to only keep desired fields
 	filteredPlan := make(map[string]interface{})
@@ -150,19 +148,15 @@ func writeBaselineFile(queryName string, baselinePath string, explainPlan map[st
 		Plan:      filteredPlan,
 	}
 
-	// Write to YAML using viper
-	v := viper.New()
-	v.SetConfigType("yaml")
-
-	v.Set("query", baseline.Query)
-	v.Set("timestamp", baseline.Timestamp)
-
-	for key, value := range baseline.Plan {
-		v.Set(fmt.Sprintf("plan.%s", key), value)
+	// Marshal to JSON with indentation
+	jsonBytes, err := json.MarshalIndent(baseline, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal baseline to JSON: %w", err)
 	}
 
-	if err := v.WriteConfigAs(baselinePath); err != nil {
-		return fmt.Errorf("failed to write baseline YAML: %w", err)
+	// Write to file
+	if err := ioutil.WriteFile(baselinePath, jsonBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write baseline JSON: %w", err)
 	}
 
 	fmt.Printf("  Created baseline: %s\n", filepath.Base(baselinePath))
@@ -243,42 +237,23 @@ func BaselineQueries(root string) {
 	fmt.Printf("Baseline files are stored in: %s\n", baselineDir)
 }
 
-// LoadBaseline loads a baseline YAML file
+// LoadBaseline loads a baseline JSON file
 func LoadBaseline(baselinePath string) (*Baseline, error) {
 	if _, err := os.Stat(baselinePath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("baseline file not found: %s", baselinePath)
 	}
-
-	v := viper.New()
-	v.SetConfigType("yaml")
 
 	data, err := ioutil.ReadFile(baselinePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read baseline file '%s': %w", baselinePath, err)
 	}
 
-	if err := v.ReadConfig(bytes.NewBuffer(data)); err != nil {
-		return nil, fmt.Errorf("failed to parse baseline YAML '%s': %w", baselinePath, err)
+	var baseline Baseline
+	if err := json.Unmarshal(data, &baseline); err != nil {
+		return nil, fmt.Errorf("failed to parse baseline JSON '%s': %w", baselinePath, err)
 	}
 
-	baseline := &Baseline{
-		Query:     v.GetString("query"),
-		Timestamp: v.GetString("timestamp"),
-		Plan:      make(map[string]interface{}),
-	}
-
-	// Load plan fields
-	if v.IsSet("plan.startup_cost") {
-		baseline.Plan["startup_cost"] = v.Get("plan.startup_cost")
-	}
-	if v.IsSet("plan.total_cost") {
-		baseline.Plan["total_cost"] = v.Get("plan.total_cost")
-	}
-	if v.IsSet("plan.plan_rows") {
-		baseline.Plan["plan_rows"] = v.Get("plan.plan_rows")
-	}
-
-	return baseline, nil
+	return &baseline, nil
 }
 
 // CompareCost compares actual cost against baseline with a threshold percentage

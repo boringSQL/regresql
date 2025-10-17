@@ -110,15 +110,15 @@ RegreSQL needs the following files and directories to run:
     contains query plans: that's a list of SQL parameters values to use when
     testing.
 
-  - `./regresql/expected/path/to/file_query-name.out`
+  - `./regresql/expected/path/to/file_query-name.json`
 
     For each file *query.sql* found in your source tree, RegreSQL creates a
-    subpath in `./regresql/expected` directory and stores in *file_query-name.out* the
-    expected result set of the query,
+    subpath in `./regresql/expected` directory and stores in *file_query-name.json* the
+    expected result set of the query in JSON format,
 
-  - `./regresql/out/path/to/file_query-name.sql`
+  - `./regresql/out/path/to/file_query-name.json`
 
-    The result of running the query in *file_query-name.sql* is stored in *query.out*
+    The result of running the query in *file_query-name.sql* is stored in *query.json*
     in the `regresql/out` directory subpath for it, so that it is possible
     to compare this result to the expected one in `regresql/expected`.
 
@@ -178,12 +178,12 @@ And we can now run the tests:
 $ regresql test
 Connecting to 'postgres:///chinook?sslmode=disable'… ✓
 TAP version 13
-ok 1 - src/sql/album-by-artist_album-by-artist.1.out
-ok 2 - src/sql/album-tracks_album-tracks.1.out
-ok 3 - src/sql/artist_top-artists-by-album.1.out
-ok 4 - src/sql/genre-topn_genre-top-n.top-3.out
-ok 5 - src/sql/genre-topn.genre-top-n.top-1.out
-ok 6 - src/sql/genre-tracks_tracks-by-genre.1.out
+ok 1 - src/sql/album-by-artist_album-by-artist.1.json
+ok 2 - src/sql/album-tracks_album-tracks.1.json
+ok 3 - src/sql/artist_top-artists-by-album.1.json
+ok 4 - src/sql/genre-topn_genre-top-n.top-3.json
+ok 5 - src/sql/genre-topn.genre-top-n.top-1.json
+ok 6 - src/sql/genre-tracks_tracks-by-genre.1.json
 ```
 
 We can see the following files have been created by the RegreSQL tool:
@@ -194,25 +194,25 @@ regresql/
 ├── expected
 │   └── src
 │       └── sql
-│           ├── album-by-artist.1.out
-│           ├── album-tracks.1.out
-│           ├── artist.1.out
-│           ├── genre-topn.1.out
-│           ├── genre-topn.top-1.out
-│           ├── genre-topn.top-3.out
-│           └── genre-tracks.out
+│           ├── album-by-artist.1.json
+│           ├── album-tracks.1.json
+│           ├── artist.1.json
+│           ├── genre-topn.1.json
+│           ├── genre-topn.top-1.json
+│           ├── genre-topn.top-3.json
+│           └── genre-tracks.json
 ├── out
 │   └── src
 │       └── sql
-│           ├── album-by-artist.1.out
-│           ├── album-tracks.1.out
-│           ├── artist.1.out
-│           ├── genre-topn.1.out
-│           ├── genre-topn.top\ 1.out
-│           ├── genre-topn.top\ 3.out
-│           ├── genre-topn.top-1.out
-│           ├── genre-topn.top-3.out
-│           └── genre-tracks.out
+│           ├── album-by-artist.1.json
+│           ├── album-tracks.1.json
+│           ├── artist.1.json
+│           ├── genre-topn.1.json
+│           ├── genre-topn.top\ 1.json
+│           ├── genre-topn.top\ 3.json
+│           ├── genre-topn.top-1.json
+│           ├── genre-topn.top-3.json
+│           └── genre-tracks.json
 ├── plans
 │   └── src
 │       └── sql

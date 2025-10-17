@@ -3,6 +3,7 @@ package regresql
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,9 +18,9 @@ A ResultSet stores the result of a Query in Filename, with Cols and Rows
 separated.
 */
 type ResultSet struct {
-	Cols     []string
-	Rows     [][]interface{}
-	Filename string
+	Cols     []string        `json:"columns"`
+	Rows     [][]interface{} `json:"rows"`
+	Filename string          `json:"-"`
 }
 
 // TestConnectionString connects to PostgreSQL with pguri and issue a single
@@ -139,7 +140,7 @@ func (r *ResultSet) PrettyPrint() string {
 				fmt.Fprintf(&b, fmts[i], s)
 				fmt.Fprintf(&b, " | ")
 			} else {
-				fmt.Fprintf(&b, s)
+				fmt.Fprint(&b, s)
 			}
 		}
 		fmt.Fprintf(&b, "\n")
@@ -150,47 +151,46 @@ func (r *ResultSet) PrettyPrint() string {
 // Writes the Result Set r to filename, overwriting it if already exists
 // when overwrite is true
 func (r *ResultSet) Write(filename string, overwrite bool) error {
+	// Marshal ResultSet to JSON
+	jsonBytes, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return fmt.Errorf("Failed to marshal result set to JSON: %s\n", err)
+	}
+
 	var f *os.File
-	var err error
 	if _, err = os.Stat(filename); os.IsNotExist(err) {
 		f, err = os.Create(filename)
 
 		if err != nil {
-			e := fmt.Errorf(
+			return fmt.Errorf(
 				"Failed to write result set '%s': %s\n",
 				filename,
 				err)
-			return e
 		}
 		defer f.Close()
 
-		fmt.Fprint(f, r.PrettyPrint())
+		_, err = f.Write(jsonBytes)
+		if err != nil {
+			return fmt.Errorf("Failed to write JSON to file '%s': %s\n", filename, err)
+		}
 	} else {
 		if !overwrite {
 			return errors.New("Target file '%s' already exists")
 		}
-		f, err = os.OpenFile(filename, os.O_WRONLY, 0644)
+		f, err = os.OpenFile(filename, os.O_WRONLY|os.O_TRUNC, 0644)
 
 		if err != nil {
-			e := fmt.Errorf(
+			return fmt.Errorf(
 				"Failed to open result set '%s': %s\n",
 				filename,
 				err)
-			return e
-		}
-
-		err = f.Truncate(0)
-
-		if err != nil {
-			e := fmt.Errorf(
-				"Failed to truncate result set file '%s': %s\n",
-				filename,
-				err)
-			return e
 		}
 		defer f.Close()
 
-		fmt.Fprint(f, r.PrettyPrint())
+		_, err = f.Write(jsonBytes)
+		if err != nil {
+			return fmt.Errorf("Failed to write JSON to file '%s': %s\n", filename, err)
+		}
 	}
 	return nil
 }

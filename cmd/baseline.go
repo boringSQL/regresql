@@ -14,10 +14,10 @@ var baselineCmd = &cobra.Command{
 	Short: "Creates baseline EXPLAIN analysis for queries",
 	Long: `Creates baseline EXPLAIN analysis for all queries in the suite.
 This command executes EXPLAIN for each query and stores the query plan
-metrics (costs, timing, rows) in YAML files under the baselines directory.`,
+metrics (costs, timing, rows) in JSON files under the baselines directory.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := checkDirectory(cwd); err != nil {
-			fmt.Printf(err.Error())
+			fmt.Print(err.Error())
 			os.Exit(1)
 		}
 		regresql.BaselineQueries(cwd)

@@ -102,7 +102,7 @@ func (p *Plan) CompareBaselines(baselineDir string, db *sql.DB, t *tap.T, thresh
 // compareSingleBaseline compares a single baseline for queries without parameters
 func (p *Plan) compareSingleBaseline(baselineDir string, bindingName string, db *sql.DB, t *tap.T, thresholdPercent float64) {
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
-	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".yaml") + ".cost"
+	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
 
 	// Load baseline
 	baseline, err := LoadBaseline(baselinePath)
@@ -148,7 +148,7 @@ func (p *Plan) compareSingleBaseline(baselineDir string, bindingName string, db 
 // compareBindingBaseline compares a baseline for queries with specific parameter bindings
 func (p *Plan) compareBindingBaseline(baselineDir string, bindingName string, bindings map[string]string, db *sql.DB, t *tap.T, thresholdPercent float64) {
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
-	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".yaml") + ".cost"
+	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
 
 	// Load baseline
 	baseline, err := LoadBaseline(baselinePath)

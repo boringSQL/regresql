@@ -219,9 +219,9 @@ func getResultSetPath(p *Plan, targetdir string, index int) string {
 	basename := strings.TrimSuffix(filepath.Base(p.Path), path.Ext(p.Path))
 
 	if len(p.Query.Args) == 0 {
-		rsFileName = fmt.Sprintf("%s.out", basename)
+		rsFileName = fmt.Sprintf("%s.json", basename)
 	} else {
-		rsFileName = fmt.Sprintf("%s.%s.out", basename, p.Names[index])
+		rsFileName = fmt.Sprintf("%s.%s.json", basename, p.Names[index])
 	}
 	return filepath.Join(targetdir, rsFileName)
 }
