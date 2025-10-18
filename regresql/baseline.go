@@ -68,29 +68,31 @@ func ExecuteExplain(db *sql.DB, query string, args ...interface{}) (map[string]i
 	return plan[0], nil
 }
 
-// CreateBaseline creates a baseline JSON file for a query
 func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) error {
-	// For queries without parameters, create a single baseline
+	var plan *Plan
+	var err error
+
 	if len(q.Args) == 0 {
-		return q.createSingleBaseline(baselineDir, "", db)
+		plan = NewPlan(q, []TestCase{{Name: ""}})
+	} else {
+		plan, err = q.GetPlan(planDir)
+		if err != nil {
+			return fmt.Errorf("failed to load plan for query %s: %w (run 'regresql plan' first)", q.Name, err)
+		}
+		if len(plan.Bindings) == 0 {
+			fmt.Printf("  Skipping '%s': no bindings in plan\n", q.Name)
+			return nil
+		}
 	}
 
-	// For queries with parameters, load the plan and create a baseline for each binding
-	plan, err := q.GetPlan(planDir)
+	baselines, err := plan.CreateBaselines(db)
 	if err != nil {
-		return fmt.Errorf("failed to load plan for query %s: %w (run 'regresql plan' first)", q.Name, err)
+		return err
 	}
 
-	// If no bindings in the plan, skip
-	if len(plan.Bindings) == 0 {
-		fmt.Printf("  Skipping '%s': no bindings in plan\n", q.Name)
-		return nil
-	}
-
-	// Create a baseline for each binding
-	for i, bindings := range plan.Bindings {
-		bindingName := plan.Names[i]
-		if err := q.createBaselineWithBindings(baselineDir, bindingName, bindings, db); err != nil {
+	for i, baseline := range baselines {
+		baselinePath := getBaselinePath(q, baselineDir, plan.Names[i])
+		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan); err != nil {
 			return err
 		}
 	}
@@ -98,63 +100,18 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) e
 	return nil
 }
 
-// createSingleBaseline creates a baseline for a query without parameters
-func (q *Query) createSingleBaseline(baselineDir string, bindingName string, db *sql.DB) error {
-	baselinePath := getBaselinePath(q, baselineDir, bindingName)
-
-	explainPlan, err := ExecuteExplain(db, q.OrdinalQuery)
-	if err != nil {
-		return fmt.Errorf("failed to create baseline for query %s: %w", q.Name, err)
-	}
-
-	return writeBaselineFile(q.Name, baselinePath, explainPlan)
-}
-
-// createBaselineWithBindings creates a baseline for a query with specific parameter bindings
-func (q *Query) createBaselineWithBindings(baselineDir string, bindingName string, bindings map[string]string, db *sql.DB) error {
-	baselinePath := getBaselinePath(q, baselineDir, bindingName)
-
-	// Prepare the query with actual parameter values
-	sql, args := q.Prepare(bindings)
-
-	explainPlan, err := ExecuteExplain(db, sql, args...)
-	if err != nil {
-		return fmt.Errorf("failed to create baseline for query %s with bindings %s: %w", q.Name, bindingName, err)
-	}
-
-	return writeBaselineFile(q.Name, baselinePath, explainPlan)
-}
-
-// writeBaselineFile writes the baseline JSON file
-func writeBaselineFile(queryName string, baselinePath string, explainPlan map[string]interface{}) error {
-	// Extract the inner Plan object and filter to only keep desired fields
-	filteredPlan := make(map[string]interface{})
-	if planData, ok := explainPlan["Plan"].(map[string]interface{}); ok {
-		if startupCost, ok := planData["Startup Cost"]; ok {
-			filteredPlan["startup_cost"] = startupCost
-		}
-		if totalCost, ok := planData["Total Cost"]; ok {
-			filteredPlan["total_cost"] = totalCost
-		}
-		if planRows, ok := planData["Plan Rows"]; ok {
-			filteredPlan["plan_rows"] = planRows
-		}
-	}
-
-	// Create baseline struct
+func writeBaselineFile(queryName string, baselinePath string, filteredPlan map[string]interface{}) error {
 	baseline := Baseline{
 		Query:     queryName,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Plan:      filteredPlan,
 	}
 
-	// Marshal to JSON with indentation
 	jsonBytes, err := json.MarshalIndent(baseline, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal baseline to JSON: %w", err)
 	}
 
-	// Write to file
 	if err := ioutil.WriteFile(baselinePath, jsonBytes, 0644); err != nil {
 		return fmt.Errorf("failed to write baseline JSON: %w", err)
 	}

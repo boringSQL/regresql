@@ -14,18 +14,35 @@ import (
 	"github.com/theherk/viper" // fork with write support
 )
 
-/*
-A query plan associates a Query parsed from a Path (name of the file on
-disk) and a list of set of parameters used to run the query. Each set of
-parameters as a name in Names[i] and a list of bindings in Bindings[i]. When
-the query is executed we store its output in ResultSets[i].
-*/
-type Plan struct {
-	Query      *Query
-	Path       string // the file path where we read the Plan from
-	Names      []string
-	Bindings   []map[string]string
-	ResultSets []ResultSet
+type (
+	Plan struct {
+		Query      *Query
+		Path       string
+		Names      []string
+		Bindings   []map[string]string
+		ResultSets []ResultSet
+	}
+
+	TestCase struct {
+		Name   string
+		Params map[string]string
+	}
+)
+
+func NewPlan(query *Query, testCases []TestCase) *Plan {
+	names := make([]string, len(testCases))
+	bindings := make([]map[string]string, len(testCases))
+
+	for i, tc := range testCases {
+		names[i] = tc.Name
+		bindings[i] = tc.Params
+	}
+
+	return &Plan{
+		Query:    query,
+		Names:    names,
+		Bindings: bindings,
+	}
 }
 
 // CreateEmptyPlan creates a YAML file where to store the set of parameters

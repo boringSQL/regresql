@@ -7,80 +7,61 @@ import (
 	"github.com/boringsql/queries"
 )
 
-/*
+type (
+	Query struct {
+		*queries.Query
+	}
 
-A query instances represents an SQL query, read from Path filename and
-stored raw as the Text slot. The query text is "parsed" into the Query slot,
-and parameters are extracted into both the Vars slot and the Params slot.
+	RegressQLOptions struct {
+		NoTest     bool
+		NoBaseline bool
+	}
+)
 
-    SELECT * FROM foo WHERE a = :a and b between :a and :b;
-
-In the previous query, we would have Vars = [a b] and Params = [a a b].
-
-This struct now embeds github.com/boringsql/queries.Query which provides
-all the parsing and parameter handling functionality.
-*/
-type Query struct {
-	*queries.Query
-}
-
-// RegressQLOptions holds parsed regresql metadata options
-type RegressQLOptions struct {
-	NoTest     bool
-	NoBaseline bool
-}
-
-// GetRegressQLOptions parses the regresql metadata and returns options
 func (q *Query) GetRegressQLOptions() RegressQLOptions {
 	opts := RegressQLOptions{}
+	metadata, ok := q.GetMetadata("regresql")
+	if !ok {
+		return opts
+	}
 
-	if metadata, ok := q.GetMetadata("regresql"); ok {
-		// Parse comma-separated options
-		parts := strings.Split(metadata, ",")
-		for _, part := range parts {
-			option := strings.TrimSpace(strings.ToLower(part))
-			switch option {
-			case "notest":
-				opts.NoTest = true
-			case "nobaseline":
-				opts.NoBaseline = true
-			}
+	for _, part := range strings.Split(metadata, ",") {
+		switch strings.TrimSpace(strings.ToLower(part)) {
+		case "notest":
+			opts.NoTest = true
+		case "nobaseline":
+			opts.NoBaseline = true
 		}
 	}
 
 	return opts
 }
 
-// Parse a SQL file and returns map of Queries instances, with variables
-// used in the query separated in the Query.Vars map.
 func parseQueryFile(queryPath string) (map[string]*Query, error) {
 	store := queries.NewQueryStore()
-	err := store.LoadFromFile(queryPath)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to open query file '%s': %s\n", queryPath, err.Error())
+	if err := store.LoadFromFile(queryPath); err != nil {
+		return nil, fmt.Errorf("failed to open query file '%s': %w", queryPath, err)
 	}
 
 	result := make(map[string]*Query)
-
 	for name, bqQuery := range store.Queries() {
-		// Skip the "default" query if it's empty (queries without names)
 		if name == "default" && bqQuery.RawQuery() == "" {
 			continue
 		}
-
 		result[name] = &Query{Query: bqQuery}
 	}
 
 	return result, nil
 }
 
-// Prepare an args... interface{} for Query from given bindings
+func NewQueryFromString(name, sqlText string) (*Query, error) {
+	return &Query{Query: queries.NewQuery(name, "", sqlText, nil)}, nil
+}
+
 func (q *Query) Prepare(bindings map[string]string) (string, []interface{}) {
-	// Build ordered params array matching q.Args (all occurrences with duplicates)
 	params := make([]interface{}, len(q.Args))
 	for i, varname := range q.Args {
 		params[i] = bindings[varname]
 	}
-
 	return q.OrdinalQuery, params
 }
