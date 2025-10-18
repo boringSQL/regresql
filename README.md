@@ -221,38 +221,46 @@ We can see the following files have been created by the RegreSQL tool:
 ```
 $ tree regresql/
 regresql/
+├── baselines
+│   └── src
+│       └── sql
+│           ├── album-by-artist_album-by-artist.1.json
+│           ├── album-tracks_album-tracks.1.json
+│           ├── artist_top-artists-by-album.1.json
+│           ├── genre-topn_genre-top-n.top-1.json
+│           ├── genre-topn_genre-top-n.top-3.json
+│           └── genre-tracks_tracks-by-genre.1.json
 ├── expected
-│   └── src
-│       └── sql
-│           ├── album-by-artist.1.json
-│           ├── album-tracks.1.json
-│           ├── artist.1.json
-│           ├── genre-topn.1.json
-│           ├── genre-topn.top-1.json
-│           ├── genre-topn.top-3.json
-│           └── genre-tracks.json
+│   └── src
+│       └── sql
+│           ├── album-by-artist.1.json
+│           ├── album-tracks.1.json
+│           ├── artist.1.json
+│           ├── genre-topn.1.json
+│           ├── genre-topn.top-1.json
+│           ├── genre-topn.top-3.json
+│           └── genre-tracks.json
 ├── out
-│   └── src
-│       └── sql
-│           ├── album-by-artist.1.json
-│           ├── album-tracks.1.json
-│           ├── artist.1.json
-│           ├── genre-topn.1.json
-│           ├── genre-topn.top\ 1.json
-│           ├── genre-topn.top\ 3.json
-│           ├── genre-topn.top-1.json
-│           ├── genre-topn.top-3.json
-│           └── genre-tracks.json
+│   └── src
+│       └── sql
+│           ├── album-by-artist.1.json
+│           ├── album-tracks.1.json
+│           ├── artist.1.json
+│           ├── genre-topn.1.json
+│           ├── genre-topn.top-1.json
+│           ├── genre-topn.top-3.json
+│           └── genre-tracks.json
 ├── plans
-│   └── src
-│       └── sql
-│           ├── album-by-artist.yaml
-│           ├── album-tracks.yaml
-│           ├── artist.yaml
-│           └── genre-topn.yaml
+│   └── src
+│       └── sql
+│           ├── album-by-artist.yaml
+│           ├── album-tracks.yaml
+│           ├── artist.yaml
+│           └── genre-topn.yaml
 └── regress.yaml
 
-9 directories, 21 files
+12 directories, 27 files
+```
 ```
 
 ## History
