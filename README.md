@@ -203,11 +203,17 @@ $ regresql test
 Connecting to 'postgres:///chinook?sslmode=disable'… ✓
 TAP version 13
 ok 1 - src/sql/album-by-artist_album-by-artist.1.json
-ok 2 - src/sql/album-tracks_album-tracks.1.json
-ok 3 - src/sql/artist_top-artists-by-album.1.json
-ok 4 - src/sql/genre-topn_genre-top-n.top-3.json
-ok 5 - src/sql/genre-topn.genre-top-n.top-1.json
-ok 6 - src/sql/genre-tracks_tracks-by-genre.1.json
+ok 2 - src/sql/album-by-artist_album-by-artist.1.cost (15.23 <= 15.23 * 110%)
+ok 3 - src/sql/album-tracks_album-tracks.1.json
+ok 4 - src/sql/album-tracks_album-tracks.1.cost (8.45 <= 8.45 * 110%)
+ok 5 - src/sql/artist_top-artists-by-album.1.json
+ok 6 - src/sql/artist_top-artists-by-album.1.cost (22.14 <= 22.14 * 110%)
+ok 7 - src/sql/genre-topn_genre-top-n.top-3.json
+ok 8 - src/sql/genre-topn_genre-top-n.top-3.cost (18.67 <= 18.67 * 110%)
+ok 9 - src/sql/genre-topn.genre-top-n.top-1.json
+ok 10 - src/sql/genre-topn.genre-top-n.top-1.cost (18.67 <= 18.67 * 110%)
+ok 11 - src/sql/genre-tracks_tracks-by-genre.1.json
+ok 12 - src/sql/genre-tracks_tracks-by-genre.1.cost (12.34 <= 12.34 * 110%)
 ```
 
 We can see the following files have been created by the RegreSQL tool:
