@@ -13,7 +13,6 @@ var (
 	testRunFilter string
 )
 
-// testCmd represents the test command
 var testCmd = &cobra.Command{
 	Use:   "test [flags]",
 	Short: "Run regression tests for your SQL queries",
@@ -22,7 +21,7 @@ var testCmd = &cobra.Command{
 			fmt.Print(err.Error())
 			os.Exit(1)
 		}
-		regresql.Test(testCwd, testRunFilter)
+		regresql.Test(testCwd, testRunFilter, "", "")
 	},
 }
 

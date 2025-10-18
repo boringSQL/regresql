@@ -122,15 +122,10 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
-/*
-Test runs the queries and compare their results to the previously created
-expected files (see Update()), reporting a TAP output to standard output.
-*/
-func Test(root string, runFilter string) {
+func Test(root, runFilter, formatName, outputPath string) {
 	suite := Walk(root)
 	suite.SetRunFilter(runFilter)
 	config, err := suite.readConfig()
-
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(3)
@@ -141,7 +136,16 @@ func Test(root string, runFilter string) {
 		os.Exit(2)
 	}
 
-	if err := suite.testQueries(config.PgUri); err != nil {
+	if formatName == "" {
+		formatName = "pgtap"
+	}
+	formatter, err := GetFormatter(formatName)
+	if err != nil {
+		fmt.Printf("Error: %s\n", err.Error())
+		os.Exit(14)
+	}
+
+	if err := suite.testQueries(config.PgUri, formatter, outputPath); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(13)
 	}

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	_ "github.com/lib/pq"
-	"github.com/mndrix/tap-go"
 )
 
 /*
@@ -254,19 +253,26 @@ func (s *Suite) createExpectedResults(pguri string) error {
 }
 
 // testQueries walks the s Suite instance and runs queries against the plans
-// and sotores results in the out directory for manual inspection if
-// necessary, It then compares the actual output to the expected output and
-// reports a TAP output.
-func (s *Suite) testQueries(pguri string) error {
+// and stores results in the out directory for manual inspection if
+// necessary. It then compares the actual output to the expected output and
+// reports results using the specified formatter.
+func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string) error {
 	db, err := sql.Open("postgres", pguri)
-
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
 
-	t := tap.New()
-	t.Header(0)
+	w, close, err := getWriter(outputPath)
+	if err != nil {
+		return err
+	}
+	defer close()
+
+	summary := NewTestSummary()
+	if err := formatter.Start(w); err != nil {
+		return err
+	}
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
@@ -284,12 +290,10 @@ func (s *Suite) testQueries(pguri string) error {
 			}
 
 			for _, q := range queries {
-				// Skip if the query doesn't match the run filter
 				if !s.matchesRunFilter(name, q.Name) {
 					continue
 				}
 
-				// Skip queries with notest option
 				opts := q.GetRegressQLOptions()
 				if opts.NoTest {
 					continue
@@ -305,16 +309,27 @@ func (s *Suite) testQueries(pguri string) error {
 				if err := p.WriteResultSets(odir); err != nil {
 					return err
 				}
-				p.CompareResultSets(s.RegressDir, edir, t)
 
-				// Compare against baselines with default threshold (unless nobaseline)
+				for _, r := range p.CompareResultSetsToResults(s.RegressDir, edir) {
+					summary.AddResult(r)
+					if err := formatter.AddResult(r, w); err != nil {
+						return err
+					}
+				}
+
 				if !opts.NoBaseline {
-					p.CompareBaselines(bdir, db, t, DefaultCostThresholdPercent)
+					for _, r := range p.CompareBaselinesToResults(bdir, db, DefaultCostThresholdPercent) {
+						summary.AddResult(r)
+						if err := formatter.AddResult(r, w); err != nil {
+							return err
+						}
+					}
 				}
 			}
 		}
 	}
-	return nil
+
+	return formatter.Finish(summary, w)
 }
 
 // Only create dir(s) when it doesn't exists already
