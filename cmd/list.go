@@ -19,7 +19,7 @@ var listCmd = &cobra.Command{
 	Short: "list candidates SQL files",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := checkDirectory(cwd); err != nil {
-			fmt.Printf(err.Error())
+			fmt.Print(err.Error())
 			os.Exit(1)
 		}
 		regresql.List(cwd)

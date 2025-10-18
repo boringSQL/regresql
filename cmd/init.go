@@ -10,7 +10,8 @@ import (
 
 // Command Flags
 var (
-	pguri string
+	initCwd string
+	pguri   string
 )
 
 // initCmd represents the init command
@@ -19,12 +20,12 @@ var initCmd = &cobra.Command{
 	Short: "Initialize regresql for use in your project",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(cwd); err != nil {
-			fmt.Printf(err.Error())
+		if err := checkDirectory(initCwd); err != nil {
+			fmt.Print(err.Error())
 			os.Exit(1)
 		}
 		pguri := args[0]
-		regresql.Init(cwd, pguri)
+		regresql.Init(initCwd, pguri)
 	},
 }
 
@@ -40,5 +41,5 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// initCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	initCmd.Flags().StringVarP(&cwd, "cwd", "C", ".", "Change to Directory")
+	initCmd.Flags().StringVarP(&initCwd, "cwd", "C", ".", "Change to Directory")
 }

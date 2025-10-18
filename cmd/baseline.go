@@ -8,6 +8,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	baselineCwd       string
+	baselineRunFilter string
+)
+
 // baselineCmd represents the baseline command
 var baselineCmd = &cobra.Command{
 	Use:   "baseline [flags]",
@@ -16,16 +21,17 @@ var baselineCmd = &cobra.Command{
 This command executes EXPLAIN for each query and stores the query plan
 metrics (costs, timing, rows) in JSON files under the baselines directory.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(cwd); err != nil {
+		if err := checkDirectory(baselineCwd); err != nil {
 			fmt.Print(err.Error())
 			os.Exit(1)
 		}
-		regresql.BaselineQueries(cwd)
+		regresql.BaselineQueries(baselineCwd, baselineRunFilter)
 	},
 }
 
 func init() {
 	RootCmd.AddCommand(baselineCmd)
 
-	baselineCmd.Flags().StringVarP(&cwd, "cwd", "C", ".", "Change to Directory")
+	baselineCmd.Flags().StringVarP(&baselineCwd, "cwd", "C", ".", "Change to Directory")
+	baselineCmd.Flags().StringVar(&baselineRunFilter, "run", "", "Run only queries matching regexp (matches file names and query names)")
 }

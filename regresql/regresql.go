@@ -15,7 +15,7 @@ init again on an existing repository to create missing plan files.
 */
 func Init(root string, pguri string) {
 	if err := TestConnectionString(pguri); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(2)
 	}
 
@@ -25,7 +25,7 @@ func Init(root string, pguri string) {
 	suite.setupConfig(pguri)
 
 	if err := suite.initRegressHierarchy(); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(11)
 	}
 
@@ -47,22 +47,23 @@ case and add a value for each parameter.`,
 }
 
 // PlanQueries create query plans for queries found in the root repository
-func PlanQueries(root string) {
+func PlanQueries(root string, runFilter string) {
 	suite := Walk(root)
+	suite.SetRunFilter(runFilter)
 	config, err := suite.readConfig()
 
 	if err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(3)
 	}
 
 	if err := TestConnectionString(config.PgUri); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(2)
 	}
 
 	if err := suite.initRegressHierarchy(); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(11)
 	}
 
@@ -72,7 +73,7 @@ func PlanQueries(root string) {
 
 	fmt.Println("")
 	fmt.Printf(`Empty test plans have been created.
-Edit the plans to add query binding values, then run 
+Edit the plans to add query binding values, then run
 
   regresql update
 
@@ -85,22 +86,23 @@ case and add a value for each parameter. `)
 /*
 Update updates the expected files from the queries and their parameters.
 */
-func Update(root string) {
+func Update(root string, runFilter string) {
 	suite := Walk(root)
+	suite.SetRunFilter(runFilter)
 	config, err := suite.readConfig()
 
 	if err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(3)
 	}
 
 	if err := TestConnectionString(config.PgUri); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(2)
 	}
 
 	if err := suite.createExpectedResults(config.PgUri); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(12)
 	}
 
@@ -124,22 +126,23 @@ the regresql update command again to reset the expected output files.
 Test runs the queries and compare their results to the previously created
 expected files (see Update()), reporting a TAP output to standard output.
 */
-func Test(root string) {
+func Test(root string, runFilter string) {
 	suite := Walk(root)
+	suite.SetRunFilter(runFilter)
 	config, err := suite.readConfig()
 
 	if err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(3)
 	}
 
 	if err := TestConnectionString(config.PgUri); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(2)
 	}
 
 	if err := suite.testQueries(config.PgUri); err != nil {
-		fmt.Printf(err.Error())
+		fmt.Print(err.Error())
 		os.Exit(13)
 	}
 }

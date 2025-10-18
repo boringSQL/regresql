@@ -164,8 +164,9 @@ func writeBaselineFile(queryName string, baselinePath string, explainPlan map[st
 }
 
 // BaselineQueries creates baselines for all queries in the suite
-func BaselineQueries(root string) {
+func BaselineQueries(root string, runFilter string) {
 	suite := Walk(root)
+	suite.SetRunFilter(runFilter)
 	config, err := suite.readConfig()
 	if err != nil {
 		fmt.Printf("Error reading config: %s\n", err.Error())
@@ -215,6 +216,11 @@ func BaselineQueries(root string) {
 			}
 
 			for _, q := range queries {
+				// Skip if the query doesn't match the run filter
+				if !suite.matchesRunFilter(name, q.Name) {
+					continue
+				}
+
 				// Skip queries with notest or nobaseline options
 				opts := q.GetRegressQLOptions()
 				if opts.NoTest {

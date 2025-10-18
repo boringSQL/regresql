@@ -38,27 +38,51 @@ Basic usage or regresql:
     The -C option changes current directory to *dir* before running the
     command.
 
-  - `regresql plan [ -C dir ]`
+  - `regresql plan [ -C dir ] [ --run pattern ]`
 
     Create query plan files for all queries. Run that command when you add
     new queries to your repository.
 
-  - `regresql update [ -C dir ]`
+  - `regresql update [ -C dir ] [ --run pattern ]`
 
     Updates the *expected* files from the queries, considering that the
     output is valid.
 
-  - `regresql test [ -C dir ]`
+  - `regresql test [ -C dir ] [ --run pattern ]`
 
     Runs all the SQL queries found in current directory.
 
     The -C option changes the current directory before running the tests.
+
+  - `regresql baseline [ -C dir ] [ --run pattern ]`
+
+    Creates baseline EXPLAIN analysis for queries.
 
   - `regresql list [ -C dir ]`
 
     List all SQL files found in current directory.
 
     The -C option changes the current directory before listing the files.
+
+The --run option runs only queries matching the given pattern (regexp). The
+pattern matches against both file names and query names. Examples:
+
+```
+# Run only queries in files or queries containing "user"
+$ regresql test --run user
+
+# Run only queries starting with "get" (using regexp)
+$ regresql test --run "^get"
+
+# Run specific query by exact name
+$ regresql test --run "^list-albums-by-artist$"
+
+# Run queries from specific file
+$ regresql test --run "album-tracks.sql"
+
+# Run multiple patterns (using regexp OR)
+$ regresql test --run "user|artist"
+```
 
 ## SQL query files
 

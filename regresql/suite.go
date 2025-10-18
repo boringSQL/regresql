@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	_ "github.com/lib/pq"
 	"github.com/mndrix/tap-go"
@@ -40,6 +42,7 @@ type Suite struct {
 	ExpectedDir string
 	OutDir      string
 	BaselineDir string
+	runFilter   string
 }
 
 /*
@@ -59,7 +62,16 @@ func newSuite(root string) *Suite {
 	expectedDir := filepath.Join(root, "regresql", "expected")
 	outDir := filepath.Join(root, "regresql", "out")
 	baselineDir := filepath.Join(root, "regresql", "baselines")
-	return &Suite{root, regressDir, folders, planDir, expectedDir, outDir, baselineDir}
+	return &Suite{
+		Root:        root,
+		RegressDir:  regressDir,
+		Dirs:        folders,
+		PlanDir:     planDir,
+		ExpectedDir: expectedDir,
+		OutDir:      outDir,
+		BaselineDir: baselineDir,
+		runFilter:   "",
+	}
 }
 
 // newFolder created a new Folder instance
@@ -108,6 +120,30 @@ func Walk(root string) *Suite {
 	return suite
 }
 
+// SetRunFilter sets the run filter pattern for the suite
+func (s *Suite) SetRunFilter(pattern string) {
+	s.runFilter = pattern
+}
+
+// matchesRunFilter checks if a file name or query name matches the run filter
+// Returns true if there's no filter set, or if either the file name or query name matches
+func (s *Suite) matchesRunFilter(fileName, queryName string) bool {
+	// If no filter is set, match everything
+	if s.runFilter == "" {
+		return true
+	}
+
+	// Try to compile the regex pattern
+	re, err := regexp.Compile(s.runFilter)
+	if err != nil {
+		// If the pattern is invalid, treat it as a literal string match
+		return strings.Contains(fileName, s.runFilter) || strings.Contains(queryName, s.runFilter)
+	}
+
+	// Match against both file name and query name
+	return re.MatchString(fileName) || re.MatchString(queryName)
+}
+
 // Println(Suite) pretty prints the Suite instance to standard out.
 func (s *Suite) Println() {
 	fmt.Printf("%s\n", s.Root)
@@ -139,6 +175,11 @@ func (s *Suite) initRegressHierarchy() error {
 			}
 
 			for _, q := range queries {
+				// Skip if the query doesn't match the run filter
+				if !s.matchesRunFilter(name, q.Name) {
+					continue
+				}
+
 				// Skip queries with notest option
 				opts := q.GetRegressQLOptions()
 				if opts.NoTest {
@@ -183,6 +224,11 @@ func (s *Suite) createExpectedResults(pguri string) error {
 			}
 
 			for _, q := range queries {
+				// Skip if the query doesn't match the run filter
+				if !s.matchesRunFilter(name, q.Name) {
+					continue
+				}
+
 				// Skip queries with notest option
 				opts := q.GetRegressQLOptions()
 				if opts.NoTest {
@@ -238,6 +284,11 @@ func (s *Suite) testQueries(pguri string) error {
 			}
 
 			for _, q := range queries {
+				// Skip if the query doesn't match the run filter
+				if !s.matchesRunFilter(name, q.Name) {
+					continue
+				}
+
 				// Skip queries with notest option
 				opts := q.GetRegressQLOptions()
 				if opts.NoTest {

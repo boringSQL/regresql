@@ -8,16 +8,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	planCwd       string
+	planRunFilter string
+)
+
 // planCmd represents the plan command
 var planCmd = &cobra.Command{
 	Use:   "plan [flags]",
 	Short: "Creates missing plans for new queries",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(cwd); err != nil {
-			fmt.Printf(err.Error())
+		if err := checkDirectory(planCwd); err != nil {
+			fmt.Print(err.Error())
 			os.Exit(1)
 		}
-		regresql.PlanQueries(cwd)
+		regresql.PlanQueries(planCwd, planRunFilter)
 	},
 }
 
@@ -33,5 +38,6 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// planCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	planCmd.Flags().StringVarP(&cwd, "cwd", "C", ".", "Change to Directory")
+	planCmd.Flags().StringVarP(&planCwd, "cwd", "C", ".", "Change to Directory")
+	planCmd.Flags().StringVar(&planRunFilter, "run", "", "Run only queries matching regexp (matches file names and query names)")
 }
