@@ -93,3 +93,65 @@ func getWriter(path string) (io.Writer, func() error, error) {
 	}
 	return f, f.Close, nil
 }
+
+type MultiFormatter struct {
+	formatters []OutputFormatter
+	writers    []io.Writer
+	closers    []func() error
+}
+
+func NewMultiFormatter(specs []struct{ Format, Path string }) (*MultiFormatter, error) {
+	mf := &MultiFormatter{
+		formatters: make([]OutputFormatter, 0, len(specs)),
+		writers:    make([]io.Writer, 0, len(specs)),
+		closers:    make([]func() error, 0, len(specs)),
+	}
+
+	for _, spec := range specs {
+		f, err := GetFormatter(spec.Format)
+		if err != nil {
+			return nil, err
+		}
+		w, close, err := getWriter(spec.Path)
+		if err != nil {
+			return nil, err
+		}
+		mf.formatters = append(mf.formatters, f)
+		mf.writers = append(mf.writers, w)
+		mf.closers = append(mf.closers, close)
+	}
+
+	return mf, nil
+}
+
+func (mf *MultiFormatter) Start(w io.Writer) error {
+	for i, f := range mf.formatters {
+		if err := f.Start(mf.writers[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (mf *MultiFormatter) AddResult(r TestResult, w io.Writer) error {
+	for i, f := range mf.formatters {
+		if err := f.AddResult(r, mf.writers[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (mf *MultiFormatter) Finish(s *TestSummary, w io.Writer) error {
+	for i, f := range mf.formatters {
+		if err := f.Finish(s, mf.writers[i]); err != nil {
+			return err
+		}
+	}
+	for _, close := range mf.closers {
+		if err := close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}

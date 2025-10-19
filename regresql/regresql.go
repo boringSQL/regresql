@@ -137,7 +137,7 @@ func Test(root, runFilter, formatName, outputPath string) {
 	}
 
 	if formatName == "" {
-		formatName = "pgtap"
+		formatName = "console"
 	}
 	formatter, err := GetFormatter(formatName)
 	if err != nil {

@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	testCwd       string
-	testRunFilter string
+	testCwd        string
+	testRunFilter  string
+	testFormat     string
+	testOutputPath string
 )
 
 var testCmd = &cobra.Command{
@@ -21,22 +23,15 @@ var testCmd = &cobra.Command{
 			fmt.Print(err.Error())
 			os.Exit(1)
 		}
-		regresql.Test(testCwd, testRunFilter, "", "")
+		regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath)
 	},
 }
 
 func init() {
 	RootCmd.AddCommand(testCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// testCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// testCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	testCmd.Flags().StringVarP(&testCwd, "cwd", "C", ".", "Change to Directory")
 	testCmd.Flags().StringVar(&testRunFilter, "run", "", "Run only queries matching regexp (matches file names and query names)")
+	testCmd.Flags().StringVar(&testFormat, "format", "console", "Output format: console, pgtap, junit, json, github-actions")
+	testCmd.Flags().StringVarP(&testOutputPath, "output", "o", "", "Output file path (default: stdout)")
 }
