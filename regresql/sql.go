@@ -58,8 +58,8 @@ func NewQueryFromString(name, sqlText string) (*Query, error) {
 	return &Query{Query: queries.NewQuery(name, "", sqlText, nil)}, nil
 }
 
-func (q *Query) Prepare(bindings map[string]string) (string, []interface{}) {
-	params := make([]interface{}, len(q.Args))
+func (q *Query) Prepare(bindings map[string]string) (string, []any) {
+	params := make([]any, len(q.Args))
 	for i, varname := range q.Args {
 		params[i] = bindings[varname]
 	}

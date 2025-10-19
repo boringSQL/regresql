@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -98,11 +97,9 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
 
-	data, err := ioutil.ReadFile(pfile)
-
+	data, err := os.ReadFile(pfile)
 	if err != nil {
-		e := fmt.Errorf("Failed to read file '%s': %s\n", pfile, err)
-		return plan, e
+		return plan, fmt.Errorf("failed to read file '%s': %w", pfile, err)
 	}
 
 	v.ReadConfig(bytes.NewBuffer(data))
@@ -146,40 +143,25 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 // written, for later comparing
 func (p *Plan) Execute(db *sql.DB) error {
 	if len(p.Query.Args) == 0 {
-		// this Query has no plans, so don't loop over the bindings
-		args := make([]interface{}, 0)
-		res, err := QueryDB(db, p.Query.OrdinalQuery, args...)
-
+		res, err := QueryDB(db, p.Query.OrdinalQuery)
 		if err != nil {
-			e := fmt.Errorf("Error executing query: %s\n%s\n",
-				err,
-				p.Query.OrdinalQuery)
-			return e
+			return fmt.Errorf("error executing query: %w\n%s", err, p.Query.OrdinalQuery)
 		}
-		result := make([]ResultSet, 1)
-		result[0] = *res
-		p.ResultSets = result
+		p.ResultSets = []ResultSet{*res}
 		return nil
 	}
 
 	// general case, with a plan and a set of Bindings to go through
-	result := make([]ResultSet, len(p.Bindings))
+	p.ResultSets = make([]ResultSet, len(p.Bindings))
 
 	for i, bindings := range p.Bindings {
 		sql, args := p.Query.Prepare(bindings)
 		res, err := QueryDB(db, sql, args...)
-
 		if err != nil {
-			e := fmt.Errorf(
-				"Error executing query with params: %v\n%s\n%s",
-				args,
-				err,
-				sql)
-			return e
+			return fmt.Errorf("error executing query with params %v: %w\n%s", args, err, sql)
 		}
-		result[i] = *res
+		p.ResultSets[i] = *res
 	}
-	p.ResultSets = result
 	return nil
 }
 
@@ -188,14 +170,8 @@ func (p *Plan) Execute(db *sql.DB) error {
 func (p *Plan) WriteResultSets(dir string) error {
 	for i, rs := range p.ResultSets {
 		rsFileName := getResultSetPath(p, dir, i)
-		err := rs.Write(rsFileName, true)
-
-		if err != nil {
-			e := fmt.Errorf(
-				"Failed to write result set '%s': %s\n",
-				rsFileName,
-				err)
-			return e
+		if err := rs.Write(rsFileName, true); err != nil {
+			return fmt.Errorf("failed to write result set '%s': %w", rsFileName, err)
 		}
 		p.ResultSets[i].Filename = rsFileName
 	}

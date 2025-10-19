@@ -92,7 +92,7 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 			continue
 		}
 
-		var explainPlan map[string]interface{}
+		var explainPlan map[string]any
 		var err error
 		if len(p.Query.Args) == 0 {
 			explainPlan, err = ExecuteExplain(db, p.Query.OrdinalQuery)
@@ -106,7 +106,7 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 		}
 
 		actualCost := 0.0
-		if planData, ok := explainPlan["Plan"].(map[string]interface{}); ok {
+		if planData, ok := explainPlan["Plan"].(map[string]any); ok {
 			if cost, ok := planData["Total Cost"]; ok {
 				actualCost = toFloat64(cost)
 			}
@@ -142,7 +142,7 @@ func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, error) {
 }
 
 func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, error) {
-	var explainPlan map[string]interface{}
+	var explainPlan map[string]any
 	var err error
 
 	if len(p.Query.Args) == 0 {
@@ -155,8 +155,8 @@ func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, error) {
 		return Baseline{}, fmt.Errorf("failed to create baseline for %s: %w", p.Names[index], err)
 	}
 
-	filteredPlan := make(map[string]interface{})
-	if planData, ok := explainPlan["Plan"].(map[string]interface{}); ok {
+	filteredPlan := make(map[string]any)
+	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
 		if startupCost, ok := planData["Startup Cost"]; ok {
 			filteredPlan["startup_cost"] = startupCost
 		}

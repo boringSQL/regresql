@@ -48,11 +48,20 @@ Basic usage or regresql:
     Updates the *expected* files from the queries, considering that the
     output is valid.
 
-  - `regresql test [ -C dir ] [ --run pattern ]`
+  - `regresql test [ -C dir ] [ --run pattern ] [ --format format ] [ -o output ]`
 
     Runs all the SQL queries found in current directory.
 
     The -C option changes the current directory before running the tests.
+
+    The --format option specifies output format (default: console):
+      - console: Human-readable output with ✓/✗ symbols
+      - pgtap: TAP (Test Anything Protocol) format
+      - junit: JUnit XML format for CI/CD integration
+      - json: Structured JSON output
+      - github-actions: GitHub Actions workflow annotations
+
+    The -o option specifies output file path (default: stdout)
 
   - `regresql baseline [ -C dir ] [ --run pattern ]`
 

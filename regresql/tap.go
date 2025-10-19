@@ -51,7 +51,7 @@ Query Parameters: '%v'
 	}
 }
 
-func toFloat64(val interface{}) float64 {
+func toFloat64(val any) float64 {
 	switch v := val.(type) {
 	case float64:
 		return v
@@ -177,7 +177,7 @@ func (p *Plan) compareSingleBaselineToResult(baselineDir string, bindingName str
 
 	// Extract costs
 	var actualCost float64
-	if planData, ok := explainPlan["Plan"].(map[string]interface{}); ok {
+	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
 		if cost, ok := planData["Total Cost"]; ok {
 			actualCost = toFloat64(cost)
 		}
@@ -239,7 +239,7 @@ func (p *Plan) compareBindingBaselineToResult(baselineDir string, bindingName st
 
 	// Extract costs
 	var actualCost float64
-	if planData, ok := explainPlan["Plan"].(map[string]interface{}); ok {
+	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
 		if cost, ok := planData["Total Cost"]; ok {
 			actualCost = toFloat64(cost)
 		}

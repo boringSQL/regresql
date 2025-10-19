@@ -18,9 +18,9 @@ A ResultSet stores the result of a Query in Filename, with Cols and Rows
 separated.
 */
 type ResultSet struct {
-	Cols     []string        `json:"columns"`
-	Rows     [][]interface{} `json:"rows"`
-	Filename string          `json:"-"`
+	Cols     []string `json:"columns"`
+	Rows     [][]any  `json:"rows"`
+	Filename string   `json:"-"`
 }
 
 // TestConnectionString connects to PostgreSQL with pguri and issue a single
@@ -36,8 +36,7 @@ func TestConnectionString(pguri string) error {
 	}
 	defer db.Close()
 
-	var args []interface{}
-	if _, err := QueryDB(db, "Select 1", args...); err != nil {
+	if _, err := QueryDB(db, "Select 1"); err != nil {
 		fmt.Println("✗")
 		return err
 	}
@@ -48,7 +47,7 @@ func TestConnectionString(pguri string) error {
 
 // QueryDB runs the query against the db database connection, and returns a
 // ResultSet
-func QueryDB(db *sql.DB, query string, args ...interface{}) (*ResultSet, error) {
+func QueryDB(db *sql.DB, query string, args ...any) (*ResultSet, error) {
 	if db == nil {
 		return nil, errors.New("db is nil")
 	}
@@ -64,18 +63,18 @@ func QueryDB(db *sql.DB, query string, args ...interface{}) (*ResultSet, error) 
 		return nil, err
 	}
 
-	res := make([][]interface{}, 0)
+	res := make([][]any, 0)
 
 	for rows.Next() {
-		container := make([]interface{}, len(cols))
-		dest := make([]interface{}, len(cols))
-		for i, _ := range container {
+		container := make([]any, len(cols))
+		dest := make([]any, len(cols))
+		for i := range container {
 			dest[i] = &container[i]
 		}
 		rows.Scan(dest...)
-		r := make([]interface{}, len(cols))
-		for i, _ := range cols {
-			val := dest[i].(*interface{})
+		r := make([]any, len(cols))
+		for i := range cols {
+			val := dest[i].(*any)
 			r[i] = *val
 		}
 
@@ -151,66 +150,34 @@ func (r *ResultSet) PrettyPrint() string {
 // Writes the Result Set r to filename, overwriting it if already exists
 // when overwrite is true
 func (r *ResultSet) Write(filename string, overwrite bool) error {
-	// Marshal ResultSet to JSON
 	jsonBytes, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
-		return fmt.Errorf("Failed to marshal result set to JSON: %s\n", err)
+		return fmt.Errorf("failed to marshal result set to JSON: %w", err)
 	}
 
-	var f *os.File
-	if _, err = os.Stat(filename); os.IsNotExist(err) {
-		f, err = os.Create(filename)
-
-		if err != nil {
-			return fmt.Errorf(
-				"Failed to write result set '%s': %s\n",
-				filename,
-				err)
-		}
-		defer f.Close()
-
-		_, err = f.Write(jsonBytes)
-		if err != nil {
-			return fmt.Errorf("Failed to write JSON to file '%s': %s\n", filename, err)
-		}
-	} else {
-		if !overwrite {
-			return errors.New("Target file '%s' already exists")
-		}
-		f, err = os.OpenFile(filename, os.O_WRONLY|os.O_TRUNC, 0644)
-
-		if err != nil {
-			return fmt.Errorf(
-				"Failed to open result set '%s': %s\n",
-				filename,
-				err)
-		}
-		defer f.Close()
-
-		_, err = f.Write(jsonBytes)
-		if err != nil {
-			return fmt.Errorf("Failed to write JSON to file '%s': %s\n", filename, err)
-		}
+	if _, err = os.Stat(filename); err == nil && !overwrite {
+		return fmt.Errorf("target file '%s' already exists", filename)
 	}
+
+	if err := os.WriteFile(filename, jsonBytes, 0644); err != nil {
+		return fmt.Errorf("failed to write JSON to file '%s': %w", filename, err)
+	}
+
 	return nil
 }
 
 // valueToString is an helper function for the Pretty Printer
-func valueToString(value interface{}) string {
-	var s string
-	switch value.(type) {
+func valueToString(value any) string {
+	switch v := value.(type) {
 	case int:
-		s = fmt.Sprintf("%d", value)
-	case float32:
-		s = fmt.Sprintf("%g", value)
-	case float64:
-		s = fmt.Sprintf("%g", value)
+		return fmt.Sprintf("%d", v)
+	case float32, float64:
+		return fmt.Sprintf("%g", v)
 	case time.Time:
-		s = fmt.Sprintf("%s", value)
+		return fmt.Sprintf("%s", v)
 	case []byte:
-		s = fmt.Sprintf("%s", value)
+		return string(v)
 	default:
-		s = fmt.Sprintf("%v", value)
+		return fmt.Sprintf("%v", v)
 	}
-	return s
 }

@@ -21,10 +21,10 @@ func (f *JSONFormatter) AddResult(r TestResult, w io.Writer) error {
 }
 
 func (f *JSONFormatter) Finish(s *TestSummary, w io.Writer) error {
-	output := map[string]interface{}{
+	output := map[string]any{
 		"version":   "1.0",
 		"timestamp": s.StartTime.Format(time.RFC3339),
-		"summary": map[string]interface{}{
+		"summary": map[string]any{
 			"total":    s.Total,
 			"passed":   s.Passed,
 			"failed":   s.Failed,
@@ -39,11 +39,11 @@ func (f *JSONFormatter) Finish(s *TestSummary, w io.Writer) error {
 	return encoder.Encode(output)
 }
 
-func formatTests(results []TestResult) []map[string]interface{} {
-	tests := make([]map[string]interface{}, 0, len(results))
+func formatTests(results []TestResult) []map[string]any {
+	tests := make([]map[string]any, 0, len(results))
 
 	for _, r := range results {
-		test := map[string]interface{}{
+		test := map[string]any{
 			"name":     r.Name,
 			"type":     r.Type,
 			"status":   r.Status,
@@ -55,16 +55,16 @@ func formatTests(results []TestResult) []map[string]interface{} {
 		}
 
 		if r.Type == "cost" && r.Status == "failed" {
-			test["expected"] = map[string]interface{}{
+			test["expected"] = map[string]any{
 				"total_cost": r.ExpectedCost,
 			}
-			test["actual"] = map[string]interface{}{
+			test["actual"] = map[string]any{
 				"total_cost": r.ActualCost,
 			}
 			if r.PercentIncrease > 0 {
-				test["diff"] = map[string]interface{}{
-					"summary":           "Plan changed from Index Scan to Seq Scan",
-					"percent_increase":  r.PercentIncrease,
+				test["diff"] = map[string]any{
+					"summary":          "Plan changed from Index Scan to Seq Scan",
+					"percent_increase": r.PercentIncrease,
 				}
 			}
 		}
