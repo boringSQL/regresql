@@ -5,26 +5,32 @@ and supports the PostgreSQL database system. A regression test allows to
 ensure known results when the code is edited. To enable that we need:
 
   - some code to test, here SQL queries
-  - a known result set for each SQL query,
+  - a known result set for each SQL query
+  - a way to set up test data in a consistent state
   - a regression driver that runs queries again and check their result
-    against the known expected result set.
+    against the known expected result set
 
 The RegreSQL tool is that regression driver. It helps with creating the
 expected result set for each query and then running query files again to
-check that the results are still the same.
+check that the results are still the same. It also provides declarative
+fixture system for managing test data, making it easy to set up complex
+database states with generated or static data.
 
 Of course, for the results the be comparable the queries need to be run
 against a known PostgreSQL database content.
 
 ## Installing
 
-The `regresql` tool is written in Go, so:
+The `regresql` tool is written in Go. To install it, use:
 
-    go get github.com/boringsql/regresql
+    go install github.com/boringsql/regresql@latest
 
-This command will compile and install the command in your `$GOPATH/bin`,
-which defaults to `~/go/bin`. See <https://golang.org/doc/install> if you're
-new to the Go language.
+This command will compile and install the binary in your `$GOPATH/bin`,
+which defaults to `~/go/bin`. Make sure this directory is in your `$PATH`
+to run `regresql` from anywhere.
+
+If you're new to Go, see <https://golang.org/doc/install> for installation
+instructions and environment setup.
 
 ## Basic usage
 
@@ -47,6 +53,10 @@ Basic usage or regresql:
 
     Updates the *expected* files from the queries, considering that the
     output is valid.
+
+  - `regresql baseline [ -C dir]`
+
+    Update the cost baselines (EXPLAIN) for the queries.
 
   - `regresql test [ -C dir ] [ --run pattern ] [ --format format ] [ -o output ]`
 
@@ -95,27 +105,134 @@ $ regresql test --run "user|artist"
 
 ## SQL query files
 
-RegreSQL finds every *.sql* file in your code repository and runs them
-against PostgreSQL. It means you're supposed to maintain your queries as
-separate query files, see the
-excellent <https://github.com/krisajenkins/yesql> Clojure library to see how
-that's done. The project links to many implementation in other languages,
-including Python, PHP or Go.
+RegreSQL finds every `*.sql` file in your repository and executes the queries
+against PostgreSQL. Each file can contain one or more queries, optionally
+annotated with metadata.
 
-SQL files might contain variables, and RegreSQL implements the same support
-for them as `psql`, see the PostgreSQL documentation
-about
-[psql variables](https://www.postgresql.org/docs/current/static/app-psql.html#APP-PSQL-VARIABLES) and
-their usage syntax and quoting rules: `:foo`, `:'foo'` and `:"foo"`.
-
-RegreSQL supports either single query per SQL file, or multiple queries in file. In latter case you have
-to tag/name the queries to enable the support.
-
-Example
-
+Queries are separated and identified using header comments. The basic structure is:
+```sql
+-- name: query_name
+-- metadata: key1=value1, key2=value2
+SELECT ...;
 ```
--- name: my-sample-query
-SELECT count(*) FROM users
+
+`-- name`: defines the unique identifier for the query within the file. It is required when a file contains multiple queries. Queries are referenced and executed by this name.
+
+`-- metadata`: allows attaching metadata. Currently supported options:
+
+```sql
+-- regresql: notest       Skip running this query in tests
+-- regresql: nobaseline   Skip creating a baseline for this query
+```
+
+Multiple options can be combined, separated by commas:
+
+```sql
+-- regresql: notest, nobaseline
+```
+
+It's also possible to use a snigle query in a file, without `--name` annotation, in which case the query is automatically named after the file name (without the .sql extension). For example file `my_query.sql`
+
+```sql
+SELECT 42;
+```
+
+is equivalent to
+
+```sql
+name: my_query
+SELECT 42
+```
+
+Notes:
+- Queries can include named parameters (:param_name) or positional parameters ($1, $2).
+- Semicolons inside strings or comments are ignored; only the semicolon terminating a query ends the block.
+- The query handling is available as a separate [queries](http://github.com/boringSQL/queries) library.
+
+## Test Fixtures
+
+RegreSQL provides a declarative fixture system for managing test data. Fixtures allow you to set up complex database states with static or generated data, making your tests more reliable and maintainable.
+
+### Quick Example
+
+Create a fixture in `regresql/fixtures/users.yaml`:
+
+```yaml
+fixture: users
+description: Test user accounts
+cleanup: rollback
+data:
+  - table: users
+    rows:
+      - id: 1
+        email: test@example.com
+        name: Test User
+```
+
+Use it in your test plan `regresql/plans/get-user.yaml`:
+
+```yaml
+fixtures:
+  - users
+
+"1":
+  email: test@example.com
+```
+
+The fixture will be automatically loaded before test and cleaned up after.
+
+### Key Features
+
+- **Static data**: Define exact test data in YAML
+- **Generated data**: Use built-in generators for realistic test data at scale
+- **SQL fixtures**: Execute SQL scripts or inline SQL statements
+- **Dependencies**: Fixtures can depend on other fixtures
+- **Cleanup strategies**: Rollback (default), truncate, or none
+- **Data generators**: sequence, int, decimal, string, email, name, uuid, date_between, and more
+- **Advanced generators**: Foreign keys, ranges, patterns, and Go templates
+
+### Fixture Commands
+
+```bash
+# List all fixtures
+regresql fixtures list
+
+# Validate fixture definitions
+regresql fixtures validate [fixture-name]
+
+# Show fixture details and dependencies
+regresql fixtures show <fixture-name>
+
+# Apply fixture to database (for debugging)
+regresql fixtures apply <fixture-name>
+
+# Show dependency graph
+regresql fixtures deps [fixture-name]
+```
+
+### Example: Generated Data
+
+Generate 1000 realistic customer records:
+
+```yaml
+fixture: large_dataset
+generate:
+  - table: customers
+    count: 1000
+    columns:
+      id:
+        generator: sequence
+        start: 1
+      email:
+        generator: email
+        domain: example.com
+      name:
+        generator: name
+        type: full
+      created_at:
+        generator: date_between
+        start: "2023-01-01"
+        end: "2024-01-01"
 ```
 
 
@@ -210,19 +327,25 @@ And we can now run the tests:
 ```
 $ regresql test
 Connecting to 'postgres:///chinook?sslmode=disable'… ✓
-TAP version 13
-ok 1 - src/sql/album-by-artist_album-by-artist.1.json
-ok 2 - src/sql/album-by-artist_album-by-artist.1.cost (15.23 <= 15.23 * 110%)
-ok 3 - src/sql/album-tracks_album-tracks.1.json
-ok 4 - src/sql/album-tracks_album-tracks.1.cost (8.45 <= 8.45 * 110%)
-ok 5 - src/sql/artist_top-artists-by-album.1.json
-ok 6 - src/sql/artist_top-artists-by-album.1.cost (22.14 <= 22.14 * 110%)
-ok 7 - src/sql/genre-topn_genre-top-n.top-3.json
-ok 8 - src/sql/genre-topn_genre-top-n.top-3.cost (18.67 <= 18.67 * 110%)
-ok 9 - src/sql/genre-topn.genre-top-n.top-1.json
-ok 10 - src/sql/genre-topn.genre-top-n.top-1.cost (18.67 <= 18.67 * 110%)
-ok 11 - src/sql/genre-tracks_tracks-by-genre.1.json
-ok 12 - src/sql/genre-tracks_tracks-by-genre.1.cost (12.34 <= 12.34 * 110%)
+Running regression tests...
+
+✓ album-by-artist_list-albums-by-artist.1.json (0.00s)
+✓ album-by-artist_list-albums-by-artist.2.json (0.00s)
+✓ album-by-artist_list-albums-by-artist.1.cost (22.09 <= 22.09 * 110%) (0.00s)
+✓ album-by-artist_list-albums-by-artist.2.cost (22.09 <= 22.09 * 110%) (0.00s)
+✓ album-tracks_list-tracks-by-albumid.1.json (0.00s)
+✓ album-tracks_list-tracks-by-albumid.2.json (0.00s)
+✓ album-tracks_list-tracks-by-albumid.1.cost (8.23 <= 8.23 * 110%) (0.00s)
+✓ album-tracks_list-tracks-by-albumid.2.cost (8.23 <= 8.23 * 110%) (0.00s)
+✓ artist_top-artists-by-album.1.json (0.00s)
+✓ artist_top-artists-by-album.1.cost (35.70 <= 35.70 * 110%) (0.00s)
+✓ genre-topn_genre-top-n.top-1.json (0.00s)
+✓ genre-topn_genre-top-n.top-3.json (0.00s)
+✓ genre-topn_genre-top-n.top-1.cost (6610.59 <= 6610.59 * 110%) (0.00s)
+✓ genre-topn_genre-top-n.top-3.cost (6610.59 <= 6610.59 * 110%) (0.00s)
+✓ genre-tracks_tracks-by-genre.json (0.00s)
+✓ genre-tracks_tracks-by-genre.cost (37.99 <= 37.99 * 110%) (0.00s)
+Results: 16 passed (0.00s)
 ```
 
 We can see the following files have been created by the RegreSQL tool:
@@ -270,16 +393,13 @@ regresql/
 
 12 directories, 27 files
 ```
-```
 
 ## History
 
-This tool is inspired by the PostgreSQL regression testing framework. It's
-been written in the process of
-the [Mastering PostgreSQL](http://masteringpostgresql.com/) book as an
-example of an SQL framework for unit testing and regression testing.
+The project is a fork of original `regresql` written by [Dimitri Fontaine](https://github.com/dimitri) as part his book [Mastering PostgreSQL](http://masteringpostgresql.com/). The tool was originally inspired by PostgreSQL’s own regression testing framework, providing a lightweight and SQL-native approach to unit and regression testing.
+
+The fork’s goal is to extend RegreSQL into a modern, extensible framework that supports the broader [boringSQL](https://boringsql.com) vision - helping developers to feel more confident working with SQL queries.
 
 ## License
 
-The RegreSQL utility is released
-under [The PostgreSQL License](https://www.postgresql.org/about/licence/).
+The RegreSQL utility is released under [The PostgreSQL License](https://www.postgresql.org/about/licence/).
