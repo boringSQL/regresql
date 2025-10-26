@@ -20,6 +20,8 @@ type (
 		Names      []string
 		Bindings   []map[string]string
 		ResultSets []ResultSet
+		Fixtures   []string        `yaml:"fixtures,omitempty" json:"fixtures,omitempty"`
+		Cleanup    CleanupStrategy `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
 	}
 
 	TestCase struct {
@@ -70,7 +72,15 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 		bindings = []map[string]string{}
 	}
 
-	plan := &Plan{q, pfile, names, bindings, []ResultSet{}}
+	plan := &Plan{
+		Query:      q,
+		Path:       pfile,
+		Names:      names,
+		Bindings:   bindings,
+		ResultSets: []ResultSet{},
+		Fixtures:   []string{},
+		Cleanup:    "",
+	}
 	plan.Write()
 
 	return plan, nil
@@ -85,10 +95,15 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
 		if len(q.Args) == 0 {
 			// no Params, no Plan file, it's good
-			return &Plan{q, pfile,
-				[]string{},
-				[]map[string]string{},
-				[]ResultSet{}}, nil
+			return &Plan{
+				Query:      q,
+				Path:       pfile,
+				Names:      []string{},
+				Bindings:   []map[string]string{},
+				ResultSets: []ResultSet{},
+				Fixtures:   []string{},
+				Cleanup:    "",
+			}, nil
 		}
 		e := fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
 		return plan, e
@@ -119,10 +134,28 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	var current_map map[string]string
 	var current_name string
 
+	var fixtures []string
+	var cleanup CleanupStrategy
+
 	for _, key := range v.AllKeys() {
 		dots := strings.Split(key, ".") // we expect a single level
-		value := v.GetString(key)
 
+		// Handle top-level fields
+		if len(dots) == 1 {
+			if key == "cleanup" {
+				cleanup = CleanupStrategy(v.GetString(key))
+			}
+			continue
+		}
+
+		// Handle fixtures array
+		if dots[0] == "fixtures" {
+			fixtures = append(fixtures, v.GetString(key))
+			continue
+		}
+
+		// Handle test bindings
+		value := v.GetString(key)
 		if current_name == "" || current_name != dots[0] {
 			if current_name != "" {
 				bindings = append(bindings, current_map)
@@ -133,10 +166,22 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 		}
 		current_map[dots[1]] = value
 	}
-	// don't forget to finish the current map when out of the loop
-	bindings = append(bindings, current_map)
 
-	return &Plan{q, pfile, names, bindings, []ResultSet{}}, nil
+	if current_map != nil {
+		bindings = append(bindings, current_map)
+	}
+
+	planWithFixtures := &Plan{
+		Query:      q,
+		Path:       pfile,
+		Names:      names,
+		Bindings:   bindings,
+		ResultSets: []ResultSet{},
+		Fixtures:   fixtures,
+		Cleanup:    cleanup,
+	}
+
+	return planWithFixtures, nil
 }
 
 // Executes a plan and returns the filepath where the output has been

@@ -15,8 +15,9 @@ import (
 // also remember the code root directory, which as of now is always either
 // ./ or the -C command line parameter.
 type config struct {
-	Root  string
-	PgUri string
+	Root        string
+	PgUri       string
+	UseFixtures bool `yaml:"use_fixtures"`
 }
 
 func (s *Suite) getRegressConfigFile() string {
@@ -38,12 +39,15 @@ func (s *Suite) createRegressDir() error {
 	return nil
 }
 
-func (s *Suite) setupConfig(pguri string) {
+func (s *Suite) setupConfig(pguri string, useFixtures bool) {
 	v := viper.New()
 	configFile := s.getRegressConfigFile()
 
 	v.Set("Root", s.Root)
 	v.Set("pguri", pguri)
+	if useFixtures {
+		v.Set("use_fixtures", true)
+	}
 
 	fmt.Printf("Creating configuration file '%s'\n", configFile)
 	v.WriteConfigAs(configFile)
@@ -67,4 +71,22 @@ func (s *Suite) readConfig() (config, error) {
 	v.Unmarshal(&config)
 
 	return config, nil
+}
+
+// ReadConfig reads the configuration from the regress.yaml file
+func ReadConfig(root string) (config, error) {
+	var cfg config
+	v := viper.New()
+	v.SetConfigType("yaml")
+	configFile := filepath.Join(root, "regresql", "regress.yaml")
+
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return cfg, fmt.Errorf("failed to read config '%s': %w", configFile, err)
+	}
+
+	v.ReadConfig(bytes.NewBuffer(data))
+	v.Unmarshal(&cfg)
+
+	return cfg, nil
 }

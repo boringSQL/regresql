@@ -11,20 +11,20 @@ import (
 var (
 	updateCwd       string
 	updateRunFilter string
-)
 
-// updateCmd represents the update command
-var updateCmd = &cobra.Command{
-	Use:   "update [flags]",
-	Short: "Creates or updates the expected output files",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(updateCwd); err != nil {
-			fmt.Print(err.Error())
-			os.Exit(1)
-		}
-		regresql.Update(updateCwd, updateRunFilter)
-	},
-}
+	// updateCmd represents the update command
+	updateCmd = &cobra.Command{
+		Use:   "update [flags]",
+		Short: "Creates or updates the expected output files",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(updateCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			regresql.Update(updateCwd, updateRunFilter)
+		},
+	}
+)
 
 func init() {
 	RootCmd.AddCommand(updateCmd)

@@ -11,20 +11,20 @@ import (
 var (
 	planCwd       string
 	planRunFilter string
-)
 
-// planCmd represents the plan command
-var planCmd = &cobra.Command{
-	Use:   "plan [flags]",
-	Short: "Creates missing plans for new queries",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(planCwd); err != nil {
-			fmt.Print(err.Error())
-			os.Exit(1)
-		}
-		regresql.PlanQueries(planCwd, planRunFilter)
-	},
-}
+	// planCmd represents the plan command
+	planCmd = &cobra.Command{
+		Use:   "plan [flags]",
+		Short: "Creates missing plans for new queries",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(planCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			regresql.PlanQueries(planCwd, planRunFilter)
+		},
+	}
+)
 
 func init() {
 	RootCmd.AddCommand(planCmd)

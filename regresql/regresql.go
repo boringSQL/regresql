@@ -13,7 +13,7 @@ in search of *.sql files, and creating the associated empty plan files. If
 the plan files already exists, we simply skip them, thus allowing to run
 init again on an existing repository to create missing plan files.
 */
-func Init(root string, pguri string) {
+func Init(root string, pguri string, useFixtures bool) {
 	if err := TestConnectionString(pguri); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(2)
@@ -22,7 +22,7 @@ func Init(root string, pguri string) {
 	suite := Walk(root)
 
 	suite.createRegressDir()
-	suite.setupConfig(pguri)
+	suite.setupConfig(pguri, useFixtures)
 
 	if err := suite.initRegressHierarchy(); err != nil {
 		fmt.Print(err.Error())
@@ -101,7 +101,7 @@ func Update(root string, runFilter string) {
 		os.Exit(2)
 	}
 
-	if err := suite.createExpectedResults(config.PgUri); err != nil {
+	if err := suite.createExpectedResults(config.PgUri, config.UseFixtures); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(12)
 	}

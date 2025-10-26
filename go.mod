@@ -4,6 +4,7 @@ go 1.25.2
 
 require (
 	github.com/boringsql/queries v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mndrix/tap-go v0.0.0-20171203230836-629fa407e90b
@@ -11,6 +12,7 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
 	github.com/theherk/viper v0.0.0-20171202031228-e0502e82247d
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

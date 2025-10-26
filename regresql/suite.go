@@ -33,25 +33,27 @@ command and shows our structure organisation:
         genre-tracks.sql
 
 */
-type Suite struct {
-	Root        string
-	RegressDir  string
-	Dirs        []Folder
-	PlanDir     string
-	ExpectedDir string
-	OutDir      string
-	BaselineDir string
-	runFilter   string
-}
+type (
+	Suite struct {
+		Root        string
+		RegressDir  string
+		Dirs        []Folder
+		PlanDir     string
+		ExpectedDir string
+		OutDir      string
+		BaselineDir string
+		runFilter   string
+	}
 
-/*
-Folder implements a directory from the source repository wherein we found
-some SQL files. Folder are only implemented as part of a Suite instance.
-*/
-type Folder struct {
-	Dir   string
-	Files []string
-}
+	/*
+		Folder implements a directory from the source repository wherein we found
+		some SQL files. Folder are only implemented as part of a Suite instance.
+	*/
+	Folder struct {
+		Dir   string
+		Files []string
+	}
+)
 
 // newSuite creates a new Suite instance
 func newSuite(root string) *Suite {
@@ -197,13 +199,24 @@ func (s *Suite) initRegressHierarchy() error {
 
 // createExpectedResults walks the s Suite instance and runs its queries,
 // storing the results in the expected files.
-func (s *Suite) createExpectedResults(pguri string) error {
+func (s *Suite) createExpectedResults(pguri string, useFixtures bool) error {
 	db, err := sql.Open("postgres", pguri)
 
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
+
+	var fixtureManager *FixtureManager
+	if useFixtures {
+		fixtureManager, err = NewFixtureManager(s.Root, db)
+		if err != nil {
+			return fmt.Errorf("Failed to create fixture manager: %w", err)
+		}
+		if err := fixtureManager.IntrospectSchema(); err != nil {
+			return fmt.Errorf("Failed to introspect schema: %w", err)
+		}
+	}
 
 	fmt.Println("Writing expected Result Sets:")
 
@@ -238,10 +251,42 @@ func (s *Suite) createExpectedResults(pguri string) error {
 				if err != nil {
 					return err
 				}
+
+				// Apply fixtures if configured
+				if useFixtures && len(p.Fixtures) > 0 {
+					if err := fixtureManager.BeginTransaction(); err != nil {
+						return fmt.Errorf("Failed to begin transaction for fixtures: %w", err)
+					}
+					if err := fixtureManager.ApplyFixtures(p.Fixtures); err != nil {
+						fixtureManager.Rollback()
+						return fmt.Errorf("Failed to apply fixtures: %w", err)
+					}
+				}
+
 				if err := p.Execute(db); err != nil {
+					if useFixtures && len(p.Fixtures) > 0 {
+						fixtureManager.Rollback()
+					}
 					return err
 				}
-				p.WriteResultSets(edir)
+
+				if err := p.WriteResultSets(edir); err != nil {
+					if useFixtures && len(p.Fixtures) > 0 {
+						fixtureManager.Rollback()
+					}
+					return err
+				}
+
+				// Cleanup fixtures
+				if useFixtures && len(p.Fixtures) > 0 {
+					fixture, _ := fixtureManager.LoadFixture(p.Fixtures[0])
+					if p.Cleanup != "" {
+						fixture.Cleanup = p.Cleanup
+					}
+					if err := fixtureManager.Cleanup(fixture); err != nil {
+						return fmt.Errorf("Failed to cleanup fixtures: %w", err)
+					}
+				}
 
 				for _, rs := range p.ResultSets {
 					fmt.Printf("    %s\n", filepath.Base(rs.Filename))
@@ -262,6 +307,15 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
+
+	fixtureManager, err := NewFixtureManager(s.Root, db)
+	if err != nil {
+		return fmt.Errorf("Failed to create fixture manager: %w", err)
+	}
+
+	if err := fixtureManager.IntrospectSchema(); err != nil {
+		return fmt.Errorf("Failed to introspect schema: %w", err)
+	}
 
 	w, close, err := getWriter(outputPath)
 	if err != nil {
@@ -303,16 +357,38 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 				if err != nil {
 					return err
 				}
+
+				if len(p.Fixtures) > 0 {
+					if err := fixtureManager.BeginTransaction(); err != nil {
+						return fmt.Errorf("Failed to begin transaction for fixtures: %w", err)
+					}
+
+					if err := fixtureManager.ApplyFixtures(p.Fixtures); err != nil {
+						fixtureManager.Rollback()
+						return fmt.Errorf("Failed to apply fixtures: %w", err)
+					}
+				}
+
 				if err := p.Execute(db); err != nil {
+					if len(p.Fixtures) > 0 {
+						fixtureManager.Rollback()
+					}
 					return err
 				}
+
 				if err := p.WriteResultSets(odir); err != nil {
+					if len(p.Fixtures) > 0 {
+						fixtureManager.Rollback()
+					}
 					return err
 				}
 
 				for _, r := range p.CompareResultSetsToResults(s.RegressDir, edir) {
 					summary.AddResult(r)
 					if err := formatter.AddResult(r, w); err != nil {
+						if len(p.Fixtures) > 0 {
+							fixtureManager.Rollback()
+						}
 						return err
 					}
 				}
@@ -321,8 +397,21 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					for _, r := range p.CompareBaselinesToResults(bdir, db, DefaultCostThresholdPercent) {
 						summary.AddResult(r)
 						if err := formatter.AddResult(r, w); err != nil {
+							if len(p.Fixtures) > 0 {
+								fixtureManager.Rollback()
+							}
 							return err
 						}
+					}
+				}
+
+				if len(p.Fixtures) > 0 {
+					fixture, _ := fixtureManager.LoadFixture(p.Fixtures[0])
+					if p.Cleanup != "" {
+						fixture.Cleanup = p.Cleanup
+					}
+					if err := fixtureManager.Cleanup(fixture); err != nil {
+						return fmt.Errorf("Failed to cleanup fixtures: %w", err)
 					}
 				}
 			}

@@ -13,19 +13,19 @@ var (
 	testRunFilter  string
 	testFormat     string
 	testOutputPath string
-)
 
-var testCmd = &cobra.Command{
-	Use:   "test [flags]",
-	Short: "Run regression tests for your SQL queries",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(testCwd); err != nil {
-			fmt.Print(err.Error())
-			os.Exit(1)
-		}
-		regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath)
-	},
-}
+	testCmd = &cobra.Command{
+		Use:   "test [flags]",
+		Short: "Run regression tests for your SQL queries",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(testCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath)
+		},
+	}
+)
 
 func init() {
 	RootCmd.AddCommand(testCmd)

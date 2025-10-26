@@ -8,23 +8,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Command Flags
 var (
+	// Command Flags
 	cwd string
-)
 
-// listCmd represents the list command
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "list candidates SQL files",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := checkDirectory(cwd); err != nil {
-			fmt.Print(err.Error())
-			os.Exit(1)
-		}
-		regresql.List(cwd)
-	},
-}
+	// listCmd represents the list command
+	listCmd = &cobra.Command{
+		Use:   "list",
+		Short: "list candidates SQL files",
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(cwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			regresql.List(cwd)
+		},
+	}
+)
 
 func init() {
 	RootCmd.AddCommand(listCmd)
