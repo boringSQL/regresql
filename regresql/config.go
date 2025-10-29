@@ -17,7 +17,12 @@ import (
 type config struct {
 	Root        string
 	PgUri       string
-	UseFixtures bool `yaml:"use_fixtures"`
+	UseFixtures bool               `yaml:"use_fixtures"`
+	PlanQuality *PlanQualityGlobal `yaml:"plan_quality,omitempty"`
+}
+
+type PlanQualityGlobal struct {
+	IgnoreSeqScanTables []string `yaml:"ignore_seqscan_tables,omitempty"`
 }
 
 func (s *Suite) getRegressConfigFile() string {
@@ -27,7 +32,6 @@ func (s *Suite) getRegressConfigFile() string {
 func (s *Suite) createRegressDir() error {
 	stat, err := os.Stat(s.RegressDir)
 	if err != nil || !stat.IsDir() {
-		// Only create regressdir when it doesn't exists already
 		fmt.Printf("Creating directory '%s'\n", s.RegressDir)
 		err := os.Mkdir(s.RegressDir, 0755)
 		if err != nil {
@@ -89,4 +93,17 @@ func ReadConfig(root string) (config, error) {
 	v.Unmarshal(&cfg)
 
 	return cfg, nil
+}
+
+var cachedConfig *config
+
+func SetGlobalConfig(cfg config) {
+	cachedConfig = &cfg
+}
+
+func GetIgnoredSeqScanTables() []string {
+	if cachedConfig == nil || cachedConfig.PlanQuality == nil {
+		return nil
+	}
+	return cachedConfig.PlanQuality.IgnoreSeqScanTables
 }

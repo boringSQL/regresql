@@ -15,13 +15,18 @@ import (
 
 type (
 	Plan struct {
-		Query      *Query
-		Path       string
-		Names      []string
-		Bindings   []map[string]string
-		ResultSets []ResultSet
-		Fixtures   []string        `yaml:"fixtures,omitempty" json:"fixtures,omitempty"`
-		Cleanup    CleanupStrategy `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
+		Query        *Query
+		Path         string
+		Names        []string
+		Bindings     []map[string]string
+		ResultSets   []ResultSet
+		Fixtures     []string          `yaml:"fixtures,omitempty" json:"fixtures,omitempty"`
+		Cleanup      CleanupStrategy   `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
+		PlanQuality  *PlanQualityConfig `yaml:"plan_quality,omitempty" json:"plan_quality,omitempty"`
+	}
+
+	PlanQualityConfig struct {
+		WarnOnSeqScan bool `yaml:"warn_on_seqscan" json:"warn_on_seqscan"`
 	}
 
 	TestCase struct {
@@ -94,7 +99,6 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
 		if len(q.Args) == 0 {
-			// no Params, no Plan file, it's good
 			return &Plan{
 				Query:      q,
 				Path:       pfile,
@@ -138,9 +142,8 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	var cleanup CleanupStrategy
 
 	for _, key := range v.AllKeys() {
-		dots := strings.Split(key, ".") // we expect a single level
+		dots := strings.Split(key, ".")
 
-		// Handle top-level fields
 		if len(dots) == 1 {
 			if key == "cleanup" {
 				cleanup = CleanupStrategy(v.GetString(key))
@@ -148,13 +151,11 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 			continue
 		}
 
-		// Handle fixtures array
 		if dots[0] == "fixtures" {
 			fixtures = append(fixtures, v.GetString(key))
 			continue
 		}
 
-		// Handle test bindings
 		value := v.GetString(key)
 		if current_name == "" || current_name != dots[0] {
 			if current_name != "" {
@@ -196,7 +197,6 @@ func (p *Plan) Execute(db *sql.DB) error {
 		return nil
 	}
 
-	// general case, with a plan and a set of Bindings to go through
 	p.ResultSets = make([]ResultSet, len(p.Bindings))
 
 	for i, bindings := range p.Bindings {

@@ -17,42 +17,100 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 	switch r.Status {
 	case "passed":
 		fmt.Fprintf(w, "✓ %s (%.2fs)\n", r.Name, r.Duration)
+		f.printWarnings(r.PlanWarnings, w)
+
 	case "failed":
 		fmt.Fprintf(w, "✗ %s (%.2fs)\n", r.Name, r.Duration)
 		if r.Type == "cost" {
-			fmt.Fprintf(w, "  Expected cost: %.2f\n", r.ExpectedCost)
-			fmt.Fprintf(w, "  Actual cost:   %.2f\n", r.ActualCost)
-			fmt.Fprintln(w)
-			fmt.Fprintln(w, "  Likely cause: Missing index or outdated statistics")
-		} else if r.Type == "output" && r.Diff != "" {
-			lines := strings.Split(r.Diff, "\n")
-			shown := 0
-			for _, line := range lines {
-				if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-					if shown < 5 {
-						fmt.Fprintf(w, "  %s\n", line)
-						shown++
-					}
-				} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
-					if shown < 5 {
-						fmt.Fprintf(w, "  %s\n", line)
-						shown++
-					}
-				}
-			}
-			if shown >= 5 {
-				fmt.Fprintln(w, "  ...")
-			}
+			f.printCostFailure(r, w)
+		} else if r.Type == "output" {
+			f.printOutputDiff(r, w)
 		}
 		if r.Error != "" {
 			fmt.Fprintf(w, "  Error: %s\n", r.Error)
 		}
 		fmt.Fprintln(w)
+
+	case "warning":
+		fmt.Fprintf(w, "⚠️  %s (%.2fs)\n", r.Name, r.Duration)
+		f.printWarnings(r.PlanWarnings, w)
+		fmt.Fprintln(w)
+
 	case "skipped":
-		// Don't show skipped in console
 		return nil
 	}
 	return nil
+}
+
+func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
+	fmt.Fprintf(w, "  Expected cost: %.2f\n", r.ExpectedCost)
+	fmt.Fprintf(w, "  Actual cost:   %.2f (+%.1f%%)\n", r.ActualCost, r.PercentIncrease)
+	fmt.Fprintln(w)
+
+	if len(r.PlanRegressions) > 0 {
+		f.printPlanRegressions(r.PlanRegressions, w)
+	} else if !r.PlanChanged {
+		fmt.Fprintln(w, "  Likely cause: Data distribution changed or outdated statistics")
+		fmt.Fprintln(w, "  Try: ANALYZE table_name;")
+	}
+}
+
+func (f *ConsoleFormatter) printPlanRegressions(regressions []PlanRegression, w io.Writer) {
+	hasCritical := hasAnyCritical(regressions)
+	if hasCritical {
+		fmt.Fprintln(w, "  ⚠️  PLAN REGRESSION DETECTED:")
+	}
+
+	for _, reg := range regressions {
+		symbol := GetSeveritySymbol(reg.Severity)
+		if reg.Table != "" {
+			fmt.Fprintf(w, "  %s Table '%s': %s → %s\n", symbol, reg.Table, reg.OldScan, reg.NewScan)
+		} else {
+			fmt.Fprintf(w, "  %s %s\n", symbol, reg.Message)
+		}
+
+		if reg.Severity == "critical" && len(reg.Recommendations) > 0 {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, "  Recommendations:")
+			for _, rec := range reg.Recommendations {
+				fmt.Fprintf(w, "  %s\n", rec)
+			}
+		}
+	}
+	fmt.Fprintln(w)
+}
+
+func (f *ConsoleFormatter) printOutputDiff(r TestResult, w io.Writer) {
+	if r.Diff == "" {
+		return
+	}
+
+	lines := strings.Split(r.Diff, "\n")
+	shown := 0
+	for _, line := range lines {
+		if shown >= 5 {
+			break
+		}
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") ||
+			strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			fmt.Fprintf(w, "  %s\n", line)
+			shown++
+		}
+	}
+	if shown >= 5 {
+		fmt.Fprintln(w, "  ...")
+	}
+}
+
+func (f *ConsoleFormatter) printWarnings(warnings []PlanWarning, w io.Writer) {
+	for _, warning := range warnings {
+		if warning.Severity == "warning" {
+			fmt.Fprintf(w, "  ⚠️  %s\n", warning.Message)
+			if warning.Suggestion != "" {
+				fmt.Fprintf(w, "    Suggestion: %s\n", warning.Suggestion)
+			}
+		}
+	}
 }
 
 func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
@@ -66,6 +124,15 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 		fmt.Fprintf(w, "Results: %d passed (%.2fs)\n", s.Passed, s.Duration)
 	}
 	return nil
+}
+
+func hasAnyCritical(regressions []PlanRegression) bool {
+	for _, reg := range regressions {
+		if reg.Severity == "critical" {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {

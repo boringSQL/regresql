@@ -18,9 +18,10 @@ const DefaultCostThresholdPercent = 10.0
 
 // Baseline stores the EXPLAIN analysis results for a query
 type Baseline struct {
-	Query     string         `json:"query"`
-	Timestamp string         `json:"timestamp"`
-	Plan      map[string]any `json:"plan"`
+	Query         string          `json:"query"`
+	Timestamp     string          `json:"timestamp"`
+	Plan          map[string]any  `json:"plan"`
+	PlanSignature *PlanSignature  `json:"plan_signature,omitempty"` // Optional for backwards compatibility
 }
 
 // GetBaselinePath returns the path where baseline JSON file should be stored
@@ -29,7 +30,6 @@ func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
 	baselinePath = strings.TrimSuffix(baselinePath, filepath.Ext(baselinePath))
 	baselinePath = baselinePath + "_" + q.Name
 
-	// If there's a binding name, add it to the filename
 	if bindingName != "" {
 		baselinePath = baselinePath + "." + bindingName
 	}
@@ -84,7 +84,6 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 		}
 	}
 
-	// Apply fixtures if configured
 	if fixtureManager != nil && len(plan.Fixtures) > 0 {
 		if err := fixtureManager.BeginTransaction(); err != nil {
 			return fmt.Errorf("failed to begin transaction for fixtures: %w", err)
@@ -95,7 +94,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 		}
 	}
 
-	baselines, err := plan.CreateBaselines(db)
+	baselines, fullPlans, err := plan.CreateBaselines(db)
 	if err != nil {
 		if fixtureManager != nil && len(plan.Fixtures) > 0 {
 			fixtureManager.Rollback()
@@ -105,7 +104,11 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 
 	for i, baseline := range baselines {
 		baselinePath := getBaselinePath(q, baselineDir, plan.Names[i])
-		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan); err != nil {
+		var fullPlan map[string]any
+		if i < len(fullPlans) {
+			fullPlan = fullPlans[i]
+		}
+		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan, fullPlan); err != nil {
 			if fixtureManager != nil && len(plan.Fixtures) > 0 {
 				fixtureManager.Rollback()
 			}
@@ -113,7 +116,6 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 		}
 	}
 
-	// Cleanup fixtures
 	if fixtureManager != nil && len(plan.Fixtures) > 0 {
 		fixture, _ := fixtureManager.LoadFixture(plan.Fixtures[0])
 		if plan.Cleanup != "" {
@@ -127,11 +129,23 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 	return nil
 }
 
-func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any) error {
+func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any, fullExplainPlan map[string]any) error {
+	var planSignature *PlanSignature
+	if fullExplainPlan != nil {
+		sig, err := ExtractPlanSignature(fullExplainPlan)
+		if err != nil {
+			// Log warning but don't fail - plan signature is optional
+			fmt.Printf("  Warning: failed to extract plan signature for %s: %v\n", queryName, err)
+		} else {
+			planSignature = sig
+		}
+	}
+
 	baseline := Baseline{
-		Query:     queryName,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Plan:      filteredPlan,
+		Query:         queryName,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Plan:          filteredPlan,
+		PlanSignature: planSignature,
 	}
 
 	jsonBytes, err := json.MarshalIndent(baseline, "", "  ")
@@ -213,7 +227,6 @@ func BaselineQueries(root string, runFilter string) {
 			}
 
 			for _, q := range queries {
-				// Skip if the query doesn't match the run filter
 				if !suite.matchesRunFilter(name, q.Name) {
 					continue
 				}

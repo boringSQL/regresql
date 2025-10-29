@@ -66,11 +66,7 @@ func toFloat64(val any) float64 {
 	}
 }
 
-/*
-CompareResultSetsToResults compares result sets and returns TestResult structs
-instead of writing to TAP output. This is used by the formatter system.
-*/
-func (p *Plan) CompareResultSetsToResults(regressDir string, expectedDir string) []TestResult {
+func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []TestResult {
 	results := make([]TestResult, 0, len(p.ResultSets))
 
 	for i, rs := range p.ResultSets {
@@ -78,18 +74,14 @@ func (p *Plan) CompareResultSetsToResults(regressDir string, expectedDir string)
 		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
 		expectedFilename := filepath.Join(expectedDir, filepath.Base(rs.Filename))
 
-		// Get binding info if available
-		var bindingName string
-		var bindings map[string]string
+		bindingName := "n/a"
 		if i < len(p.Names) {
 			bindingName = p.Names[i]
-		} else {
-			bindingName = "n/a"
 		}
+
+		bindings := map[string]string{}
 		if i < len(p.Bindings) {
 			bindings = p.Bindings[i]
-		} else {
-			bindings = map[string]string{}
 		}
 
 		diff, err := DiffFiles(expectedFilename, rs.Filename, 3)
@@ -121,90 +113,20 @@ func (p *Plan) CompareResultSetsToResults(regressDir string, expectedDir string)
 	return results
 }
 
-/*
-CompareBaselinesToResults compares baselines and returns TestResult structs
-instead of writing to TAP output. This is used by the formatter system.
-*/
 func (p *Plan) CompareBaselinesToResults(baselineDir string, db *sql.DB, thresholdPercent float64) []TestResult {
-	results := make([]TestResult, 0)
-
-	// For queries without parameters, check single baseline
 	if len(p.Query.Args) == 0 {
-		result := p.compareSingleBaselineToResult(baselineDir, "", db, thresholdPercent)
-		results = append(results, result)
-		return results
+		return []TestResult{p.compareBaseline(baselineDir, "", nil, db, thresholdPercent)}
 	}
 
-	// For queries with parameters, check baseline for each binding
+	results := make([]TestResult, 0, len(p.Bindings))
 	for i, bindings := range p.Bindings {
-		bindingName := p.Names[i]
-		result := p.compareBindingBaselineToResult(baselineDir, bindingName, bindings, db, thresholdPercent)
+		result := p.compareBaseline(baselineDir, p.Names[i], bindings, db, thresholdPercent)
 		results = append(results, result)
 	}
-
 	return results
 }
 
-// compareSingleBaselineToResult compares a single baseline and returns a TestResult
-func (p *Plan) compareSingleBaselineToResult(baselineDir string, bindingName string, db *sql.DB, thresholdPercent float64) TestResult {
-	start := time.Now()
-	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
-	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
-
-	result := TestResult{
-		Name:      testName,
-		Type:      "cost",
-		Threshold: thresholdPercent,
-	}
-
-	// Load baseline
-	baseline, err := LoadBaseline(baselinePath)
-	if err != nil {
-		result.Status = "skipped"
-		result.Error = "no baseline"
-		result.Duration = time.Since(start).Seconds()
-		return result
-	}
-
-	// Get current EXPLAIN cost
-	explainPlan, err := ExecuteExplain(db, p.Query.OrdinalQuery)
-	if err != nil {
-		result.Status = "failed"
-		result.Error = fmt.Sprintf("Failed to execute EXPLAIN: %s", err.Error())
-		result.Duration = time.Since(start).Seconds()
-		return result
-	}
-
-	// Extract costs
-	var actualCost float64
-	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
-		if cost, ok := planData["Total Cost"]; ok {
-			actualCost = toFloat64(cost)
-		}
-	}
-	baselineCost := toFloat64(baseline.Plan["total_cost"])
-
-	// Compare costs
-	isOk, percentageIncrease := CompareCost(actualCost, baselineCost, thresholdPercent)
-
-	result.ActualCost = actualCost
-	result.ExpectedCost = baselineCost
-	result.PercentIncrease = percentageIncrease
-	result.Duration = time.Since(start).Seconds()
-
-	if isOk {
-		result.Status = "passed"
-		result.Name = fmt.Sprintf("%s (%.2f <= %.2f * %.0f%%)", testName, actualCost, baselineCost, 100+thresholdPercent)
-	} else {
-		result.Status = "failed"
-		result.Name = fmt.Sprintf("%s (%.2f > %.2f * %.0f%%, +%.1f%%)", testName, actualCost, baselineCost, 100+thresholdPercent, percentageIncrease)
-	}
-
-	return result
-}
-
-// compareBindingBaselineToResult compares a baseline with bindings and returns a TestResult
-func (p *Plan) compareBindingBaselineToResult(baselineDir string, bindingName string, bindings map[string]string, db *sql.DB, thresholdPercent float64) TestResult {
+func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[string]string, db *sql.DB, thresholdPercent float64) TestResult {
 	start := time.Now()
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
@@ -216,7 +138,6 @@ func (p *Plan) compareBindingBaselineToResult(baselineDir string, bindingName st
 		Parameters: bindings,
 	}
 
-	// Load baseline
 	baseline, err := LoadBaseline(baselinePath)
 	if err != nil {
 		result.Status = "skipped"
@@ -225,11 +146,7 @@ func (p *Plan) compareBindingBaselineToResult(baselineDir string, bindingName st
 		return result
 	}
 
-	// Prepare query with bindings
-	sql, args := p.Query.Prepare(bindings)
-
-	// Get current EXPLAIN cost
-	explainPlan, err := ExecuteExplain(db, sql, args...)
+	explainPlan, err := p.executeExplainWithBindings(db, bindings)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("Failed to execute EXPLAIN: %s", err.Error())
@@ -237,22 +154,32 @@ func (p *Plan) compareBindingBaselineToResult(baselineDir string, bindingName st
 		return result
 	}
 
-	// Extract costs
-	var actualCost float64
-	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
-		if cost, ok := planData["Total Cost"]; ok {
-			actualCost = toFloat64(cost)
-		}
-	}
+	actualCost := extractTotalCost(explainPlan)
 	baselineCost := toFloat64(baseline.Plan["total_cost"])
-
-	// Compare costs
 	isOk, percentageIncrease := CompareCost(actualCost, baselineCost, thresholdPercent)
 
 	result.ActualCost = actualCost
 	result.ExpectedCost = baselineCost
 	result.PercentIncrease = percentageIncrease
 	result.Duration = time.Since(start).Seconds()
+
+	if baseline.PlanSignature != nil {
+		if currentSig, err := ExtractPlanSignature(explainPlan); err == nil {
+			result.PlanChanged = HasPlanChanged(baseline.PlanSignature, currentSig)
+			result.PlanRegressions = DetectPlanRegressions(baseline.PlanSignature, currentSig)
+
+			if hasCriticalRegression(result.PlanRegressions) {
+				isOk = false
+			}
+		}
+	}
+
+	if explainPlan != nil {
+		if currentSig, err := ExtractPlanSignature(explainPlan); err == nil {
+			opts := p.Query.GetRegressQLOptions()
+			result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables())
+		}
+	}
 
 	if isOk {
 		result.Status = "passed"
@@ -263,4 +190,30 @@ func (p *Plan) compareBindingBaselineToResult(baselineDir string, bindingName st
 	}
 
 	return result
+}
+
+func (p *Plan) executeExplainWithBindings(db *sql.DB, bindings map[string]string) (map[string]any, error) {
+	if bindings == nil {
+		return ExecuteExplain(db, p.Query.OrdinalQuery)
+	}
+	sql, args := p.Query.Prepare(bindings)
+	return ExecuteExplain(db, sql, args...)
+}
+
+func extractTotalCost(explainPlan map[string]any) float64 {
+	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
+		if cost, ok := planData["Total Cost"]; ok {
+			return toFloat64(cost)
+		}
+	}
+	return 0
+}
+
+func hasCriticalRegression(regressions []PlanRegression) bool {
+	for _, reg := range regressions {
+		if reg.Severity == "critical" {
+			return true
+		}
+	}
+	return false
 }

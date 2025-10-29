@@ -16,13 +16,42 @@ func (f *GitHubActionsFormatter) Start(w io.Writer) error {
 func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 	switch r.Status {
 	case "passed":
-		// GitHub Actions shows passed tests as notice (optional)
-		// We'll keep it quiet for passed tests
+		// Show plan warnings even for passed tests
+		if len(r.PlanWarnings) > 0 {
+			for _, warning := range r.PlanWarnings {
+				if warning.Severity == "warning" {
+					msg := strings.ReplaceAll(warning.Message, "%", "%%")
+					fmt.Fprintf(w, "::warning::%s - %s\n", r.Name, msg)
+				}
+			}
+		}
 		return nil
 	case "failed":
 		if r.Type == "cost" {
-			fmt.Fprintf(w, "::error::Cost regression in %s: Expected %.2f, got %.2f (+%.1f%%)\n",
-				r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease)
+			// Check for plan regressions
+			hasCriticalRegression := false
+			var criticalMsg string
+
+			for _, reg := range r.PlanRegressions {
+				if reg.Severity == "critical" {
+					hasCriticalRegression = true
+					if reg.Table != "" {
+						criticalMsg = fmt.Sprintf(" - PLAN REGRESSION: Table '%s' changed from %s to %s",
+							reg.Table, reg.OldScan, reg.NewScan)
+					} else {
+						criticalMsg = fmt.Sprintf(" - PLAN REGRESSION: %s", reg.Message)
+					}
+					break
+				}
+			}
+
+			if hasCriticalRegression {
+				fmt.Fprintf(w, "::error::Cost regression in %s: Expected %.2f, got %.2f (+%.1f%%)%s\n",
+					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease, criticalMsg)
+			} else {
+				fmt.Fprintf(w, "::error::Cost regression in %s: Expected %.2f, got %.2f (+%.1f%%)\n",
+					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease)
+			}
 		} else if r.Type == "output" {
 			// Escape newlines and percent signs for GitHub Actions
 			diff := strings.ReplaceAll(r.Diff, "%", "%%")
@@ -31,6 +60,14 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 		}
 		if r.Error != "" {
 			fmt.Fprintf(w, "::error::%s: %s\n", r.Name, r.Error)
+		}
+	case "warning":
+		// Show plan quality warnings
+		if len(r.PlanWarnings) > 0 {
+			for _, warning := range r.PlanWarnings {
+				msg := strings.ReplaceAll(warning.Message, "%", "%%")
+				fmt.Fprintf(w, "::warning::%s - %s\n", r.Name, msg)
+			}
 		}
 	case "skipped":
 		fmt.Fprintf(w, "::warning::%s skipped: %s\n", r.Name, r.Error)

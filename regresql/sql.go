@@ -13,8 +13,9 @@ type (
 	}
 
 	RegressQLOptions struct {
-		NoTest     bool
-		NoBaseline bool
+		NoTest        bool
+		NoBaseline    bool
+		NoSeqScanWarn bool
 	}
 )
 
@@ -31,6 +32,8 @@ func (q *Query) GetRegressQLOptions() RegressQLOptions {
 			opts.NoTest = true
 		case "nobaseline":
 			opts.NoBaseline = true
+		case "noseqscanwarn":
+			opts.NoSeqScanWarn = true
 		}
 	}
 

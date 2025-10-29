@@ -24,6 +24,11 @@ type (
 		BaselineCost    float64
 		PercentIncrease float64
 		Error           string
+
+		// Plan analysis
+		PlanChanged     bool
+		PlanRegressions []PlanRegression
+		PlanWarnings    []PlanWarning
 	}
 )
 
@@ -115,33 +120,62 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 		baselineCost := toFloat64(baselines[i].Plan["total_cost"])
 		passed, percentIncrease := CompareCost(actualCost, baselineCost, thresholdPercent)
 
-		results[i] = CostResult{
+		result := CostResult{
 			TestName:        name,
 			Passed:          passed,
 			ActualCost:      actualCost,
 			BaselineCost:    baselineCost,
 			PercentIncrease: percentIncrease,
 		}
+
+		if baselines[i].PlanSignature != nil {
+			currentSig, err := ExtractPlanSignature(explainPlan)
+			if err == nil {
+				result.PlanChanged = HasPlanChanged(baselines[i].PlanSignature, currentSig)
+				result.PlanRegressions = DetectPlanRegressions(baselines[i].PlanSignature, currentSig)
+
+				for _, regression := range result.PlanRegressions {
+					if regression.Severity == "critical" {
+						result.Passed = false
+						break
+					}
+				}
+			}
+		}
+
+		// Detect quality issues (works even without baseline)
+		if explainPlan != nil {
+			currentSig, err := ExtractPlanSignature(explainPlan)
+			if err == nil {
+				opts := p.Query.GetRegressQLOptions()
+				ignoredTables := GetIgnoredSeqScanTables()
+				result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, ignoredTables)
+			}
+		}
+
+		results[i] = result
 	}
 
 	return results
 }
 
-func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, error) {
+func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, []map[string]any, error) {
 	baselines := make([]Baseline, len(p.Names))
+	fullPlans := make([]map[string]any, len(p.Names))
 
 	for i := range p.Names {
-		baseline, err := p.createSingleBaseline(db, i)
+		baseline, fullPlan, err := p.createSingleBaseline(db, i)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		baselines[i] = baseline
+		fullPlans[i] = fullPlan
 	}
 
-	return baselines, nil
+	return baselines, fullPlans, nil
 }
 
-func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, error) {
+func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, map[string]any, error) {
 	var explainPlan map[string]any
 	var err error
 
@@ -152,7 +186,7 @@ func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, error) {
 		explainPlan, err = ExecuteExplain(db, sql, args...)
 	}
 	if err != nil {
-		return Baseline{}, fmt.Errorf("failed to create baseline for %s: %w", p.Names[index], err)
+		return Baseline{}, nil, fmt.Errorf("failed to create baseline for %s: %w", p.Names[index], err)
 	}
 
 	filteredPlan := make(map[string]any)
@@ -168,5 +202,5 @@ func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, error) {
 		}
 	}
 
-	return Baseline{Query: p.Query.Name, Plan: filteredPlan}, nil
+	return Baseline{Query: p.Query.Name, Plan: filteredPlan}, explainPlan, nil
 }

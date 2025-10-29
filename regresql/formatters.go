@@ -10,8 +10,8 @@ import (
 type (
 	TestResult struct {
 		Name     string
-		Type     string // "output" or "cost"
-		Status   string // "passed", "failed", "skipped"
+		Type     string // "output", "cost", or "plan_quality"
+		Status   string // "passed", "failed", "skipped", "warning"
 		Duration float64
 		Error    string
 
@@ -23,6 +23,9 @@ type (
 		ActualCost      float64
 		PercentIncrease float64
 		Threshold       float64
+		PlanChanged      bool
+		PlanRegressions  []PlanRegression
+		PlanWarnings     []PlanWarning
 
 		// Diagnostics
 		QueryFile    string

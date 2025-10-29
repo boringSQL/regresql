@@ -131,6 +131,9 @@ func Test(root, runFilter, formatName, outputPath string) {
 		os.Exit(3)
 	}
 
+	// Cache config for plan quality analysis
+	SetGlobalConfig(config)
+
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(2)

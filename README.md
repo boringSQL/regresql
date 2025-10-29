@@ -121,14 +121,16 @@ SELECT ...;
 `-- metadata`: allows attaching metadata. Currently supported options:
 
 ```sql
--- regresql: notest       Skip running this query in tests
--- regresql: nobaseline   Skip creating a baseline for this query
+-- regresql: notest          Skip running this query in tests
+-- regresql: nobaseline      Skip creating a baseline for this query
+-- regresql: noseqscanwarn   Suppress sequential scan warnings for this query
 ```
 
 Multiple options can be combined, separated by commas:
 
 ```sql
 -- regresql: notest, nobaseline
+-- regresql: noseqscanwarn    # Useful for queries that intentionally scan entire tables
 ```
 
 It's also possible to use a snigle query in a file, without `--name` annotation, in which case the query is automatically named after the file name (without the .sql extension). For example file `my_query.sql`
