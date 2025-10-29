@@ -334,19 +334,43 @@ Running regression tests...
 ✓ album-by-artist_list-albums-by-artist.1.json (0.00s)
 ✓ album-by-artist_list-albums-by-artist.2.json (0.00s)
 ✓ album-by-artist_list-albums-by-artist.1.cost (22.09 <= 22.09 * 110%) (0.00s)
+  ⚠️  Sequential scan detected on table 'artist'
+    Suggestion: Consider adding an index if this table is large or this query is frequently executed
+  ⚠️  Nested loop join with sequential scan detected
+    Suggestion: Add index on join column to avoid repeated sequential scans
 ✓ album-by-artist_list-albums-by-artist.2.cost (22.09 <= 22.09 * 110%) (0.00s)
+  ⚠️  Sequential scan detected on table 'artist'
+    Suggestion: Consider adding an index if this table is large or this query is frequently executed
+  ⚠️  Nested loop join with sequential scan detected
+    Suggestion: Add index on join column to avoid repeated sequential scans
 ✓ album-tracks_list-tracks-by-albumid.1.json (0.00s)
 ✓ album-tracks_list-tracks-by-albumid.2.json (0.00s)
 ✓ album-tracks_list-tracks-by-albumid.1.cost (8.23 <= 8.23 * 110%) (0.00s)
 ✓ album-tracks_list-tracks-by-albumid.2.cost (8.23 <= 8.23 * 110%) (0.00s)
 ✓ artist_top-artists-by-album.1.json (0.00s)
 ✓ artist_top-artists-by-album.1.cost (35.70 <= 35.70 * 110%) (0.00s)
+  ⚠️  Multiple sequential scans detected on tables: album, artist
+    Suggestion: Review query and consider adding indexes on filtered/joined columns
 ✓ genre-topn_genre-top-n.top-1.json (0.00s)
 ✓ genre-topn_genre-top-n.top-3.json (0.00s)
 ✓ genre-topn_genre-top-n.top-1.cost (6610.59 <= 6610.59 * 110%) (0.00s)
+  ⚠️  Multiple sequential scans detected on tables: artist, genre
+    Suggestion: Review query and consider adding indexes on filtered/joined columns
+  ⚠️  Multiple sort operations detected (2 sorts)
+    Suggestion: Consider composite indexes for ORDER BY clauses to avoid sorting
+  ⚠️  Nested loop join with sequential scan detected
+    Suggestion: Add index on join column to avoid repeated sequential scans
 ✓ genre-topn_genre-top-n.top-3.cost (6610.59 <= 6610.59 * 110%) (0.00s)
+  ⚠️  Multiple sequential scans detected on tables: genre, artist
+    Suggestion: Review query and consider adding indexes on filtered/joined columns
+  ⚠️  Multiple sort operations detected (2 sorts)
+    Suggestion: Consider composite indexes for ORDER BY clauses to avoid sorting
+  ⚠️  Nested loop join with sequential scan detected
+    Suggestion: Add index on join column to avoid repeated sequential scans
 ✓ genre-tracks_tracks-by-genre.json (0.00s)
 ✓ genre-tracks_tracks-by-genre.cost (37.99 <= 37.99 * 110%) (0.00s)
+  ⚠️  Multiple sequential scans detected on tables: genre, track
+    Suggestion: Review query and consider adding indexes on filtered/joined columns
 Results: 16 passed (0.00s)
 ```
 
