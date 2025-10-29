@@ -6,14 +6,23 @@ import (
 	"strings"
 )
 
-type ConsoleFormatter struct{}
+type ConsoleFormatter struct{
+	lastQueryGroup string
+}
 
 func (f *ConsoleFormatter) Start(w io.Writer) error {
 	fmt.Fprintln(w, "\nRunning regression tests...\n")
+	f.lastQueryGroup = ""
 	return nil
 }
 
 func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
+	queryGroup := f.extractQueryGroup(r.Name)
+	if queryGroup != f.lastQueryGroup && f.lastQueryGroup != "" {
+		fmt.Fprintln(w)
+	}
+	f.lastQueryGroup = queryGroup
+
 	switch r.Status {
 	case "passed":
 		fmt.Fprintf(w, "✓ %s (%.2fs)\n", r.Name, r.Duration)
@@ -40,6 +49,14 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 		return nil
 	}
 	return nil
+}
+
+func (f *ConsoleFormatter) extractQueryGroup(testName string) string {
+	parts := strings.Split(testName, ".")
+	if len(parts) <= 1 {
+		return testName
+	}
+	return parts[0]
 }
 
 func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
@@ -114,6 +131,7 @@ func (f *ConsoleFormatter) printWarnings(warnings []PlanWarning, w io.Writer) {
 }
 
 func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
+	fmt.Fprintln(w)
 	if s.Failed > 0 || s.Skipped > 0 {
 		fmt.Fprintf(w, "Results: %d passed, %d failed", s.Passed, s.Failed)
 		if s.Skipped > 0 {
