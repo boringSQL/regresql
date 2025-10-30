@@ -255,6 +255,22 @@ RegreSQL needs the following files and directories to run:
     running the regression tests and the top level directory where to find
     the SQL files to test against.
 
+    Optional plan quality configuration:
+
+    ```yaml
+    pguri: "postgres://..."
+    root: "."
+
+    plan_quality:
+      ignore_seqscan_tables:
+        - genre
+        - artist
+        - media_type
+    ```
+
+    This allows you to suppress sequential scan warnings globally for small
+    dimension tables that are always seq scanned optimally.
+
   - `./regresql/expected/path/to/file_query-name.yaml`
 
     For each file *file.sql* found in your source tree, RegreSQL creates a
