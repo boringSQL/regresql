@@ -14,16 +14,24 @@ import (
 // Config structure is useful to store the PostgreSQL connection string, and
 // also remember the code root directory, which as of now is always either
 // ./ or the -C command line parameter.
-type config struct {
-	Root        string
-	PgUri       string
-	UseFixtures bool               `yaml:"use_fixtures"`
-	PlanQuality *PlanQualityGlobal `yaml:"plan_quality,omitempty"`
-}
+type (
+	config struct {
+		Root           string
+		PgUri          string
+		UseFixtures    bool                  `yaml:"use_fixtures"`
+		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
+		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
+	}
 
-type PlanQualityGlobal struct {
-	IgnoreSeqScanTables []string `yaml:"ignore_seqscan_tables,omitempty"`
-}
+	PlanQualityGlobal struct {
+		IgnoreSeqScanTables []string `yaml:"ignore_seqscan_tables,omitempty"`
+	}
+
+	DiffComparisonGlobal struct {
+		FloatTolerance float64 `yaml:"float_tolerance,omitempty"`
+		MaxSamples     int     `yaml:"max_samples,omitempty"`
+	}
+)
 
 func (s *Suite) getRegressConfigFile() string {
 	return filepath.Join(s.RegressDir, "regress.yaml")
@@ -106,4 +114,18 @@ func GetIgnoredSeqScanTables() []string {
 		return nil
 	}
 	return cachedConfig.PlanQuality.IgnoreSeqScanTables
+}
+
+func GetDiffConfig() *DiffConfig {
+	cfg := DefaultDiffConfig()
+	if cachedConfig != nil && cachedConfig.DiffComparison != nil {
+		dc := cachedConfig.DiffComparison
+		if dc.FloatTolerance > 0 {
+			cfg.FloatTolerance = dc.FloatTolerance
+		}
+		if dc.MaxSamples > 0 {
+			cfg.MaxSamples = dc.MaxSamples
+		}
+	}
+	return cfg
 }

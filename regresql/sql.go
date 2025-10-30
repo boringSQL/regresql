@@ -13,9 +13,10 @@ type (
 	}
 
 	RegressQLOptions struct {
-		NoTest        bool
-		NoBaseline    bool
-		NoSeqScanWarn bool
+		NoTest             bool
+		NoBaseline         bool
+		NoSeqScanWarn      bool
+		DiffFloatTolerance float64
 	}
 )
 
@@ -27,13 +28,21 @@ func (q *Query) GetRegressQLOptions() RegressQLOptions {
 	}
 
 	for _, part := range strings.Split(metadata, ",") {
-		switch strings.TrimSpace(strings.ToLower(part)) {
-		case "notest":
+		part = strings.TrimSpace(part)
+		partLower := strings.ToLower(part)
+
+		switch {
+		case partLower == "notest":
 			opts.NoTest = true
-		case "nobaseline":
+		case partLower == "nobaseline":
 			opts.NoBaseline = true
-		case "noseqscanwarn":
+		case partLower == "noseqscanwarn":
 			opts.NoSeqScanWarn = true
+		case strings.HasPrefix(partLower, "difffloattolerance:"):
+			// Parse DiffFloatTolerance:0.01
+			value := strings.TrimPrefix(part, "DiffFloatTolerance:")
+			value = strings.TrimPrefix(value, "difffloattolerance:")
+			fmt.Sscanf(value, "%f", &opts.DiffFloatTolerance)
 		}
 	}
 
