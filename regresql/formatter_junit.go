@@ -71,8 +71,32 @@ func (f *JUnitFormatter) Finish(s *TestSummary, w io.Writer) error {
 				msg = fmt.Sprintf("Cost increased by %.1f%% (expected: %.2f, actual: %.2f)",
 					r.PercentIncrease, r.ExpectedCost, r.ActualCost)
 			} else if r.Type == "output" {
-				msg = "Output differs from expected"
-				content = r.Diff
+				// Use structured diff for better message if available
+				if r.StructuredDiff != nil {
+					sd := r.StructuredDiff
+					switch sd.Type {
+					case DiffTypeOrdering:
+						msg = fmt.Sprintf("Same data (%d rows), different order", sd.ExpectedRows)
+					case DiffTypeRowCount:
+						if sd.RemovedRows > 0 {
+							msg = fmt.Sprintf("%d rows removed (expected %d, got %d)", sd.RemovedRows, sd.ExpectedRows, sd.ActualRows)
+						} else {
+							msg = fmt.Sprintf("%d rows added (expected %d, got %d)", sd.AddedRows, sd.ExpectedRows, sd.ActualRows)
+						}
+					case DiffTypeValues:
+						msg = fmt.Sprintf("%d rows differ (out of %d)", sd.ModifiedRows, sd.ExpectedRows)
+					case DiffTypeMultiple:
+						msg = fmt.Sprintf("%d added, %d removed, %d matching", sd.AddedRows, sd.RemovedRows, sd.MatchingRows)
+					default:
+						msg = "Output differs from expected"
+					}
+					// Include statistics in content
+					content = fmt.Sprintf("Expected: %d rows\nActual: %d rows\nMatching: %d rows\n\n%s",
+						sd.ExpectedRows, sd.ActualRows, sd.MatchingRows, r.Diff)
+				} else {
+					msg = "Output differs from expected"
+					content = r.Diff
+				}
 			}
 			tc.Failure = &JUnitFailure{
 				Message: msg,

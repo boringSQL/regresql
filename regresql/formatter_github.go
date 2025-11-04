@@ -53,10 +53,36 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease)
 			}
 		} else if r.Type == "output" {
-			// Escape newlines and percent signs for GitHub Actions
-			diff := strings.ReplaceAll(r.Diff, "%", "%%")
-			diff = strings.ReplaceAll(diff, "\n", "%0A")
-			fmt.Fprintf(w, "::error::Output mismatch in %s\n", r.Name)
+			// Use structured diff for better error message if available
+			if r.StructuredDiff != nil {
+				sd := r.StructuredDiff
+				var msg string
+				switch sd.Type {
+				case DiffTypeOrdering:
+					msg = fmt.Sprintf("Output mismatch in %s: Same data (%d rows), different order", r.Name, sd.ExpectedRows)
+				case DiffTypeRowCount:
+					if sd.RemovedRows > 0 {
+						msg = fmt.Sprintf("Output mismatch in %s: %d rows removed (expected %d, got %d)",
+							r.Name, sd.RemovedRows, sd.ExpectedRows, sd.ActualRows)
+					} else {
+						msg = fmt.Sprintf("Output mismatch in %s: %d rows added (expected %d, got %d)",
+							r.Name, sd.AddedRows, sd.ExpectedRows, sd.ActualRows)
+					}
+				case DiffTypeValues:
+					msg = fmt.Sprintf("Output mismatch in %s: %d rows differ (out of %d)",
+						r.Name, sd.ModifiedRows, sd.ExpectedRows)
+				case DiffTypeMultiple:
+					msg = fmt.Sprintf("Output mismatch in %s: %d added, %d removed, %d matching",
+						r.Name, sd.AddedRows, sd.RemovedRows, sd.MatchingRows)
+				default:
+					msg = fmt.Sprintf("Output mismatch in %s", r.Name)
+				}
+				msg = strings.ReplaceAll(msg, "%", "%%")
+				fmt.Fprintf(w, "::error::%s\n", msg)
+			} else {
+				// Fall back to generic message
+				fmt.Fprintf(w, "::error::Output mismatch in %s\n", r.Name)
+			}
 		}
 		if r.Error != "" {
 			fmt.Fprintf(w, "::error::%s: %s\n", r.Name, r.Error)

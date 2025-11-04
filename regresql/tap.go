@@ -2,7 +2,9 @@ package regresql
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -66,13 +68,34 @@ func toFloat64(val any) float64 {
 	}
 }
 
+func loadResultSet(filename string) (*ResultSet, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var rs ResultSet
+	if err := json.Unmarshal(data, &rs); err != nil {
+		return nil, err
+	}
+
+	return &rs, nil
+}
+
+func parseFloatOption(value string) float64 {
+	var f float64
+	fmt.Sscanf(value, "%f", &f)
+	return f
+}
+
 func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []TestResult {
 	results := make([]TestResult, 0, len(p.ResultSets))
+	diffConfig := GetDiffConfig()
 
-	for i, rs := range p.ResultSets {
+	for i, actualRS := range p.ResultSets {
 		start := time.Now()
-		testName := strings.TrimPrefix(rs.Filename, regressDir+"/out/")
-		expectedFilename := filepath.Join(expectedDir, filepath.Base(rs.Filename))
+		testName := strings.TrimPrefix(actualRS.Filename, regressDir+"/out/")
+		expectedFilename := filepath.Join(expectedDir, filepath.Base(actualRS.Filename))
 
 		bindingName := "n/a"
 		if i < len(p.Names) {
@@ -84,29 +107,58 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 			bindings = p.Bindings[i]
 		}
 
-		diff, err := DiffFiles(expectedFilename, rs.Filename, 3)
-		duration := time.Since(start).Seconds()
+		// Apply per-query diff options if available
+		queryDiffConfig := diffConfig
+		if p.Query != nil {
+			opts := p.Query.GetRegressQLOptions()
+			if opts.DiffFloatTolerance > 0 {
+				queryDiffConfig = &DiffConfig{
+					FloatTolerance: opts.DiffFloatTolerance,
+					MaxSamples:     diffConfig.MaxSamples,
+				}
+			}
+		}
 
 		result := TestResult{
 			Name:         testName,
 			Type:         "output",
-			Duration:     duration,
+			Duration:     0, // will be set at the end
 			QueryFile:    p.Query.Path,
 			BindingsFile: p.Path,
 			BindingName:  bindingName,
 			Parameters:   bindings,
 		}
 
+		// Try to load expected result set and perform semantic comparison
+		expectedRS, err := loadResultSet(expectedFilename)
 		if err != nil {
-			result.Status = "failed"
-			result.Error = fmt.Sprintf("Failed to compare results: %s", err.Error())
-		} else if diff != "" {
-			result.Status = "failed"
-			result.Diff = diff
+			// Fall back to text diff if we can't load expected as JSON
+			diff, diffErr := DiffFiles(expectedFilename, actualRS.Filename, 3)
+			if diffErr != nil {
+				result.Status = "failed"
+				result.Error = fmt.Sprintf("Failed to compare results: %s", diffErr.Error())
+			} else if diff != "" {
+				result.Status = "failed"
+				result.Diff = diff
+			} else {
+				result.Status = "passed"
+			}
 		} else {
-			result.Status = "passed"
+			// Perform semantic comparison
+			structuredDiff := CompareResultSets(expectedRS, &actualRS, queryDiffConfig)
+			result.StructuredDiff = structuredDiff
+
+			if !structuredDiff.Identical {
+				result.Status = "failed"
+				// Also generate text diff for backward compatibility
+				textDiff, _ := DiffFiles(expectedFilename, actualRS.Filename, 3)
+				result.Diff = textDiff
+			} else {
+				result.Status = "passed"
+			}
 		}
 
+		result.Duration = time.Since(start).Seconds()
 		results = append(results, result)
 	}
 

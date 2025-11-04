@@ -98,6 +98,13 @@ func (f *ConsoleFormatter) printPlanRegressions(regressions []PlanRegression, w 
 }
 
 func (f *ConsoleFormatter) printOutputDiff(r TestResult, w io.Writer) {
+	// Use structured diff if available
+	if r.StructuredDiff != nil {
+		f.printStructuredDiff(r.StructuredDiff, w)
+		return
+	}
+
+	// Fall back to text diff
 	if r.Diff == "" {
 		return
 	}
@@ -116,6 +123,91 @@ func (f *ConsoleFormatter) printOutputDiff(r TestResult, w io.Writer) {
 	}
 	if shown >= 5 {
 		fmt.Fprintln(w, "  ...")
+	}
+}
+
+func (f *ConsoleFormatter) printStructuredDiff(diff *StructuredDiff, w io.Writer) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  COMPARISON SUMMARY:")
+	fmt.Fprintf(w, "  ├─ Expected: %d rows\n", diff.ExpectedRows)
+	fmt.Fprintf(w, "  ├─ Actual:   %d rows\n", diff.ActualRows)
+
+	switch diff.Type {
+	case DiffTypeOrdering:
+		fmt.Fprintln(w, "  └─ Result:   Same data, different order")
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  ⚠️  Rows are identical but in different order.")
+		fmt.Fprintln(w, "  Consider adding ORDER BY clause to ensure deterministic results.")
+
+	case DiffTypeRowCount, DiffTypeMultiple:
+		if diff.RemovedRows > 0 && diff.AddedRows > 0 {
+			fmt.Fprintf(w, "  ├─ Matching: %d rows\n", diff.MatchingRows)
+			fmt.Fprintf(w, "  ├─ Added:    %d rows\n", diff.AddedRows)
+			fmt.Fprintf(w, "  └─ Removed:  %d rows\n", diff.RemovedRows)
+		} else if diff.RemovedRows > 0 {
+			fmt.Fprintf(w, "  └─ Result:   %d rows removed\n", diff.RemovedRows)
+		} else if diff.AddedRows > 0 {
+			fmt.Fprintf(w, "  └─ Result:   %d rows added\n", diff.AddedRows)
+		}
+
+		fmt.Fprintln(w)
+
+		if len(diff.RemovedSamples) > 0 {
+			fmt.Fprintf(w, "  REMOVED ROWS (showing %d of %d):\n", len(diff.RemovedSamples), diff.RemovedRows)
+			for _, row := range diff.RemovedSamples {
+				fmt.Fprintf(w, "  %s\n", f.formatRow(diff.Columns, row))
+			}
+			fmt.Fprintln(w)
+		}
+
+		if len(diff.AddedSamples) > 0 {
+			fmt.Fprintf(w, "  ADDED ROWS (showing %d of %d):\n", len(diff.AddedSamples), diff.AddedRows)
+			for _, row := range diff.AddedSamples {
+				fmt.Fprintf(w, "  %s\n", f.formatRow(diff.Columns, row))
+			}
+			fmt.Fprintln(w)
+		}
+
+	case DiffTypeValues:
+		fmt.Fprintf(w, "  ├─ Matching: %d rows\n", diff.MatchingRows)
+		fmt.Fprintf(w, "  └─ Modified: %d rows\n", diff.ModifiedRows)
+		fmt.Fprintln(w)
+
+		if len(diff.ModifiedSamples) > 0 {
+			fmt.Fprintf(w, "  MODIFIED ROWS (showing %d of %d):\n", len(diff.ModifiedSamples), diff.ModifiedRows)
+			for i, sample := range diff.ModifiedSamples {
+				fmt.Fprintf(w, "  Row #%d:\n", i+1)
+				fmt.Fprintf(w, "    Expected: %s\n", f.formatRow(diff.Columns, sample.ExpectedRow))
+				fmt.Fprintf(w, "    Actual:   %s\n", f.formatRow(diff.Columns, sample.ActualRow))
+			}
+		}
+	}
+}
+
+func (f *ConsoleFormatter) formatRow(columns []string, row []any) string {
+	pairs := make([]string, len(columns))
+	for i, col := range columns {
+		if i < len(row) {
+			pairs[i] = fmt.Sprintf("%s: %v", col, formatValue(row[i]))
+		}
+	}
+	return "{" + strings.Join(pairs, ", ") + "}"
+}
+
+func formatValue(v any) string {
+	if v == nil {
+		return "null"
+	}
+	switch val := v.(type) {
+	case string:
+		return fmt.Sprintf(`"%s"`, val)
+	case float64:
+		if val == float64(int64(val)) {
+			return fmt.Sprintf("%.0f", val)
+		}
+		return fmt.Sprintf("%.2f", val)
+	default:
+		return fmt.Sprintf("%v", val)
 	}
 }
 

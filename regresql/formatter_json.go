@@ -122,8 +122,25 @@ func formatTests(results []TestResult) []map[string]any {
 			}
 		}
 
-		if r.Type == "output" && r.Diff != "" {
-			test["diff"] = r.Diff
+		if r.Type == "output" {
+			if r.Diff != "" {
+				test["diff"] = r.Diff
+			}
+
+			// Add structured diff statistics if available
+			if r.StructuredDiff != nil {
+				sd := r.StructuredDiff
+				test["structured_diff"] = map[string]any{
+					"type":          string(sd.Type),
+					"identical":     sd.Identical,
+					"expected_rows": sd.ExpectedRows,
+					"actual_rows":   sd.ActualRows,
+					"matching_rows": sd.MatchingRows,
+					"added_rows":    sd.AddedRows,
+					"removed_rows":  sd.RemovedRows,
+					"modified_rows": sd.ModifiedRows,
+				}
+			}
 		}
 
 		tests = append(tests, test)

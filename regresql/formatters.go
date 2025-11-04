@@ -16,7 +16,8 @@ type (
 		Error    string
 
 		// Output comparisons
-		Diff string
+		Diff           string
+		StructuredDiff *StructuredDiff // nil if not computed
 
 		// Cost comparisons
 		ExpectedCost    float64
