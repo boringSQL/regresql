@@ -12,9 +12,33 @@ const defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123
 
 var (
 	emailPrefixes = []string{"user", "admin", "test", "info", "contact", "support", "hello"}
-	emailDomains  = []string{"example.com", "test.com", "email.com", "mail.com"}
-	firstNames    = []string{"John", "Jane", "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry"}
-	lastNames     = []string{"Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez"}
+	emailDomains  = []string{"example.com", "sql.test", "globex.test", "testify.example.org"}
+	firstNames    = []string{
+		"Aisha", "Amara", "Amelia", "Ananya", "Anastasia", "Antonio", "Arjun", "Astrid",
+		"Ayanna", "Camille", "Carmen", "Carlos", "Chen", "Diego", "Dimitri", "Elena",
+		"Emma", "Fatima", "Gabriela", "Giulia", "Greta", "Hans", "Hassan", "Henry",
+		"Hiroshi", "Ingrid", "Isabella", "Jabari", "James", "Jean", "Katarina", "Khalid",
+		"Kim", "Kofi", "Kwame", "Lars", "Layla", "Lee", "Lin", "Luca", "Lucia",
+		"Marco", "Marie", "Mateo", "Mei", "Miguel", "Ming", "Nguyen", "Nia", "Niklas",
+		"Oliver", "Omar", "Park", "Pierre", "Piotr", "Priya", "Raj", "Sakura", "Santiago",
+		"Sofia", "Sophia", "Thabo", "Valentina", "Viktor", "Wavey", "Wei", "William",
+		"Yuki", "Yusuf", "Zara", "Zofia", "Zuri",
+	}
+	lastNames = []string{
+		"Ahmed", "Ali", "Banda", "Becker", "Bernard", "Bianchi", "Brown", "Chen",
+		"Choi", "Colombo", "Davies", "Diallo", "Dubois", "Dupont", "Esposito", "Evans",
+		"Ferrari", "Fischer", "García", "González", "Gupta", "Hassan", "Huang", "Ibrahim",
+		"Ito", "Ivanov", "Johnson", "Jung", "Kamiński", "Kang", "Khalil", "Khan",
+		"Kim", "Kobayashi", "Kone", "Kowalczyk", "Kowalski", "Kumar", "Laurent", "Lebedev",
+		"Lee", "Leroy", "Li", "Liu", "López", "Mahmoud", "Mansour", "Martin",
+		"Martínez", "Mensah", "Meyer", "Mohamed", "Moreau", "Müller", "Mwangi", "Nakamura",
+		"Nkosi", "Nowak", "Okafor", "Park", "Patel", "Pérez", "Petrov", "Popov",
+		"Quoyle", "Ramírez", "Reddy", "Ricci", "Roberts", "Rodríguez", "Romano", "Rossi",
+		"Russo", "Sánchez", "Schmidt", "Schneider", "Sharma", "Sidorov", "Simon", "Singh",
+		"Smith", "Sokolov", "Suzuki", "Takahashi", "Tanaka", "Taylor", "Traore", "Verma",
+		"Wagner", "Wang", "Watanabe", "Weber", "Wilson", "Wiśniewski", "Wojciechowski", "Yamamoto",
+		"Yang", "Zhang", "Zhao",
+	}
 )
 
 type (
