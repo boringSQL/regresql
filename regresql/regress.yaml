@@ -1,0 +1,2 @@
+pguri: postgres://labs_app:can123do@192.168.139.28/users_demo
+root: .

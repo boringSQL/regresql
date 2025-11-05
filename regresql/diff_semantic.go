@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"time"
 )
 
 type (
@@ -172,11 +173,21 @@ func valuesEqual(a, b any, floatTolerance float64) bool {
 		return false
 	}
 
-	if floatTolerance > 0 {
-		if aNum, aOk := tryToFloat64(a); aOk {
-			if bNum, bOk := tryToFloat64(b); bOk {
+	// Always try numeric comparison when both values are numeric types
+	// This handles cases like int64 vs float64 regardless of tolerance setting
+	if aNum, aOk := tryToFloat64(a); aOk {
+		if bNum, bOk := tryToFloat64(b); bOk {
+			if floatTolerance > 0 {
 				return math.Abs(aNum-bNum) <= floatTolerance
 			}
+			return aNum == bNum
+		}
+	}
+
+	// Try timestamp comparison
+	if aTime, aOk := tryToTime(a); aOk {
+		if bTime, bOk := tryToTime(b); bOk {
+			return aTime.Equal(bTime)
 		}
 	}
 
@@ -202,6 +213,31 @@ func tryToFloat64(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// tryToTime attempts to convert a value to time.Time
+func tryToTime(v any) (time.Time, bool) {
+	switch val := v.(type) {
+	case time.Time:
+		return val, true
+	case string:
+		return toTime(val)
+	default:
+		return time.Time{}, false
+	}
+}
+
+// toTime attempts to parse a string as a timestamp in various formats
+func toTime(s string) (time.Time, bool) {
+	// Try RFC3339Nano first (most precise)
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, true
+	}
+	// Try RFC3339
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
 }
 
 func matchRowsUnordered(expected, actual *ResultSet, config *DiffConfig) (
