@@ -9,7 +9,7 @@ import (
 
 type ForeignKeyGenerator struct {
 	db      *sql.DB
-	cache   map[string][]interface{}
+	cache   map[string][]any
 	cacheMu sync.RWMutex
 	nextIdx map[string]int
 	idxMu   sync.Mutex
@@ -18,14 +18,14 @@ type ForeignKeyGenerator struct {
 func NewForeignKeyGenerator(db *sql.DB) *ForeignKeyGenerator {
 	return &ForeignKeyGenerator{
 		db:      db,
-		cache:   make(map[string][]interface{}),
+		cache:   make(map[string][]any),
 		nextIdx: make(map[string]int),
 	}
 }
 
 func (g *ForeignKeyGenerator) Name() string { return "fk" }
 
-func (g *ForeignKeyGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *ForeignKeyGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	if _, ok := params["table"]; !ok {
 		return fmt.Errorf("fk generator requires 'table' parameter")
 	}
@@ -43,7 +43,7 @@ func (g *ForeignKeyGenerator) Validate(params map[string]interface{}, column *Co
 	return nil
 }
 
-func (g *ForeignKeyGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *ForeignKeyGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	table, col := params["table"].(string), params["column"].(string)
 	strategy, _ := params["strategy"].(string)
 	if strategy == "" {
@@ -68,7 +68,7 @@ func (g *ForeignKeyGenerator) Generate(params map[string]interface{}, column *Co
 	}
 }
 
-func (g *ForeignKeyGenerator) getAvailableValues(table, column string) ([]interface{}, error) {
+func (g *ForeignKeyGenerator) getAvailableValues(table, column string) ([]any, error) {
 	key := table + "." + column
 
 	g.cacheMu.RLock()
@@ -85,9 +85,9 @@ func (g *ForeignKeyGenerator) getAvailableValues(table, column string) ([]interf
 	}
 	defer rows.Close()
 
-	var values []interface{}
+	var values []any
 	for rows.Next() {
-		var val interface{}
+		var val any
 		if err := rows.Scan(&val); err != nil {
 			return nil, fmt.Errorf("failed to scan %s.%s: %w", table, column, err)
 		}
@@ -105,7 +105,7 @@ func (g *ForeignKeyGenerator) getAvailableValues(table, column string) ([]interf
 	return values, nil
 }
 
-func (g *ForeignKeyGenerator) pickSequential(table, column string, values []interface{}) interface{} {
+func (g *ForeignKeyGenerator) pickSequential(table, column string, values []any) any {
 	key := table + "." + column
 
 	g.idxMu.Lock()
@@ -116,8 +116,8 @@ func (g *ForeignKeyGenerator) pickSequential(table, column string, values []inte
 	return values[idx]
 }
 
-func (g *ForeignKeyGenerator) extractWeights(params map[string]interface{}, count int) []float64 {
-	if w, ok := params["weights"].([]interface{}); ok {
+func (g *ForeignKeyGenerator) extractWeights(params map[string]any, count int) []float64 {
+	if w, ok := params["weights"].([]any); ok {
 		weights := make([]float64, len(w))
 		for i, v := range w {
 			switch val := v.(type) {
@@ -137,7 +137,7 @@ func (g *ForeignKeyGenerator) extractWeights(params map[string]interface{}, coun
 	return weights
 }
 
-func (g *ForeignKeyGenerator) pickWeighted(values []interface{}, weights []float64) interface{} {
+func (g *ForeignKeyGenerator) pickWeighted(values []any, weights []float64) any {
 	if len(weights) != len(values) {
 		return values[rand.Intn(len(values))]
 	}
@@ -160,7 +160,7 @@ func (g *ForeignKeyGenerator) pickWeighted(values []interface{}, weights []float
 
 func (g *ForeignKeyGenerator) ClearCache() {
 	g.cacheMu.Lock()
-	g.cache = make(map[string][]interface{})
+	g.cache = make(map[string][]any)
 	g.cacheMu.Unlock()
 
 	g.idxMu.Lock()

@@ -9,13 +9,13 @@ type (
 	// Generator generates data for column
 	Generator interface {
 		// Generate produces a value for the column based on params
-		Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error)
+		Generate(params map[string]any, column *ColumnInfo) (any, error)
 
 		// Name returns the generator's unique name
 		Name() string
 
 		// Validate checks if params are valid for this generator
-		Validate(params map[string]interface{}, column *ColumnInfo) error
+		Validate(params map[string]any, column *ColumnInfo) error
 	}
 
 	// GeneratorRegistry manages available generators
@@ -117,7 +117,7 @@ func (bg *BaseGenerator) Name() string {
 }
 
 // getParam retrieves a parameter value with type assertion
-func getParam[T any](params map[string]interface{}, key string, defaultValue T) T {
+func getParam[T any](params map[string]any, key string, defaultValue T) T {
 	if val, exists := params[key]; exists {
 		if typed, ok := val.(T); ok {
 			return typed
@@ -127,7 +127,7 @@ func getParam[T any](params map[string]interface{}, key string, defaultValue T) 
 }
 
 // getRequiredParam retrieves a required parameter or returns an error
-func getRequiredParam[T any](params map[string]interface{}, key string) (T, error) {
+func getRequiredParam[T any](params map[string]any, key string) (T, error) {
 	var zero T
 	val, exists := params[key]
 	if !exists {

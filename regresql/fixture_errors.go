@@ -27,7 +27,7 @@ func ErrFixtureNotFound(name string) error {
 }
 
 // ErrInvalidFixture creates an error for invalid fixture definitions
-func ErrInvalidFixture(format string, args ...interface{}) error {
+func ErrInvalidFixture(format string, args ...any) error {
 	return &FixtureError{
 		Message: fmt.Sprintf("invalid fixture: "+format, args...),
 	}

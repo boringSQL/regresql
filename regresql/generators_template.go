@@ -21,7 +21,7 @@ func NewTemplateGenerator(registry *GeneratorRegistry) *TemplateGenerator {
 
 func (g *TemplateGenerator) Name() string { return "template" }
 
-func (g *TemplateGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *TemplateGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	if _, ok := params["template"]; !ok {
 		return fmt.Errorf("template generator requires 'template' parameter")
 	}
@@ -33,9 +33,9 @@ func (g *TemplateGenerator) Validate(params map[string]interface{}, column *Colu
 		return fmt.Errorf("invalid template: %w", err)
 	}
 
-	if context, ok := params["context"].(map[string]interface{}); ok {
+	if context, ok := params["context"].(map[string]any); ok {
 		for key, spec := range context {
-			specMap, ok := spec.(map[string]interface{})
+			specMap, ok := spec.(map[string]any)
 			if !ok {
 				return fmt.Errorf("context.%s must be a map", key)
 			}
@@ -54,13 +54,13 @@ func (g *TemplateGenerator) Validate(params map[string]interface{}, column *Colu
 	return nil
 }
 
-func (g *TemplateGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *TemplateGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	tmplStr := params["template"].(string)
 
-	data := make(map[string]interface{})
-	if context, ok := params["context"].(map[string]interface{}); ok {
+	data := make(map[string]any)
+	if context, ok := params["context"].(map[string]any); ok {
 		for key, spec := range context {
-			specMap := spec.(map[string]interface{})
+			specMap := spec.(map[string]any)
 			genName := specMap["generator"].(string)
 
 			gen, err := g.registry.Get(genName)
@@ -134,7 +134,7 @@ func randomString(length int) string {
 	return string(result)
 }
 
-func choice(items ...interface{}) interface{} {
+func choice(items ...any) any {
 	if len(items) == 0 {
 		return ""
 	}

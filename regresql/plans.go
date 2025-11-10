@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	_ "github.com/lib/pq"
-	"github.com/theherk/viper" // fork with write support
+	"github.com/spf13/viper"
 )
 
 type (

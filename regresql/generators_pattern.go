@@ -16,7 +16,7 @@ func NewPatternGenerator(registry *GeneratorRegistry) *PatternGenerator {
 
 func (g *PatternGenerator) Name() string { return "pattern" }
 
-func (g *PatternGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *PatternGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	if _, ok := params["template"]; !ok {
 		return fmt.Errorf("pattern generator requires 'template' parameter")
 	}
@@ -24,7 +24,7 @@ func (g *PatternGenerator) Validate(params map[string]interface{}, column *Colum
 	template := params["template"].(string)
 	placeholders := g.extractPlaceholders(template)
 
-	subParams, ok := params["params"].(map[string]interface{})
+	subParams, ok := params["params"].(map[string]any)
 	if !ok && len(placeholders) > 0 {
 		return fmt.Errorf("pattern generator requires 'params' map for placeholders")
 	}
@@ -35,7 +35,7 @@ func (g *PatternGenerator) Validate(params map[string]interface{}, column *Colum
 			return fmt.Errorf("missing params definition for placeholder '%s'", ph)
 		}
 
-		specMap, ok := spec.(map[string]interface{})
+		specMap, ok := spec.(map[string]any)
 		if !ok {
 			return fmt.Errorf("params.%s must be a map", ph)
 		}
@@ -53,18 +53,18 @@ func (g *PatternGenerator) Validate(params map[string]interface{}, column *Colum
 	return nil
 }
 
-func (g *PatternGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *PatternGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	tmpl := params["template"].(string)
 	placeholders := g.extractPlaceholders(tmpl)
 	if len(placeholders) == 0 {
 		return tmpl, nil
 	}
 
-	subParams := params["params"].(map[string]interface{})
+	subParams := params["params"].(map[string]any)
 	result := tmpl
 
 	for _, ph := range placeholders {
-		spec := subParams[ph].(map[string]interface{})
+		spec := subParams[ph].(map[string]any)
 		gen, err := g.registry.Get(spec["generator"].(string))
 		if err != nil {
 			return nil, fmt.Errorf("generator '%s' not found: %w", spec["generator"], err)

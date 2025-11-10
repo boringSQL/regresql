@@ -15,7 +15,7 @@ type (
 
 	TableData struct {
 		Table string                   `yaml:"table" json:"table"`
-		Rows  []map[string]interface{} `yaml:"rows" json:"rows"`
+		Rows  []map[string]any `yaml:"rows" json:"rows"`
 	}
 
 	GenerateSpec struct {
@@ -26,7 +26,7 @@ type (
 
 	GeneratorSpec struct {
 		Generator string                 `yaml:"generator" json:"generator"`
-		Params    map[string]interface{} `yaml:",inline" json:",inline"`
+		Params    map[string]any `yaml:",inline" json:",inline"`
 	}
 
 	SQLSpec struct {

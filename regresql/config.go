@@ -3,12 +3,10 @@ package regresql
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	// "github.com/spf13/viper"
-	"github.com/theherk/viper" // fork with write support
+	"github.com/spf13/viper"
 )
 
 // Config structure is useful to store the PostgreSQL connection string, and
@@ -41,7 +39,7 @@ func (s *Suite) createRegressDir() error {
 	stat, err := os.Stat(s.RegressDir)
 	if err != nil || !stat.IsDir() {
 		fmt.Printf("Creating directory '%s'\n", s.RegressDir)
-		err := os.Mkdir(s.RegressDir, 0755)
+		err := os.Mkdir(s.RegressDir, 0o755)
 		if err != nil {
 			return err
 		}
@@ -71,8 +69,7 @@ func (s *Suite) readConfig() (config, error) {
 	v.SetConfigType("yaml")
 	configFile := s.getRegressConfigFile()
 
-	data, err := ioutil.ReadFile(configFile)
-
+	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return config, fmt.Errorf("Failed to read config '%s': %s",
 			configFile,
@@ -92,7 +89,7 @@ func ReadConfig(root string) (config, error) {
 	v.SetConfigType("yaml")
 	configFile := filepath.Join(root, "regresql", "regress.yaml")
 
-	data, err := ioutil.ReadFile(configFile)
+	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return cfg, fmt.Errorf("failed to read config '%s': %w", configFile, err)
 	}

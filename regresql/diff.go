@@ -3,12 +3,12 @@ package regresql
 import (
 	"fmt"
 	"github.com/pmezard/go-difflib/difflib"
-	"io/ioutil"
+	"os"
 )
 
 //readLines reads filename contents and returns a list of strings
 func readLines(filename string) ([]string, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 
 	if err != nil {
 		var data []string

@@ -102,7 +102,7 @@ func NewSequenceGenerator() *SequenceGenerator {
 	}
 }
 
-func (g *SequenceGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *SequenceGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	start := getParam(params, "start", int64(1))
 
 	if g.counter == 0 {
@@ -115,7 +115,7 @@ func (g *SequenceGenerator) Generate(params map[string]interface{}, column *Colu
 	return value, nil
 }
 
-func (g *SequenceGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *SequenceGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	return nil
 }
 
@@ -126,7 +126,7 @@ func NewIntGenerator() *IntGenerator {
 	}
 }
 
-func (g *IntGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *IntGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	min := getParam(params, "min", int64(0))
 	max := getParam(params, "max", int64(1000000))
 
@@ -138,7 +138,7 @@ func (g *IntGenerator) Generate(params map[string]interface{}, column *ColumnInf
 	return value, nil
 }
 
-func (g *IntGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *IntGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	min := getParam(params, "min", int64(0))
 	max := getParam(params, "max", int64(1000000))
 
@@ -156,7 +156,7 @@ func NewStringGenerator() *StringGenerator {
 	}
 }
 
-func (g *StringGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *StringGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	length := getParam(params, "length", 10)
 	charset := getParam(params, "charset", defaultCharset)
 
@@ -177,7 +177,7 @@ func (g *StringGenerator) Generate(params map[string]interface{}, column *Column
 	return string(result), nil
 }
 
-func (g *StringGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *StringGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	length := getParam(params, "length", 10)
 
 	if length <= 0 {
@@ -193,7 +193,7 @@ func NewUUIDGenerator() *UUIDGenerator {
 	}
 }
 
-func (g *UUIDGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *UUIDGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	version := getParam(params, "version", "v4")
 
 	switch version {
@@ -206,7 +206,7 @@ func (g *UUIDGenerator) Generate(params map[string]interface{}, column *ColumnIn
 	}
 }
 
-func (g *UUIDGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *UUIDGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	version := getParam(params, "version", "v4")
 
 	switch version {
@@ -224,7 +224,7 @@ func NewEmailGenerator() *EmailGenerator {
 	}
 }
 
-func (g *EmailGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *EmailGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	domain := getParam(params, "domain", "")
 
 	prefix := emailPrefixes[g.rnd.Intn(len(emailPrefixes))]
@@ -238,7 +238,7 @@ func (g *EmailGenerator) Generate(params map[string]interface{}, column *ColumnI
 	return email, nil
 }
 
-func (g *EmailGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *EmailGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	return nil
 }
 
@@ -249,7 +249,7 @@ func NewNameGenerator() *NameGenerator {
 	}
 }
 
-func (g *NameGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *NameGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	nameType := getParam(params, "type", "full")
 
 	firstName := firstNames[g.rnd.Intn(len(firstNames))]
@@ -267,7 +267,7 @@ func (g *NameGenerator) Generate(params map[string]interface{}, column *ColumnIn
 	}
 }
 
-func (g *NameGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *NameGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	nameType := getParam(params, "type", "full")
 
 	switch nameType {
@@ -284,11 +284,11 @@ func NewNowGenerator() *NowGenerator {
 	}
 }
 
-func (g *NowGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *NowGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	return time.Now(), nil
 }
 
-func (g *NowGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *NowGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	return nil
 }
 
@@ -299,7 +299,7 @@ func NewDateBetweenGenerator() *DateBetweenGenerator {
 	}
 }
 
-func (g *DateBetweenGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *DateBetweenGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	startStr, err := getRequiredParam[string](params, "start")
 	if err != nil {
 		return nil, err
@@ -332,7 +332,7 @@ func (g *DateBetweenGenerator) Generate(params map[string]interface{}, column *C
 	return randomTime, nil
 }
 
-func (g *DateBetweenGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *DateBetweenGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	startStr, err := getRequiredParam[string](params, "start")
 	if err != nil {
 		return err
@@ -367,7 +367,7 @@ func NewDecimalGenerator() *DecimalGenerator {
 	}
 }
 
-func (g *DecimalGenerator) Generate(params map[string]interface{}, column *ColumnInfo) (interface{}, error) {
+func (g *DecimalGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	min := getParam(params, "min", 0.0)
 	max := getParam(params, "max", 1000.0)
 	precision := getParam(params, "precision", 2)
@@ -389,7 +389,7 @@ func (g *DecimalGenerator) Generate(params map[string]interface{}, column *Colum
 	return value, nil
 }
 
-func (g *DecimalGenerator) Validate(params map[string]interface{}, column *ColumnInfo) error {
+func (g *DecimalGenerator) Validate(params map[string]any, column *ColumnInfo) error {
 	min := getParam(params, "min", 0.0)
 	max := getParam(params, "max", 1000.0)
 

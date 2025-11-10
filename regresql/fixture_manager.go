@@ -319,7 +319,7 @@ func (fm *FixtureManager) insertTableData(tableData TableData) error {
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES ", tableData.Table, joinColumns(columns))
 
 	// Build value placeholders and collect values
-	var values []interface{}
+	var values []any
 	valuePlaceholders := make([]string, 0, len(tableData.Rows))
 
 	for i, row := range tableData.Rows {
@@ -409,7 +409,7 @@ func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES ", genSpec.Table, joinColumns(columns))
 
 	// Generate rows
-	var values []interface{}
+	var values []any
 	valuePlaceholders := make([]string, 0, count)
 
 	for i := 0; i < count; i++ {
@@ -547,7 +547,7 @@ func (fm *FixtureManager) autoDetectForeignKeys(genSpec *GenerateSpec, tableInfo
 		// Auto-add FK generator
 		genSpec.Columns[fk.ColumnName] = GeneratorSpec{
 			Generator: "fk",
-			Params: map[string]interface{}{
+			Params: map[string]any{
 				"table":    fk.ReferencedTable,
 				"column":   fk.ReferencedColumn,
 				"strategy": "random",
