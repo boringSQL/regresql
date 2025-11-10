@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type TemplateGenerator struct {
@@ -91,7 +93,7 @@ func (g *TemplateGenerator) funcMap() template.FuncMap {
 	return template.FuncMap{
 		"lower":     strings.ToLower,
 		"upper":     strings.ToUpper,
-		"title":     strings.Title,
+		"title":     cases.Title(language.English).String,
 		"trim":      strings.TrimSpace,
 		"replace":   strings.ReplaceAll,
 		"substr":    substr,

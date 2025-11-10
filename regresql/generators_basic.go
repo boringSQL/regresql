@@ -51,13 +51,11 @@ type (
 	// IntGenerator generates random integers
 	IntGenerator struct {
 		BaseGenerator
-		rnd *rand.Rand
 	}
 
 	// StringGenerator generates random strings
 	StringGenerator struct {
 		BaseGenerator
-		rnd *rand.Rand
 	}
 
 	// UUIDGenerator generates UUIDs
@@ -68,13 +66,11 @@ type (
 	// EmailGenerator generates realistic email addresses
 	EmailGenerator struct {
 		BaseGenerator
-		rnd *rand.Rand
 	}
 
 	// NameGenerator generates realistic names
 	NameGenerator struct {
 		BaseGenerator
-		rnd *rand.Rand
 	}
 
 	// NowGenerator generates current timestamp
@@ -85,13 +81,11 @@ type (
 	// DateBetweenGenerator generates random dates within a range
 	DateBetweenGenerator struct {
 		BaseGenerator
-		rnd *rand.Rand
 	}
 
 	// DecimalGenerator generates random decimal numbers
 	DecimalGenerator struct {
 		BaseGenerator
-		rnd *rand.Rand
 	}
 )
 
@@ -122,7 +116,6 @@ func (g *SequenceGenerator) Validate(params map[string]any, column *ColumnInfo) 
 func NewIntGenerator() *IntGenerator {
 	return &IntGenerator{
 		BaseGenerator: BaseGenerator{name: "int"},
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -134,7 +127,7 @@ func (g *IntGenerator) Generate(params map[string]any, column *ColumnInfo) (any,
 		return nil, fmt.Errorf("max must be greater than min")
 	}
 
-	value := min + g.rnd.Int63n(max-min)
+	value := min + rand.Int63n(max-min)
 	return value, nil
 }
 
@@ -152,7 +145,6 @@ func (g *IntGenerator) Validate(params map[string]any, column *ColumnInfo) error
 func NewStringGenerator() *StringGenerator {
 	return &StringGenerator{
 		BaseGenerator: BaseGenerator{name: "string"},
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -171,7 +163,7 @@ func (g *StringGenerator) Generate(params map[string]any, column *ColumnInfo) (a
 
 	result := make([]byte, length)
 	for i := range result {
-		result[i] = charset[g.rnd.Intn(len(charset))]
+		result[i] = charset[rand.Intn(len(charset))]
 	}
 
 	return string(result), nil
@@ -220,18 +212,17 @@ func (g *UUIDGenerator) Validate(params map[string]any, column *ColumnInfo) erro
 func NewEmailGenerator() *EmailGenerator {
 	return &EmailGenerator{
 		BaseGenerator: BaseGenerator{name: "email"},
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
 func (g *EmailGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	domain := getParam(params, "domain", "")
 
-	prefix := emailPrefixes[g.rnd.Intn(len(emailPrefixes))]
-	suffix := g.rnd.Intn(10000)
+	prefix := emailPrefixes[rand.Intn(len(emailPrefixes))]
+	suffix := rand.Intn(10000)
 
 	if domain == "" {
-		domain = emailDomains[g.rnd.Intn(len(emailDomains))]
+		domain = emailDomains[rand.Intn(len(emailDomains))]
 	}
 
 	email := fmt.Sprintf("%s%d@%s", prefix, suffix, domain)
@@ -245,15 +236,14 @@ func (g *EmailGenerator) Validate(params map[string]any, column *ColumnInfo) err
 func NewNameGenerator() *NameGenerator {
 	return &NameGenerator{
 		BaseGenerator: BaseGenerator{name: "name"},
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
 func (g *NameGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	nameType := getParam(params, "type", "full")
 
-	firstName := firstNames[g.rnd.Intn(len(firstNames))]
-	lastName := lastNames[g.rnd.Intn(len(lastNames))]
+	firstName := firstNames[rand.Intn(len(firstNames))]
+	lastName := lastNames[rand.Intn(len(lastNames))]
 
 	switch nameType {
 	case "first":
@@ -295,7 +285,6 @@ func (g *NowGenerator) Validate(params map[string]any, column *ColumnInfo) error
 func NewDateBetweenGenerator() *DateBetweenGenerator {
 	return &DateBetweenGenerator{
 		BaseGenerator: BaseGenerator{name: "date_between"},
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -326,7 +315,7 @@ func (g *DateBetweenGenerator) Generate(params map[string]any, column *ColumnInf
 
 	// Generate random time between start and end
 	diff := end.Unix() - start.Unix()
-	randomSeconds := g.rnd.Int63n(diff)
+	randomSeconds := rand.Int63n(diff)
 	randomTime := start.Add(time.Duration(randomSeconds) * time.Second)
 
 	return randomTime, nil
@@ -363,7 +352,6 @@ func (g *DateBetweenGenerator) Validate(params map[string]any, column *ColumnInf
 func NewDecimalGenerator() *DecimalGenerator {
 	return &DecimalGenerator{
 		BaseGenerator: BaseGenerator{name: "decimal"},
-		rnd:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -377,7 +365,7 @@ func (g *DecimalGenerator) Generate(params map[string]any, column *ColumnInfo) (
 	}
 
 	// Generate random float between min and max
-	value := min + g.rnd.Float64()*(max-min)
+	value := min + rand.Float64()*(max-min)
 
 	// Round to specified precision
 	multiplier := float64(1)
