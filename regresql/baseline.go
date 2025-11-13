@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // DefaultCostThresholdPercent is the default maximum allowed percentage increase
@@ -176,7 +176,7 @@ func BaselineQueries(root string, runFilter string) {
 		os.Exit(2)
 	}
 
-	db, err := sql.Open("postgres", config.PgUri)
+	db, err := sql.Open("pgx", config.PgUri)
 	if err != nil {
 		fmt.Printf("Failed to open database connection: %s\n", err.Error())
 		os.Exit(2)

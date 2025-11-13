@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 /*
@@ -200,7 +200,7 @@ func (s *Suite) initRegressHierarchy() error {
 // createExpectedResults walks the s Suite instance and runs its queries,
 // storing the results in the expected files.
 func (s *Suite) createExpectedResults(pguri string, useFixtures bool) error {
-	db, err := sql.Open("postgres", pguri)
+	db, err := sql.Open("pgx", pguri)
 
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
@@ -302,7 +302,7 @@ func (s *Suite) createExpectedResults(pguri string, useFixtures bool) error {
 // necessary. It then compares the actual output to the expected output and
 // reports results using the specified formatter.
 func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string) error {
-	db, err := sql.Open("postgres", pguri)
+	db, err := sql.Open("pgx", pguri)
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}

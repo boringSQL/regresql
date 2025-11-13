@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 /*
@@ -28,7 +28,7 @@ type ResultSet struct {
 // only happen at query time.
 func TestConnectionString(pguri string) error {
 	fmt.Printf("Connecting to '%s'… ", pguri)
-	db, err := sql.Open("postgres", pguri)
+	db, err := sql.Open("pgx", pguri)
 
 	if err != nil {
 		fmt.Println("✗")
