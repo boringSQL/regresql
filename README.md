@@ -133,7 +133,7 @@ Multiple options can be combined, separated by commas:
 -- regresql: noseqscanwarn    # Useful for queries that intentionally scan entire tables
 ```
 
-It's also possible to use a snigle query in a file, without `--name` annotation, in which case the query is automatically named after the file name (without the .sql extension). For example file `my_query.sql`
+It's also possible to use a single query in a file, without `--name` annotation, in which case the query is automatically named after the file name (without the .sql extension). For example file `my_query.sql`
 
 ```sql
 SELECT 42;
