@@ -14,7 +14,7 @@ type (
 	CleanupStrategy string
 
 	TableData struct {
-		Table string                   `yaml:"table" json:"table"`
+		Table string           `yaml:"table" json:"table"`
 		Rows  []map[string]any `yaml:"rows" json:"rows"`
 	}
 
@@ -25,7 +25,7 @@ type (
 	}
 
 	GeneratorSpec struct {
-		Generator string                 `yaml:"generator" json:"generator"`
+		Generator string         `yaml:"generator" json:"generator"`
 		Params    map[string]any `yaml:",inline" json:",inline"`
 	}
 
