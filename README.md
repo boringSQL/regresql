@@ -121,16 +121,18 @@ SELECT ...;
 `-- metadata`: allows attaching metadata. Currently supported options:
 
 ```sql
--- regresql: notest          Skip running this query in tests
--- regresql: nobaseline      Skip creating a baseline for this query
--- regresql: noseqscanwarn   Suppress sequential scan warnings for this query
+-- regresql: notest                    Skip running this query in tests
+-- regresql: nobaseline                Skip creating a baseline for this query
+-- regresql: noseqscanwarn             Suppress sequential scan warnings for this query
+-- regresql: difffloattolerance:0.01   Set tolerance for floating-point comparisons (e.g., 0.01 = 1%)
 ```
 
 Multiple options can be combined, separated by commas:
 
 ```sql
 -- regresql: notest, nobaseline
--- regresql: noseqscanwarn    # Useful for queries that intentionally scan entire tables
+-- regresql: noseqscanwarn              # Useful for queries that intentionally scan entire tables
+-- regresql: difffloattolerance:0.001   # Allow 0.1% variance in floating-point results
 ```
 
 It's also possible to use a single query in a file, without `--name` annotation, in which case the query is automatically named after the file name (without the .sql extension). For example file `my_query.sql`
