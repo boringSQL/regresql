@@ -352,6 +352,17 @@ func (fm *FixtureManager) generateTableData(genSpec GenerateSpec) error {
 		return fmt.Errorf("schema not introspected - call IntrospectSchema first")
 	}
 
+	// Set FK generator to use transaction if available
+	if fkGen, err := fm.generators.Get("fk"); err == nil {
+		if fk, ok := fkGen.(*ForeignKeyGenerator); ok {
+			if fm.tx != nil {
+				fk.SetQuerier(fm.tx)
+			} else {
+				fk.SetQuerier(fm.db)
+			}
+		}
+	}
+
 	// Get table info from schema
 	tableInfo, err := fm.schema.GetTable(genSpec.Table)
 	if err != nil {
