@@ -1,0 +1,5 @@
+fixture: users_sql
+description: Load users from SQL file (self-truncating)
+cleanup: rollback
+sql:
+  - file: sql/insert_users.sql

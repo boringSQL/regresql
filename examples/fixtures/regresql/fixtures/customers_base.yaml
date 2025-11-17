@@ -1,0 +1,20 @@
+fixture: customers_base
+description: Base customer data for FK references
+cleanup: rollback
+generate:
+  - table: customers
+    count: 20
+    columns:
+      id:
+        generator: sequence
+        start: 1
+      email:
+        generator: email
+        domain: example.com
+      name:
+        generator: name
+        type: full
+      created_at:
+        generator: date_between
+        start: "2023-01-01"
+        end: "2024-01-01"
