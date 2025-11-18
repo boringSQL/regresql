@@ -1,0 +1,57 @@
+fixture: products_advanced
+description: Advanced product catalog using pattern and template generators
+cleanup: rollback
+depends_on:
+  - categories
+generate:
+  - table: products
+    count: 30
+    columns:
+      id:
+        generator: sequence
+        start: 1
+      # Pattern generator for SKU format: CATEGORY-YEAR-ID
+      sku:
+        generator: pattern
+        template: "{{category}}-{{year}}-{{id}}"
+        params:
+          category:
+            generator: range
+            values: [ELEC, FURN, CLTH, FOOD, TOYS]
+          year:
+            generator: range
+            values: ["2024", "2023"]
+            weights: [80, 20]
+          id:
+            generator: int
+            min: 1000
+            max: 9999
+      # Template generator for product slug
+      slug:
+        generator: template
+        template: "{{lower .Name}}-{{randStr 6}}"
+        context:
+          Name:
+            generator: string
+            length: 10
+      name:
+        generator: string
+        length: 30
+      price:
+        generator: decimal
+        min: 5.00
+        max: 500.00
+        precision: 2
+      # Complex email pattern for supplier contact
+      supplier_email:
+        generator: pattern
+        template: "supplier-{{dept}}@{{domain}}"
+        params:
+          dept:
+            generator: range
+            values: [electronics, furniture, clothing, food, toys]
+          domain:
+            generator: range
+            values: [suppliers.com, wholesale.net, vendor.biz]
+      created_at:
+        generator: now

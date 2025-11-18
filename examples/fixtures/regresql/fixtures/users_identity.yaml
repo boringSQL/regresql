@@ -1,0 +1,23 @@
+fixture: users_identity
+description: Users fixture compatible with GENERATED ALWAYS AS IDENTITY (no explicit IDs)
+cleanup: rollback
+
+data:
+  - table: users
+    rows:
+      # No 'id' column - PostgreSQL will auto-generate it
+      - email: test@example.com
+        name: Test User
+        created_at: "2024-01-01T00:00:00Z"
+
+      - email: admin@example.com
+        name: Admin User
+        created_at: "2024-01-01T00:00:00Z"
+
+      - email: guest@example.com
+        name: Guest User
+        created_at: "2024-01-02T00:00:00Z"
+
+  # Note: user_roles needs to reference the auto-generated user IDs
+  # This won't work with static data since we don't know the IDs
+  # For relationships, use SQL fixtures or generated data instead

@@ -1,0 +1,54 @@
+fixture: users_advanced
+description: Advanced user accounts with pattern and template generators
+cleanup: rollback
+generate:
+  - table: users
+    count: 25
+    columns:
+      id:
+        generator: sequence
+        start: 100
+      # Pattern generator for username: firstname.lastname
+      username:
+        generator: pattern
+        template: "{{first}}.{{last}}"
+        params:
+          first:
+            generator: name
+            type: first
+          last:
+            generator: name
+            type: last
+      # Template generator for email with random numbers
+      email:
+        generator: template
+        template: "{{lower .First}}.{{substr .Last 0 1}}{{random 1 999}}@{{choice \"gmail.com\" \"yahoo.com\" \"outlook.com\"}}"
+        context:
+          First:
+            generator: name
+            type: first
+          Last:
+            generator: name
+            type: last
+      # Full name using pattern
+      name:
+        generator: name
+        type: full
+      # Account type with realistic distribution
+      account_type:
+        generator: range
+        values: [free, basic, premium, enterprise]
+        weights: [50, 30, 15, 5]
+      # API key using template
+      api_key:
+        generator: template
+        template: "{{upper .Prefix}}_{{randStr 32}}"
+        context:
+          Prefix:
+            generator: range
+            values: [sk, pk, test]
+            weights: [60, 30, 10]
+      created_at:
+        generator: date_between
+        start: "2023-01-01"
+        end: "2024-12-31"
