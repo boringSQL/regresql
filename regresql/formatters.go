@@ -32,7 +32,7 @@ type (
 		QueryFile    string
 		BindingsFile string
 		BindingName  string
-		Parameters   map[string]string
+		Parameters   map[string]any
 	}
 
 	TestSummary struct {

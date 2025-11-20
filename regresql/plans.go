@@ -18,7 +18,7 @@ type (
 		Query        *Query
 		Path         string
 		Names        []string
-		Bindings     []map[string]string
+		Bindings     []map[string]any
 		ResultSets   []ResultSet
 		Fixtures     []string          `yaml:"fixtures,omitempty" json:"fixtures,omitempty"`
 		Cleanup      CleanupStrategy   `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
@@ -31,13 +31,13 @@ type (
 
 	TestCase struct {
 		Name   string
-		Params map[string]string
+		Params map[string]any
 	}
 )
 
 func NewPlan(query *Query, testCases []TestCase) *Plan {
 	names := make([]string, len(testCases))
-	bindings := make([]map[string]string, len(testCases))
+	bindings := make([]map[string]any, len(testCases))
 
 	for i, tc := range testCases {
 		names[i] = tc.Name
@@ -55,7 +55,7 @@ func NewPlan(query *Query, testCases []TestCase) *Plan {
 // associated with a query.
 func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	var names []string
-	var bindings []map[string]string
+	var bindings []map[string]any
 	pfile := getPlanPath(q, dir)
 
 	if _, err := os.Stat(pfile); !os.IsNotExist(err) {
@@ -65,16 +65,16 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 
 	if len(q.NamedArgs) > 0 {
 		names = make([]string, 1)
-		bindings = make([]map[string]string, 1)
+		bindings = make([]map[string]any, 1)
 
 		names[0] = "1"
-		bindings[0] = make(map[string]string)
+		bindings[0] = make(map[string]any)
 		for _, namedArg := range q.NamedArgs {
 			bindings[0][namedArg.Name] = ""
 		}
 	} else {
 		names = []string{}
-		bindings = []map[string]string{}
+		bindings = []map[string]any{}
 	}
 
 	plan := &Plan{
@@ -103,7 +103,7 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 				Query:      q,
 				Path:       pfile,
 				Names:      []string{},
-				Bindings:   []map[string]string{},
+				Bindings:   []map[string]any{},
 				ResultSets: []ResultSet{},
 				Fixtures:   []string{},
 				Cleanup:    "",
@@ -133,9 +133,9 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	// thanks to knowing we are dealing with a single level of nesting
 	// here: that's dot[0] for a Bindings entry then dot[1] for the key
 	// names within that Plan Bindings entry.
-	var bindings []map[string]string
+	var bindings []map[string]any
 	var names []string
-	var current_map map[string]string
+	var current_map map[string]any
 	var current_name string
 
 	var fixtures []string
@@ -156,14 +156,14 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 			continue
 		}
 
-		value := v.GetString(key)
+		value := v.Get(key)
 		if current_name == "" || current_name != dots[0] {
 			if current_name != "" {
 				bindings = append(bindings, current_map)
 			}
 			current_name = dots[0]
 			names = append(names, current_name)
-			current_map = make(map[string]string)
+			current_map = make(map[string]any)
 		}
 		current_map[dots[1]] = value
 	}

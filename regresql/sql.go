@@ -70,9 +70,19 @@ func NewQueryFromString(name, sqlText string) (*Query, error) {
 	return &Query{Query: queries.NewQuery(name, "", sqlText, nil)}, nil
 }
 
-func (q *Query) Prepare(bindings map[string]string) (string, []any) {
-	params := make([]any, len(q.Args))
-	for i, varname := range q.Args {
+func (q *Query) Prepare(bindings map[string]any) (string, []any) {
+	// Deduplicate parameter names while preserving order
+	seen := make(map[string]bool)
+	uniqueArgs := []string{}
+	for _, varname := range q.Args {
+		if !seen[varname] {
+			seen[varname] = true
+			uniqueArgs = append(uniqueArgs, varname)
+		}
+	}
+
+	params := make([]any, len(uniqueArgs))
+	for i, varname := range uniqueArgs {
 		params[i] = bindings[varname]
 	}
 	return q.OrdinalQuery, params

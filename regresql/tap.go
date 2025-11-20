@@ -102,7 +102,7 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 			bindingName = p.Names[i]
 		}
 
-		bindings := map[string]string{}
+		bindings := map[string]any{}
 		if i < len(p.Bindings) {
 			bindings = p.Bindings[i]
 		}
@@ -178,7 +178,7 @@ func (p *Plan) CompareBaselinesToResults(baselineDir string, db *sql.DB, thresho
 	return results
 }
 
-func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[string]string, db *sql.DB, thresholdPercent float64) TestResult {
+func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[string]any, db *sql.DB, thresholdPercent float64) TestResult {
 	start := time.Now()
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
@@ -244,7 +244,7 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	return result
 }
 
-func (p *Plan) executeExplainWithBindings(db *sql.DB, bindings map[string]string) (map[string]any, error) {
+func (p *Plan) executeExplainWithBindings(db *sql.DB, bindings map[string]any) (map[string]any, error) {
 	if bindings == nil {
 		return ExecuteExplain(db, p.Query.OrdinalQuery)
 	}
