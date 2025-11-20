@@ -393,7 +393,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					}
 				}
 
-				if !opts.NoBaseline {
+				if !opts.NoBaseline && hasBaselines(p.Query, bdir, p.Names) {
 					for _, r := range p.CompareBaselinesToResults(bdir, db, DefaultCostThresholdPercent) {
 						summary.AddResult(r)
 						if err := formatter.AddResult(r, w); err != nil {
@@ -434,4 +434,25 @@ func maybeMkdirAll(dir string) error {
 		}
 	}
 	return nil
+}
+
+// hasBaselines checks if any baseline files exist for the given query
+func hasBaselines(q *Query, baselineDir string, names []string) bool {
+	// If query has no parameters, check for single baseline file
+	if len(names) == 0 {
+		baselinePath := getBaselinePath(q, baselineDir, "")
+		if _, err := os.Stat(baselinePath); err == nil {
+			return true
+		}
+		return false
+	}
+
+	// For parameterized queries, check if at least one binding has a baseline
+	for _, name := range names {
+		baselinePath := getBaselinePath(q, baselineDir, name)
+		if _, err := os.Stat(baselinePath); err == nil {
+			return true
+		}
+	}
+	return false
 }

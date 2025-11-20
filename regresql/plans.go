@@ -1,16 +1,16 @@
 package regresql
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 type (
@@ -91,10 +91,9 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	return plan, nil
 }
 
-// GetPlan instanciates a Plan from a Query, parsing a set of actual
+// GetPlan instantiates a Plan from a Query, parsing a set of actual
 // parameters when it exists.
 func (q *Query) GetPlan(planDir string) (*Plan, error) {
-	var plan *Plan
 	pfile := getPlanPath(q, planDir)
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
@@ -109,80 +108,80 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 				Cleanup:    "",
 			}, nil
 		}
-		e := fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
-		return plan, e
+		return nil, fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
 	}
-
-	v := viper.New()
-	v.SetConfigType("yaml")
 
 	data, err := os.ReadFile(pfile)
 	if err != nil {
-		return plan, fmt.Errorf("failed to read file '%s': %w", pfile, err)
+		return nil, fmt.Errorf("failed to read file '%s': %w", pfile, err)
 	}
 
-	v.ReadConfig(bytes.NewBuffer(data))
+	// Unmarshal into generic map to extract all fields
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML file '%s': %w", pfile, err)
+	}
 
-	// turns out Viper doesn't offer an easy way to build our Plan
-	// Bindings from the YAML file we produced, so do it the rather
-	// manual way.
-	//
-	// The viper.GetString() API returns a flat list of keys which
-	// encode the nesting levels of the keys thanks to a dot notation.
-	// We reverse engineer that into a map, simplifying the operation
-	// thanks to knowing we are dealing with a single level of nesting
-	// here: that's dot[0] for a Bindings entry then dot[1] for the key
-	// names within that Plan Bindings entry.
-	var bindings []map[string]any
-	var names []string
-	var current_map map[string]any
-	var current_name string
-
+	// Extract known top-level fields
 	var fixtures []string
 	var cleanup CleanupStrategy
+	var planQuality *PlanQualityConfig
 
-	for _, key := range v.AllKeys() {
-		dots := strings.Split(key, ".")
-
-		if len(dots) == 1 {
-			if key == "cleanup" {
-				cleanup = CleanupStrategy(v.GetString(key))
+	if fixturesRaw, ok := raw["fixtures"]; ok {
+		if fixturesList, ok := fixturesRaw.([]any); ok {
+			for _, f := range fixturesList {
+				if str, ok := f.(string); ok {
+					fixtures = append(fixtures, str)
+				}
 			}
-			continue
 		}
+		delete(raw, "fixtures")
+	}
 
-		if dots[0] == "fixtures" {
-			fixtures = append(fixtures, v.GetString(key))
-			continue
+	if cleanupRaw, ok := raw["cleanup"]; ok {
+		if str, ok := cleanupRaw.(string); ok {
+			cleanup = CleanupStrategy(str)
 		}
+		delete(raw, "cleanup")
+	}
 
-		value := v.Get(key)
-		if current_name == "" || current_name != dots[0] {
-			if current_name != "" {
-				bindings = append(bindings, current_map)
+	if planQualityRaw, ok := raw["plan_quality"]; ok {
+		// Re-marshal and unmarshal to convert to struct
+		if pqData, err := yaml.Marshal(planQualityRaw); err == nil {
+			var pq PlanQualityConfig
+			if err := yaml.Unmarshal(pqData, &pq); err == nil {
+				planQuality = &pq
 			}
-			current_name = dots[0]
-			names = append(names, current_name)
-			current_map = make(map[string]any)
 		}
-		current_map[dots[1]] = value
+		delete(raw, "plan_quality")
 	}
 
-	if current_map != nil {
-		bindings = append(bindings, current_map)
+	// Remaining keys are bindings - extract and sort them for consistent ordering
+	var names []string
+	for name := range raw {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Build bindings array from sorted names
+	bindings := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		bindingData := raw[name]
+		if bindingMap, ok := bindingData.(map[string]any); ok {
+			bindings = append(bindings, bindingMap)
+		}
 	}
 
-	planWithFixtures := &Plan{
-		Query:      q,
-		Path:       pfile,
-		Names:      names,
-		Bindings:   bindings,
-		ResultSets: []ResultSet{},
-		Fixtures:   fixtures,
-		Cleanup:    cleanup,
-	}
-
-	return planWithFixtures, nil
+	return &Plan{
+		Query:       q,
+		Path:        pfile,
+		Names:       names,
+		Bindings:    bindings,
+		ResultSets:  []ResultSet{},
+		Fixtures:    fixtures,
+		Cleanup:     cleanup,
+		PlanQuality: planQuality,
+	}, nil
 }
 
 // Executes a plan and returns the filepath where the output has been
@@ -195,6 +194,11 @@ func (p *Plan) Execute(db *sql.DB) error {
 		}
 		p.ResultSets = []ResultSet{*res}
 		return nil
+	}
+
+	// Debug: Log execution details
+	if os.Getenv("REGRESQL_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Executing query %s with %d bindings: %v\n", p.Query.Name, len(p.Bindings), p.Names)
 	}
 
 	p.ResultSets = make([]ResultSet, len(p.Bindings))
@@ -223,7 +227,7 @@ func (p *Plan) WriteResultSets(dir string) error {
 	return nil
 }
 
-// Write a plan to disk in YAML format, thanks to Viper.
+// Write a plan to disk in YAML format.
 func (p *Plan) Write() {
 	if len(p.Bindings) == 0 {
 		fmt.Printf("Skipping Plan '%s': query uses no variable\n", p.Path)
@@ -231,16 +235,37 @@ func (p *Plan) Write() {
 	}
 
 	fmt.Printf("Creating Empty Plan '%s'\n", p.Path)
-	v := viper.New()
-	v.SetConfigType("yaml")
 
+	// Build the YAML structure
+	planData := make(map[string]any)
+
+	// Add bindings
 	for i, bindings := range p.Bindings {
-		for key, value := range bindings {
-			vpath := fmt.Sprintf("%s.%s", p.Names[i], key)
-			v.Set(vpath, value)
-		}
+		planData[p.Names[i]] = bindings
 	}
-	v.WriteConfigAs(p.Path)
+
+	// Add optional fields
+	if len(p.Fixtures) > 0 {
+		planData["fixtures"] = p.Fixtures
+	}
+	if p.Cleanup != "" {
+		planData["cleanup"] = p.Cleanup
+	}
+	if p.PlanQuality != nil {
+		planData["plan_quality"] = p.PlanQuality
+	}
+
+	// Marshal to YAML
+	data, err := yaml.Marshal(planData)
+	if err != nil {
+		fmt.Printf("Error marshaling plan to YAML: %s\n", err)
+		return
+	}
+
+	// Write to file
+	if err := os.WriteFile(p.Path, data, 0644); err != nil {
+		fmt.Printf("Error writing plan file '%s': %s\n", p.Path, err)
+	}
 }
 
 func getPlanPath(q *Query, targetdir string) string {

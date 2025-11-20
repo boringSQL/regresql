@@ -1,12 +1,11 @@
 package regresql
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // Config structure is useful to store the PostgreSQL connection string, and
@@ -14,11 +13,11 @@ import (
 // ./ or the -C command line parameter.
 type (
 	config struct {
-		Root           string
-		PgUri          string
-		UseFixtures    bool                  `yaml:"use_fixtures"`
-		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
-		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
+		Root           string                 `yaml:"root"`
+		PgUri          string                 `yaml:"pguri"`
+		UseFixtures    bool                   `yaml:"use_fixtures,omitempty"`
+		PlanQuality    *PlanQualityGlobal     `yaml:"plan_quality,omitempty"`
+		DiffComparison *DiffComparisonGlobal  `yaml:"diff_comparison,omitempty"`
 	}
 
 	PlanQualityGlobal struct {
@@ -50,43 +49,51 @@ func (s *Suite) createRegressDir() error {
 }
 
 func (s *Suite) setupConfig(pguri string, useFixtures bool) {
-	v := viper.New()
 	configFile := s.getRegressConfigFile()
 
-	v.Set("Root", s.Root)
-	v.Set("pguri", pguri)
+	cfg := config{
+		Root:  s.Root,
+		PgUri: pguri,
+	}
 	if useFixtures {
-		v.Set("use_fixtures", true)
+		cfg.UseFixtures = true
+	}
+
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		fmt.Printf("Error marshaling config to YAML: %s\n", err)
+		return
 	}
 
 	fmt.Printf("Creating configuration file '%s'\n", configFile)
-	v.WriteConfigAs(configFile)
+	if err := os.WriteFile(configFile, data, 0644); err != nil {
+		fmt.Printf("Error writing config file '%s': %s\n", configFile, err)
+	}
 }
 
 func (s *Suite) readConfig() (config, error) {
-	var config config
-	v := viper.New()
-	v.SetConfigType("yaml")
+	var cfg config
 	configFile := s.getRegressConfigFile()
 
 	data, err := os.ReadFile(configFile)
 	if err != nil {
-		return config, fmt.Errorf("Failed to read config '%s': %s",
+		return cfg, fmt.Errorf("Failed to read config '%s': %s",
 			configFile,
 			err)
 	}
 
-	v.ReadConfig(bytes.NewBuffer(data))
-	v.Unmarshal(&config)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("Failed to parse config '%s': %s",
+			configFile,
+			err)
+	}
 
-	return config, nil
+	return cfg, nil
 }
 
 // ReadConfig reads the configuration from the regress.yaml file
 func ReadConfig(root string) (config, error) {
 	var cfg config
-	v := viper.New()
-	v.SetConfigType("yaml")
 	configFile := filepath.Join(root, "regresql", "regress.yaml")
 
 	data, err := os.ReadFile(configFile)
@@ -94,8 +101,9 @@ func ReadConfig(root string) (config, error) {
 		return cfg, fmt.Errorf("failed to read config '%s': %w", configFile, err)
 	}
 
-	v.ReadConfig(bytes.NewBuffer(data))
-	v.Unmarshal(&cfg)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("failed to parse config '%s': %w", configFile, err)
+	}
 
 	return cfg, nil
 }
