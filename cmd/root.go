@@ -5,16 +5,16 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
-	cfgFile string
+	version = "dev" // Will be set via ldflags during build
 
 	// RootCmd represents the base command when called without any subcommands
 	RootCmd = &cobra.Command{
-		Use:   "regresql",
-		Short: "Run regression tests for your SQL queries",
+		Use:     "regresql",
+		Short:   "Run regression tests for your SQL queries",
+		Version: version,
 	}
 )
 
