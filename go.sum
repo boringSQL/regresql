@@ -1,5 +1,5 @@
-github.com/boringsql/queries v1.3.0 h1:+TIoOJQkcZST1gSw5tH2FfYV5FB7X87NRTfsh2hA/rQ=
-github.com/boringsql/queries v1.3.0/go.mod h1:zRQzwzZZ8e9o8PZWTKMxPqxTTg8hGvvinwitEBd0FCQ=
+github.com/boringsql/queries v1.4.0 h1:sgzrIK72U8kxBhG5I4QaAsnUUXA9iNVYPlIFyhhNNro=
+github.com/boringsql/queries v1.4.0/go.mod h1:zRQzwzZZ8e9o8PZWTKMxPqxTTg8hGvvinwitEBd0FCQ=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
