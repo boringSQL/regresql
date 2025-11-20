@@ -21,6 +21,15 @@ against a known PostgreSQL database content.
 
 ## Installing
 
+### Using Homebrew (macOS)
+
+If you're on macOS, you can install `regresql` using Homebrew:
+
+    brew tap boringsql/regresql https://github.com/boringsql/homebrew-regresql
+    brew install regresql
+
+### Using Go
+
 The `regresql` tool is written in Go. To install it, use:
 
     go install github.com/boringsql/regresql@latest
