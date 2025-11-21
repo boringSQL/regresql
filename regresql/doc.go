@@ -5,7 +5,7 @@ The main entry point of this package is a Suite data structure instance,
 which can be obtained with the Walk() function:
 
     func List(dir string) {
-    	suite := Walk(dir)
+    	suite := Walk(dir, []string{})
     	suite.Println()
     }
 
@@ -17,7 +17,7 @@ want to read regresql configuration which is created by the Init() command
 and stores the PostgreSQL connection string, in the format expected by the
 github.com/lib/pq library:
 
-	suite := Walk(root)
+	suite := Walk(root, []string{})
 	config, err := suite.readConfig()
 
 	if err != nil {

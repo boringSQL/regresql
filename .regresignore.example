@@ -1,0 +1,33 @@
+# regresql ignore file
+# works similar to .gitignore, this file specifies patterns for SQL files
+# and directories that regresql should ignore during discovery.
+#
+# Syntax:
+#   - Lines starting with # are comments
+#   - Empty lines are ignored
+#   - Patterns use gitignore-style syntax:
+#     * matches any files or directories
+#     ** matches directories recursively
+#     / at the start means match from root only
+#     / at the end means directory only
+#
+# Examples:
+
+# Ignore all test files
+*_test.sql
+
+# Ignore specific file
+random_migration_script.sql
+
+# Ignore entire directory (from root)
+/db/migrations
+
+# Ignore any 'drafts' directory anywhere
+drafts/
+
+# Ignore all files in examples recursively
+examples/**/*.sql
+
+# Ignore files matching a pattern
+temp_*.sql
+backup_*.sql

@@ -16,6 +16,7 @@ type (
 		Root           string                 `yaml:"root"`
 		PgUri          string                 `yaml:"pguri"`
 		UseFixtures    bool                   `yaml:"use_fixtures,omitempty"`
+		Ignore         []string               `yaml:"ignore,omitempty"`
 		PlanQuality    *PlanQualityGlobal     `yaml:"plan_quality,omitempty"`
 		DiffComparison *DiffComparisonGlobal  `yaml:"diff_comparison,omitempty"`
 	}

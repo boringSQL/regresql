@@ -35,14 +35,15 @@ command and shows our structure organisation:
 */
 type (
 	Suite struct {
-		Root        string
-		RegressDir  string
-		Dirs        []Folder
-		PlanDir     string
-		ExpectedDir string
-		OutDir      string
-		BaselineDir string
-		runFilter   string
+		Root          string
+		RegressDir    string
+		Dirs          []Folder
+		PlanDir       string
+		ExpectedDir   string
+		OutDir        string
+		BaselineDir   string
+		runFilter     string
+		ignoreMatcher *IgnoreMatcher
 	}
 
 	/*
@@ -106,12 +107,40 @@ func (s *Suite) appendPath(path string) *Suite {
 }
 
 // Walk walks the root directory recursively in search of *.sql files and
-// returns a Suite instance representing the traversal.
-func Walk(root string) *Suite {
+// returns a Suite instance representing the traversal. It respects ignore
+// patterns from both .regresignore file and the config's ignore field.
+func Walk(root string, configIgnorePatterns []string) *Suite {
 	suite := newSuite(root)
 
+	// Load ignore patterns from .regresignore file
+	ignoreMatcher, err := LoadIgnoreFile(root)
+	if err != nil {
+		fmt.Printf("Warning: failed to load .regresignore: %s\n", err)
+		ignoreMatcher = NewIgnoreMatcher(root, []string{})
+	}
+
+	// Add patterns from config
+	if len(configIgnorePatterns) > 0 {
+		ignoreMatcher.patterns = append(ignoreMatcher.patterns, configIgnorePatterns...)
+	}
+
+	suite.ignoreMatcher = ignoreMatcher
+
 	visit := func(path string, f os.FileInfo, err error) error {
-		if filepath.Ext(path) == ".sql" {
+		if err != nil {
+			return err
+		}
+
+		// Check if this path should be ignored
+		if ignoreMatcher.ShouldIgnore(path, f.IsDir()) {
+			if f.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Only process SQL files
+		if !f.IsDir() && filepath.Ext(path) == ".sql" {
 			suite = suite.appendPath(path)
 		}
 		return nil

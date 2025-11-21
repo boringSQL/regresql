@@ -163,9 +163,15 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 
 // BaselineQueries creates baselines for all queries in the suite
 func BaselineQueries(root string, runFilter string) {
-	suite := Walk(root)
+	config, err := ReadConfig(root)
+	ignorePatterns := []string{}
+	if err == nil {
+		ignorePatterns = config.Ignore
+	}
+
+	suite := Walk(root, ignorePatterns)
 	suite.SetRunFilter(runFilter)
-	config, err := suite.readConfig()
+	config, err = suite.readConfig()
 	if err != nil {
 		fmt.Printf("Error reading config: %s\n", err.Error())
 		os.Exit(3)

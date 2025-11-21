@@ -19,7 +19,7 @@ func Init(root string, pguri string, useFixtures bool) {
 		os.Exit(2)
 	}
 
-	suite := Walk(root)
+	suite := Walk(root, []string{})
 
 	suite.createRegressDir()
 	suite.setupConfig(pguri, useFixtures)
@@ -48,9 +48,15 @@ case and add a value for each parameter.`,
 
 // PlanQueries create query plans for queries found in the root repository
 func PlanQueries(root string, runFilter string) {
-	suite := Walk(root)
+	config, err := ReadConfig(root)
+	ignorePatterns := []string{}
+	if err == nil {
+		ignorePatterns = config.Ignore
+	}
+
+	suite := Walk(root, ignorePatterns)
 	suite.SetRunFilter(runFilter)
-	config, err := suite.readConfig()
+	config, err = suite.readConfig()
 
 	if err != nil {
 		fmt.Print(err.Error())
@@ -87,9 +93,15 @@ case and add a value for each parameter. `)
 Update updates the expected files from the queries and their parameters.
 */
 func Update(root string, runFilter string) {
-	suite := Walk(root)
+	config, err := ReadConfig(root)
+	ignorePatterns := []string{}
+	if err == nil {
+		ignorePatterns = config.Ignore
+	}
+
+	suite := Walk(root, ignorePatterns)
 	suite.SetRunFilter(runFilter)
-	config, err := suite.readConfig()
+	config, err = suite.readConfig()
 
 	if err != nil {
 		fmt.Print(err.Error())
@@ -123,9 +135,15 @@ the regresql update command again to reset the expected output files.
 }
 
 func Test(root, runFilter, formatName, outputPath string) {
-	suite := Walk(root)
+	config, err := ReadConfig(root)
+	ignorePatterns := []string{}
+	if err == nil {
+		ignorePatterns = config.Ignore
+	}
+
+	suite := Walk(root, ignorePatterns)
 	suite.SetRunFilter(runFilter)
-	config, err := suite.readConfig()
+	config, err = suite.readConfig()
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(3)
@@ -156,6 +174,12 @@ func Test(root, runFilter, formatName, outputPath string) {
 
 // List walks a repository, builds a Suite instance and pretty prints it.
 func List(dir string) {
-	suite := Walk(dir)
+	config, err := ReadConfig(dir)
+	ignorePatterns := []string{}
+	if err == nil {
+		ignorePatterns = config.Ignore
+	}
+
+	suite := Walk(dir, ignorePatterns)
 	suite.Println()
 }
