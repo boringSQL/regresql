@@ -248,6 +248,33 @@ generate:
         end: "2024-01-01"
 ```
 
+## Ignoring Files
+
+You can exclude SQL files from discovery using a `.regresignore` file in your project root:
+
+```
+# Comments start with #
+*_test.sql
+temp_*.sql
+db/migrations/
+```
+
+Syntax is similar to `.gitignore`:
+- `*` matches any files/directories
+- `**` for recursive matching
+- `/` prefix for root-only matching
+- `/` suffix for directories only
+
+You can also add patterns directly to `regresql/regress.yaml`:
+
+```yaml
+pguri: "postgres://..."
+ignore:
+  - "*_test.sql"
+  - "db/migrations/"
+```
+
+Both sources are combined. The `regresql/` directory is always ignored.
 
 ## Test Suites
 
