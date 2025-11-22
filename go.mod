@@ -3,7 +3,7 @@ module github.com/boringsql/regresql
 go 1.25.2
 
 require (
-	github.com/boringsql/queries v1.4.0
+	github.com/boringsql/queries v1.5.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/mndrix/tap-go v0.0.0-20171203230836-629fa407e90b

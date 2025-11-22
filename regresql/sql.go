@@ -67,7 +67,11 @@ func parseQueryFile(queryPath string) (map[string]*Query, error) {
 }
 
 func NewQueryFromString(name, sqlText string) (*Query, error) {
-	return &Query{Query: queries.NewQuery(name, "", sqlText, nil)}, nil
+	q, err := queries.NewQuery(name, "", sqlText, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Query{Query: q}, nil
 }
 
 func (q *Query) Prepare(bindings map[string]any) (string, []any) {
