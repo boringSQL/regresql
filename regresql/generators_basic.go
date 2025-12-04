@@ -87,6 +87,16 @@ type (
 	DecimalGenerator struct {
 		BaseGenerator
 	}
+
+	// TimestampBetweenGenerator generates random timestamps within a range
+	TimestampBetweenGenerator struct {
+		BaseGenerator
+	}
+
+	// BoolGenerator generates random boolean values
+	BoolGenerator struct {
+		BaseGenerator
+	}
 )
 
 func NewSequenceGenerator() *SequenceGenerator {
@@ -385,5 +395,90 @@ func (g *DecimalGenerator) Validate(params map[string]any, column *ColumnInfo) e
 		return fmt.Errorf("max (%f) must be greater than min (%f)", max, min)
 	}
 
+	return nil
+}
+
+func NewTimestampBetweenGenerator() *TimestampBetweenGenerator {
+	return &TimestampBetweenGenerator{
+		BaseGenerator: BaseGenerator{name: "timestamp_between"},
+	}
+}
+
+func (g *TimestampBetweenGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
+	startStr, err := getRequiredParam[string](params, "start")
+	if err != nil {
+		return nil, err
+	}
+
+	endStr, err := getRequiredParam[string](params, "end")
+	if err != nil {
+		return nil, err
+	}
+
+	start, err := time.Parse(time.RFC3339, startStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start timestamp format: %w", err)
+	}
+
+	end, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end timestamp format: %w", err)
+	}
+
+	if end.Before(start) {
+		return nil, fmt.Errorf("end timestamp must be after start timestamp")
+	}
+
+	diff := end.Unix() - start.Unix()
+	randomSeconds := rand.Int63n(diff + 1)
+	randomTime := start.Add(time.Duration(randomSeconds) * time.Second)
+
+	return randomTime, nil
+}
+
+func (g *TimestampBetweenGenerator) Validate(params map[string]any, column *ColumnInfo) error {
+	startStr, err := getRequiredParam[string](params, "start")
+	if err != nil {
+		return err
+	}
+
+	endStr, err := getRequiredParam[string](params, "end")
+	if err != nil {
+		return err
+	}
+
+	start, err := time.Parse(time.RFC3339, startStr)
+	if err != nil {
+		return fmt.Errorf("invalid start timestamp (use RFC3339: 2006-01-02T15:04:05Z): %w", err)
+	}
+
+	end, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		return fmt.Errorf("invalid end timestamp (use RFC3339: 2006-01-02T15:04:05Z): %w", err)
+	}
+
+	if end.Before(start) {
+		return fmt.Errorf("end timestamp must be after start timestamp")
+	}
+
+	return nil
+}
+
+func NewBoolGenerator() *BoolGenerator {
+	return &BoolGenerator{
+		BaseGenerator: BaseGenerator{name: "bool"},
+	}
+}
+
+func (g *BoolGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
+	probability := getParam(params, "probability", 0.5)
+	return rand.Float64() < probability, nil
+}
+
+func (g *BoolGenerator) Validate(params map[string]any, column *ColumnInfo) error {
+	probability := getParam(params, "probability", 0.5)
+	if probability < 0.0 || probability > 1.0 {
+		return fmt.Errorf("probability must be between 0.0 and 1.0, got %f", probability)
+	}
 	return nil
 }

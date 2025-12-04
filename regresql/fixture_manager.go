@@ -46,7 +46,9 @@ func (fm *FixtureManager) registerBuiltinGenerators() error {
 		NewNameGenerator(),
 		NewNowGenerator(),
 		NewDateBetweenGenerator(),
+		NewTimestampBetweenGenerator(),
 		NewDecimalGenerator(),
+		NewBoolGenerator(),
 		NewRangeGenerator(),
 	}
 
@@ -435,7 +437,10 @@ func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo
 				return err
 			}
 
-			value, err := gen.Generate(genSpecCol.Params, colInfo)
+			params := copyParams(genSpecCol.Params)
+			params["_index"] = i
+
+			value, err := gen.Generate(params, colInfo)
 			if err != nil {
 				return fmt.Errorf("failed to generate value for column '%s' (row %d): %w", colName, i, err)
 			}
@@ -584,4 +589,12 @@ func joinStrings(strs []string, sep string) string {
 		result += sep + s
 	}
 	return result
+}
+
+func copyParams(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src)+1)
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
