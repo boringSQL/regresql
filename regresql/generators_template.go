@@ -60,6 +60,9 @@ func (g *TemplateGenerator) Generate(params map[string]any, column *ColumnInfo) 
 	tmplStr := params["template"].(string)
 
 	data := make(map[string]any)
+	if idx, ok := params["_index"]; ok {
+		data["Index"] = idx
+	}
 	if context, ok := params["context"].(map[string]any); ok {
 		for key, spec := range context {
 			specMap := spec.(map[string]any)
@@ -107,6 +110,8 @@ func (g *TemplateGenerator) funcMap() template.FuncMap {
 		"split":     strings.Split,
 		"hasPrefix": strings.HasPrefix,
 		"hasSuffix": strings.HasSuffix,
+		"mod":       func(a, b int) int { return a % b },
+		"add":       func(a, b int) int { return a + b },
 	}
 }
 
