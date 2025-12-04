@@ -15,14 +15,12 @@ import (
 
 type (
 	Plan struct {
-		Query        *Query
-		Path         string
-		Names        []string
-		Bindings     []map[string]any
-		ResultSets   []ResultSet
-		Fixtures     []string          `yaml:"fixtures,omitempty" json:"fixtures,omitempty"`
-		Cleanup      CleanupStrategy   `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
-		PlanQuality  *PlanQualityConfig `yaml:"plan_quality,omitempty" json:"plan_quality,omitempty"`
+		Query       *Query
+		Path        string
+		Names       []string
+		Bindings    []map[string]any
+		ResultSets  []ResultSet
+		PlanQuality *PlanQualityConfig `yaml:"plan_quality,omitempty" json:"plan_quality,omitempty"`
 	}
 
 	PlanQualityConfig struct {
@@ -83,8 +81,6 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 		Names:      names,
 		Bindings:   bindings,
 		ResultSets: []ResultSet{},
-		Fixtures:   []string{},
-		Cleanup:    "",
 	}
 	plan.Write()
 
@@ -104,8 +100,6 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 				Names:      []string{},
 				Bindings:   []map[string]any{},
 				ResultSets: []ResultSet{},
-				Fixtures:   []string{},
-				Cleanup:    "",
 			}, nil
 		}
 		return nil, fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
@@ -123,27 +117,11 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	}
 
 	// Extract known top-level fields
-	var fixtures []string
-	var cleanup CleanupStrategy
 	var planQuality *PlanQualityConfig
 
-	if fixturesRaw, ok := raw["fixtures"]; ok {
-		if fixturesList, ok := fixturesRaw.([]any); ok {
-			for _, f := range fixturesList {
-				if str, ok := f.(string); ok {
-					fixtures = append(fixtures, str)
-				}
-			}
-		}
-		delete(raw, "fixtures")
-	}
-
-	if cleanupRaw, ok := raw["cleanup"]; ok {
-		if str, ok := cleanupRaw.(string); ok {
-			cleanup = CleanupStrategy(str)
-		}
-		delete(raw, "cleanup")
-	}
+	// Skip fixtures and cleanup fields (deprecated - ignored for backwards compatibility)
+	delete(raw, "fixtures")
+	delete(raw, "cleanup")
 
 	if planQualityRaw, ok := raw["plan_quality"]; ok {
 		// Re-marshal and unmarshal to convert to struct
@@ -178,8 +156,6 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 		Names:       names,
 		Bindings:    bindings,
 		ResultSets:  []ResultSet{},
-		Fixtures:    fixtures,
-		Cleanup:     cleanup,
 		PlanQuality: planQuality,
 	}, nil
 }
@@ -245,12 +221,6 @@ func (p *Plan) Write() {
 	}
 
 	// Add optional fields
-	if len(p.Fixtures) > 0 {
-		planData["fixtures"] = p.Fixtures
-	}
-	if p.Cleanup != "" {
-		planData["cleanup"] = p.Cleanup
-	}
 	if p.PlanQuality != nil {
 		planData["plan_quality"] = p.PlanQuality
 	}

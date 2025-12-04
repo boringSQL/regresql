@@ -49,9 +49,8 @@ var (
 		RunE:  runFixturesDeps,
 	}
 
-	fixturesCwd  string
-	applyCleanup string
-	applyForce   bool
+	fixturesCwd string
+	applyForce  bool
 )
 
 func init() {
@@ -63,7 +62,6 @@ func init() {
 	fixturesCmd.AddCommand(fixturesDepsCmd)
 
 	fixturesCmd.PersistentFlags().StringVarP(&fixturesCwd, "cwd", "C", ".", "Change to Directory")
-	fixturesApplyCmd.Flags().StringVar(&applyCleanup, "cleanup", "", "Override cleanup strategy (none|rollback|truncate)")
 	fixturesApplyCmd.Flags().BoolVar(&applyForce, "force", false, "Truncate tables before applying fixture")
 }
 
@@ -203,7 +201,6 @@ func runFixturesShow(cmd *cobra.Command, args []string) error {
 	if fixture.Description != "" {
 		fmt.Printf("Description: %s\n", fixture.Description)
 	}
-	fmt.Printf("Cleanup: %s\n", fixture.GetCleanup())
 
 	if len(fixture.DependsOn) > 0 {
 		fmt.Println("Dependencies:")
@@ -261,20 +258,6 @@ func runFixturesApply(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// handle cleanup strategy
-	originalCleanup := fixture.GetCleanup()
-	if applyCleanup != "" {
-		// explicitly specified cleanup strategy
-		fixture.Cleanup = regresql.CleanupStrategy(applyCleanup)
-	} else {
-		// default to 'none' for manual apply command (keep data in database)
-		fixture.Cleanup = regresql.CleanupNone
-		if originalCleanup != regresql.CleanupNone {
-			fmt.Printf("Note: Overriding cleanup strategy from '%s' to 'none' for manual apply.\n", originalCleanup)
-			fmt.Printf("      Use --cleanup=%s to preserve original behavior.\n\n", originalCleanup)
-		}
-	}
-
 	fmt.Printf("Loading fixture: %s\n", fixtureName)
 
 	// Truncate tables if --force is set
@@ -319,7 +302,6 @@ func runFixturesApply(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(os.Stderr, "\nSuggestions:")
 			fmt.Fprintln(os.Stderr, "  - Use --force to truncate tables and reload")
 			fmt.Fprintf(os.Stderr, "  - Manual cleanup: TRUNCATE %s CASCADE;\n", joinTables(fixture.GetTables()))
-			fmt.Fprintln(os.Stderr, "  - Use --cleanup=rollback for testing (no persistent data)")
 			fmt.Fprintln(os.Stderr, "")
 			os.Exit(1)
 		}
@@ -335,18 +317,11 @@ func runFixturesApply(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  ✓ Generated %d rows into %s\n", gs.Count, gs.Table)
 	}
 
-	if err := fm.Cleanup(fixture); err != nil {
+	if err := fm.Commit(); err != nil {
 		return err
 	}
 
-	switch fixture.GetCleanup() {
-	case regresql.CleanupNone:
-		fmt.Println("Fixture applied successfully (kept in database)")
-	case regresql.CleanupRollback:
-		fmt.Println("Fixture applied successfully (rolled back)")
-	case regresql.CleanupTruncate:
-		fmt.Println("Fixture applied successfully (truncated)")
-	}
+	fmt.Println("Fixture applied successfully")
 
 	return nil
 }

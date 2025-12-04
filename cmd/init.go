@@ -10,9 +10,8 @@ import (
 
 // Command Flags
 var (
-	initCwd         string
-	pguri           string
-	initUseFixtures bool
+	initCwd string
+	pguri   string
 )
 
 // initCmd represents the init command
@@ -26,7 +25,7 @@ var initCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		pguri := args[0]
-		regresql.Init(initCwd, pguri, initUseFixtures)
+		regresql.Init(initCwd, pguri)
 	},
 }
 
@@ -43,5 +42,4 @@ func init() {
 	// is called directly, e.g.:
 	// initCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	initCmd.Flags().StringVarP(&initCwd, "cwd", "C", ".", "Change to Directory")
-	initCmd.Flags().BoolVar(&initUseFixtures, "use-fixtures", false, "Enable fixtures for update and baseline commands")
 }

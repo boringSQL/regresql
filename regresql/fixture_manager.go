@@ -461,33 +461,6 @@ func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo
 	return nil
 }
 
-// Cleanup performs cleanup based on the fixture's cleanup strategy
-func (fm *FixtureManager) Cleanup(fixture *Fixture) error {
-	cleanup := fixture.GetCleanup()
-
-	switch cleanup {
-	case CleanupRollback:
-		return fm.Rollback()
-
-	case CleanupTruncate:
-		// Truncate all tables used by this fixture
-		tables := fixture.GetTables()
-		for _, table := range tables {
-			query := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table)
-			if _, err := fm.tx.Exec(query); err != nil {
-				return fmt.Errorf("failed to truncate table '%s': %w", table, err)
-			}
-		}
-		return fm.Commit()
-
-	case CleanupNone:
-		return fm.Commit()
-
-	default:
-		return fmt.Errorf("unknown cleanup strategy: %s", cleanup)
-	}
-}
-
 // Rollback rolls back the current transaction
 func (fm *FixtureManager) Rollback() error {
 	if fm.tx == nil {

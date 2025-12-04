@@ -2,16 +2,13 @@ package regresql
 
 type (
 	Fixture struct {
-		Name        string          `yaml:"fixture" json:"fixture"`
-		Description string          `yaml:"description,omitempty" json:"description,omitempty"`
-		Cleanup     CleanupStrategy `yaml:"cleanup" json:"cleanup"`
-		DependsOn   []string        `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
-		Data        []TableData     `yaml:"data,omitempty" json:"data,omitempty"`
-		Generate    []GenerateSpec  `yaml:"generate,omitempty" json:"generate,omitempty"`
-		SQL         []SQLSpec       `yaml:"sql,omitempty" json:"sql,omitempty"`
+		Name        string         `yaml:"fixture" json:"fixture"`
+		Description string         `yaml:"description,omitempty" json:"description,omitempty"`
+		DependsOn   []string       `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+		Data        []TableData    `yaml:"data,omitempty" json:"data,omitempty"`
+		Generate    []GenerateSpec `yaml:"generate,omitempty" json:"generate,omitempty"`
+		SQL         []SQLSpec      `yaml:"sql,omitempty" json:"sql,omitempty"`
 	}
-
-	CleanupStrategy string
 
 	TableData struct {
 		Table string           `yaml:"table" json:"table"`
@@ -35,24 +32,11 @@ type (
 	}
 )
 
-const (
-	CleanupTruncate CleanupStrategy = "truncate"
-	CleanupRollback CleanupStrategy = "rollback"
-	CleanupNone     CleanupStrategy = "none"
-)
 
 // Validate checks if the fixture definition is valid
 func (f *Fixture) Validate() error {
 	if f.Name == "" {
 		return ErrInvalidFixture("fixture name is required")
-	}
-
-	// Validate cleanup strategy
-	switch f.Cleanup {
-	case CleanupTruncate, CleanupRollback, CleanupNone, "":
-		// Valid strategies (empty defaults to rollback)
-	default:
-		return ErrInvalidFixture("invalid cleanup strategy: %s (must be truncate, rollback, or none)", f.Cleanup)
 	}
 
 	if len(f.Data) == 0 && len(f.Generate) == 0 && len(f.SQL) == 0 {
@@ -97,14 +81,6 @@ func (f *Fixture) Validate() error {
 	}
 
 	return nil
-}
-
-// GetCleanup returns the cleanup strategy, defaulting to rollback
-func (f *Fixture) GetCleanup() CleanupStrategy {
-	if f.Cleanup == "" {
-		return CleanupRollback
-	}
-	return f.Cleanup
 }
 
 // GetTables returns all tables referenced in this fixture

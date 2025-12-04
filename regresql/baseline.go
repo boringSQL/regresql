@@ -67,7 +67,7 @@ func ExecuteExplain(db *sql.DB, query string, args ...any) (map[string]any, erro
 	return plan[0], nil
 }
 
-func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, fixtureManager *FixtureManager) error {
+func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) error {
 	var plan *Plan
 	var err error
 
@@ -84,21 +84,8 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 		}
 	}
 
-	if fixtureManager != nil && len(plan.Fixtures) > 0 {
-		if err := fixtureManager.BeginTransaction(); err != nil {
-			return fmt.Errorf("failed to begin transaction for fixtures: %w", err)
-		}
-		if err := fixtureManager.ApplyFixtures(plan.Fixtures); err != nil {
-			fixtureManager.Rollback()
-			return fmt.Errorf("failed to apply fixtures: %w", err)
-		}
-	}
-
 	baselines, fullPlans, err := plan.CreateBaselines(db)
 	if err != nil {
-		if fixtureManager != nil && len(plan.Fixtures) > 0 {
-			fixtureManager.Rollback()
-		}
 		return err
 	}
 
@@ -109,20 +96,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, f
 			fullPlan = fullPlans[i]
 		}
 		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan, fullPlan); err != nil {
-			if fixtureManager != nil && len(plan.Fixtures) > 0 {
-				fixtureManager.Rollback()
-			}
 			return err
-		}
-	}
-
-	if fixtureManager != nil && len(plan.Fixtures) > 0 {
-		fixture, _ := fixtureManager.LoadFixture(plan.Fixtures[0])
-		if plan.Cleanup != "" {
-			fixture.Cleanup = plan.Cleanup
-		}
-		if err := fixtureManager.Cleanup(fixture); err != nil {
-			return fmt.Errorf("failed to cleanup fixtures: %w", err)
 		}
 	}
 
@@ -189,19 +163,6 @@ func BaselineQueries(root string, runFilter string) {
 	}
 	defer db.Close()
 
-	var fixtureManager *FixtureManager
-	if config.UseFixtures {
-		fixtureManager, err = NewFixtureManager(root, db)
-		if err != nil {
-			fmt.Printf("Failed to create fixture manager: %s\n", err.Error())
-			os.Exit(10)
-		}
-		if err := fixtureManager.IntrospectSchema(); err != nil {
-			fmt.Printf("Failed to introspect schema: %s\n", err.Error())
-			os.Exit(10)
-		}
-	}
-
 	baselineDir := filepath.Join(suite.RegressDir, "baselines")
 
 	fmt.Printf("Creating baselines directory: %s\n", baselineDir)
@@ -248,7 +209,7 @@ func BaselineQueries(root string, runFilter string) {
 					continue
 				}
 
-				if err := q.CreateBaseline(folderBaselineDir, folderPlanDir, db, fixtureManager); err != nil {
+				if err := q.CreateBaseline(folderBaselineDir, folderPlanDir, db); err != nil {
 					fmt.Printf("  Error creating baseline for %s: %s\n", q.Name, err.Error())
 				}
 			}

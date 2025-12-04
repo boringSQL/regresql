@@ -228,24 +228,13 @@ func (s *Suite) initRegressHierarchy() error {
 
 // createExpectedResults walks the s Suite instance and runs its queries,
 // storing the results in the expected files.
-func (s *Suite) createExpectedResults(pguri string, useFixtures bool) error {
+func (s *Suite) createExpectedResults(pguri string) error {
 	db, err := sql.Open("pgx", pguri)
 
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
-
-	var fixtureManager *FixtureManager
-	if useFixtures {
-		fixtureManager, err = NewFixtureManager(s.Root, db)
-		if err != nil {
-			return fmt.Errorf("Failed to create fixture manager: %w", err)
-		}
-		if err := fixtureManager.IntrospectSchema(); err != nil {
-			return fmt.Errorf("Failed to introspect schema: %w", err)
-		}
-	}
 
 	fmt.Println("Writing expected Result Sets:")
 
@@ -281,40 +270,12 @@ func (s *Suite) createExpectedResults(pguri string, useFixtures bool) error {
 					return err
 				}
 
-				// Apply fixtures if configured
-				if useFixtures && len(p.Fixtures) > 0 {
-					if err := fixtureManager.BeginTransaction(); err != nil {
-						return fmt.Errorf("Failed to begin transaction for fixtures: %w", err)
-					}
-					if err := fixtureManager.ApplyFixtures(p.Fixtures); err != nil {
-						fixtureManager.Rollback()
-						return fmt.Errorf("Failed to apply fixtures: %w", err)
-					}
-				}
-
 				if err := p.Execute(db); err != nil {
-					if useFixtures && len(p.Fixtures) > 0 {
-						fixtureManager.Rollback()
-					}
 					return err
 				}
 
 				if err := p.WriteResultSets(edir); err != nil {
-					if useFixtures && len(p.Fixtures) > 0 {
-						fixtureManager.Rollback()
-					}
 					return err
-				}
-
-				// Cleanup fixtures
-				if useFixtures && len(p.Fixtures) > 0 {
-					fixture, _ := fixtureManager.LoadFixture(p.Fixtures[0])
-					if p.Cleanup != "" {
-						fixture.Cleanup = p.Cleanup
-					}
-					if err := fixtureManager.Cleanup(fixture); err != nil {
-						return fmt.Errorf("Failed to cleanup fixtures: %w", err)
-					}
 				}
 
 				for _, rs := range p.ResultSets {
@@ -336,15 +297,6 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
-
-	fixtureManager, err := NewFixtureManager(s.Root, db)
-	if err != nil {
-		return fmt.Errorf("Failed to create fixture manager: %w", err)
-	}
-
-	if err := fixtureManager.IntrospectSchema(); err != nil {
-		return fmt.Errorf("Failed to introspect schema: %w", err)
-	}
 
 	w, close, err := getWriter(outputPath)
 	if err != nil {
@@ -387,37 +339,17 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					return err
 				}
 
-				if len(p.Fixtures) > 0 {
-					if err := fixtureManager.BeginTransaction(); err != nil {
-						return fmt.Errorf("Failed to begin transaction for fixtures: %w", err)
-					}
-
-					if err := fixtureManager.ApplyFixtures(p.Fixtures); err != nil {
-						fixtureManager.Rollback()
-						return fmt.Errorf("Failed to apply fixtures: %w", err)
-					}
-				}
-
 				if err := p.Execute(db); err != nil {
-					if len(p.Fixtures) > 0 {
-						fixtureManager.Rollback()
-					}
 					return err
 				}
 
 				if err := p.WriteResultSets(odir); err != nil {
-					if len(p.Fixtures) > 0 {
-						fixtureManager.Rollback()
-					}
 					return err
 				}
 
 				for _, r := range p.CompareResultSetsToResults(s.RegressDir, edir) {
 					summary.AddResult(r)
 					if err := formatter.AddResult(r, w); err != nil {
-						if len(p.Fixtures) > 0 {
-							fixtureManager.Rollback()
-						}
 						return err
 					}
 				}
@@ -426,21 +358,8 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					for _, r := range p.CompareBaselinesToResults(bdir, db, DefaultCostThresholdPercent) {
 						summary.AddResult(r)
 						if err := formatter.AddResult(r, w); err != nil {
-							if len(p.Fixtures) > 0 {
-								fixtureManager.Rollback()
-							}
 							return err
 						}
-					}
-				}
-
-				if len(p.Fixtures) > 0 {
-					fixture, _ := fixtureManager.LoadFixture(p.Fixtures[0])
-					if p.Cleanup != "" {
-						fixture.Cleanup = p.Cleanup
-					}
-					if err := fixtureManager.Cleanup(fixture); err != nil {
-						return fmt.Errorf("Failed to cleanup fixtures: %w", err)
 					}
 				}
 			}

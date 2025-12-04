@@ -164,7 +164,9 @@ Notes:
 
 ## Test Fixtures
 
-RegreSQL provides a declarative fixture system for managing test data. Fixtures allow you to set up complex database states with static or generated data, making your tests more reliable and maintainable.
+RegreSQL provides a declarative fixture system for managing test data. Fixtures allow you to set up complex database states with static or generated data.
+
+**NOTICE**: Fixtures are being refactored to support reproducible, isolated and idempotent tests.
 
 ### Quick Example
 
@@ -173,7 +175,6 @@ Create a fixture in `regresql/fixtures/users.yaml`:
 ```yaml
 fixture: users
 description: Test user accounts
-cleanup: rollback
 data:
   - table: users
     rows:
@@ -185,9 +186,6 @@ data:
 Use it in your test plan `regresql/plans/get-user.yaml`:
 
 ```yaml
-fixtures:
-  - users
-
 "1":
   email: test@example.com
 ```

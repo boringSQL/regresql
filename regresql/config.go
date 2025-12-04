@@ -13,12 +13,11 @@ import (
 // ./ or the -C command line parameter.
 type (
 	config struct {
-		Root           string                 `yaml:"root"`
-		PgUri          string                 `yaml:"pguri"`
-		UseFixtures    bool                   `yaml:"use_fixtures,omitempty"`
-		Ignore         []string               `yaml:"ignore,omitempty"`
-		PlanQuality    *PlanQualityGlobal     `yaml:"plan_quality,omitempty"`
-		DiffComparison *DiffComparisonGlobal  `yaml:"diff_comparison,omitempty"`
+		Root           string                `yaml:"root"`
+		PgUri          string                `yaml:"pguri"`
+		Ignore         []string              `yaml:"ignore,omitempty"`
+		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
+		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
 	}
 
 	PlanQualityGlobal struct {
@@ -49,15 +48,12 @@ func (s *Suite) createRegressDir() error {
 	return nil
 }
 
-func (s *Suite) setupConfig(pguri string, useFixtures bool) {
+func (s *Suite) setupConfig(pguri string) {
 	configFile := s.getRegressConfigFile()
 
 	cfg := config{
 		Root:  s.Root,
 		PgUri: pguri,
-	}
-	if useFixtures {
-		cfg.UseFixtures = true
 	}
 
 	data, err := yaml.Marshal(&cfg)
