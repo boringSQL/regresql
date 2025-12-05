@@ -91,8 +91,9 @@ case and add a value for each parameter. `)
 
 /*
 Update updates the expected files from the queries and their parameters.
+Each query runs in its own transaction that rolls back (unless commit is true).
 */
-func Update(root string, runFilter string) {
+func Update(root string, runFilter string, commit bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -113,7 +114,7 @@ func Update(root string, runFilter string) {
 		os.Exit(2)
 	}
 
-	if err := suite.createExpectedResults(config.PgUri); err != nil {
+	if err := suite.createExpectedResults(config.PgUri, commit); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(12)
 	}
@@ -134,7 +135,9 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
-func Test(root, runFilter, formatName, outputPath string) {
+// Test runs regression tests for all queries.
+// Each query runs in its own transaction that rolls back (unless commit is true).
+func Test(root, runFilter, formatName, outputPath string, commit bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -166,7 +169,7 @@ func Test(root, runFilter, formatName, outputPath string) {
 		os.Exit(14)
 	}
 
-	if err := suite.testQueries(config.PgUri, formatter, outputPath); err != nil {
+	if err := suite.testQueries(config.PgUri, formatter, outputPath, commit); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(13)
 	}

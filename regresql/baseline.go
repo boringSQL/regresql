@@ -39,10 +39,10 @@ func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
 }
 
 // ExecuteExplain runs EXPLAIN (FORMAT JSON) for a query and returns the parsed plan
-func ExecuteExplain(db *sql.DB, query string, args ...any) (map[string]any, error) {
+func ExecuteExplain(q Querier, query string, args ...any) (map[string]any, error) {
 	explainQuery := fmt.Sprintf("EXPLAIN (FORMAT JSON, ANALYZE false, VERBOSE false, COSTS true, BUFFERS false) %s", query)
 
-	rows, err := db.Query(explainQuery, args...)
+	rows, err := q.Query(explainQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute EXPLAIN: %w", err)
 	}

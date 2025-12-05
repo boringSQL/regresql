@@ -228,9 +228,9 @@ func (s *Suite) initRegressHierarchy() error {
 
 // createExpectedResults walks the s Suite instance and runs its queries,
 // storing the results in the expected files.
-func (s *Suite) createExpectedResults(pguri string) error {
+// Each query runs in its own transaction that rolls back (unless commit is true).
+func (s *Suite) createExpectedResults(pguri string, commit bool) error {
 	db, err := sql.Open("pgx", pguri)
-
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
@@ -254,14 +254,10 @@ func (s *Suite) createExpectedResults(pguri string) error {
 			}
 
 			for _, q := range queries {
-				// Skip if the query doesn't match the run filter
 				if !s.matchesRunFilter(name, q.Name) {
 					continue
 				}
-
-				// Skip queries with notest option
-				opts := q.GetRegressQLOptions()
-				if opts.NoTest {
+				if opts := q.GetRegressQLOptions(); opts.NoTest {
 					continue
 				}
 
@@ -270,11 +266,12 @@ func (s *Suite) createExpectedResults(pguri string) error {
 					return err
 				}
 
-				if err := p.Execute(db); err != nil {
-					return err
-				}
-
-				if err := p.WriteResultSets(edir); err != nil {
+				if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
+					if err := p.Execute(tx); err != nil {
+						return err
+					}
+					return p.WriteResultSets(edir)
+				}); err != nil {
 					return err
 				}
 
@@ -291,7 +288,8 @@ func (s *Suite) createExpectedResults(pguri string) error {
 // and stores results in the out directory for manual inspection if
 // necessary. It then compares the actual output to the expected output and
 // reports results using the specified formatter.
-func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string) error {
+// Each query runs in its own transaction that rolls back (unless commit is true).
+func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) error {
 	db, err := sql.Open("pgx", pguri)
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
@@ -339,34 +337,56 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					return err
 				}
 
-				if err := p.Execute(db); err != nil {
-					return err
-				}
-
-				if err := p.WriteResultSets(odir); err != nil {
-					return err
-				}
-
-				for _, r := range p.CompareResultSetsToResults(s.RegressDir, edir) {
-					summary.AddResult(r)
-					if err := formatter.AddResult(r, w); err != nil {
+				if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
+					if err := p.Execute(tx); err != nil {
 						return err
 					}
-				}
+					if err := p.WriteResultSets(odir); err != nil {
+						return err
+					}
 
-				if !opts.NoBaseline && hasBaselines(p.Query, bdir, p.Names) {
-					for _, r := range p.CompareBaselinesToResults(bdir, db, DefaultCostThresholdPercent) {
+					for _, r := range p.CompareResultSetsToResults(s.RegressDir, edir) {
 						summary.AddResult(r)
 						if err := formatter.AddResult(r, w); err != nil {
 							return err
 						}
 					}
+
+					if !opts.NoBaseline && hasBaselines(p.Query, bdir, p.Names) {
+						for _, r := range p.CompareBaselinesToResults(bdir, tx, DefaultCostThresholdPercent) {
+							summary.AddResult(r)
+							if err := formatter.AddResult(r, w); err != nil {
+								return err
+							}
+						}
+					}
+					return nil
+				}); err != nil {
+					return err
 				}
 			}
 		}
 	}
 
 	return formatter.Finish(summary, w)
+}
+
+// runInTransaction executes fn within a transaction, rolling back on error or if commit is false
+func (s *Suite) runInTransaction(db *sql.DB, commit bool, fn func(tx *sql.Tx) error) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if commit {
+		return tx.Commit()
+	}
+	return tx.Rollback()
 }
 
 // Only create dir(s) when it doesn't exists already

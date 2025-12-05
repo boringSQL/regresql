@@ -1,7 +1,6 @@
 package regresql
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,8 +17,8 @@ func (p *Plan) CompareResultSets(regressDir, expectedDir string, t *tap.T) {
 	}
 }
 
-func (p *Plan) CompareBaselines(baselineDir string, db *sql.DB, t *tap.T, thresholdPercent float64) {
-	for _, r := range p.CompareBaselinesToResults(baselineDir, db, thresholdPercent) {
+func (p *Plan) CompareBaselines(baselineDir string, q Querier, t *tap.T, thresholdPercent float64) {
+	for _, r := range p.CompareBaselinesToResults(baselineDir, q, thresholdPercent) {
 		outputResultToTAP(r, t)
 	}
 }
@@ -165,20 +164,20 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 	return results
 }
 
-func (p *Plan) CompareBaselinesToResults(baselineDir string, db *sql.DB, thresholdPercent float64) []TestResult {
+func (p *Plan) CompareBaselinesToResults(baselineDir string, q Querier, thresholdPercent float64) []TestResult {
 	if len(p.Query.Args) == 0 {
-		return []TestResult{p.compareBaseline(baselineDir, "", nil, db, thresholdPercent)}
+		return []TestResult{p.compareBaseline(baselineDir, "", nil, q, thresholdPercent)}
 	}
 
 	results := make([]TestResult, 0, len(p.Bindings))
 	for i, bindings := range p.Bindings {
-		result := p.compareBaseline(baselineDir, p.Names[i], bindings, db, thresholdPercent)
+		result := p.compareBaseline(baselineDir, p.Names[i], bindings, q, thresholdPercent)
 		results = append(results, result)
 	}
 	return results
 }
 
-func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[string]any, db *sql.DB, thresholdPercent float64) TestResult {
+func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64) TestResult {
 	start := time.Now()
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
@@ -198,7 +197,7 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		return result
 	}
 
-	explainPlan, err := p.executeExplainWithBindings(db, bindings)
+	explainPlan, err := p.runExplain(q, bindings)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("Failed to execute EXPLAIN: %s", err.Error())
@@ -244,12 +243,12 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	return result
 }
 
-func (p *Plan) executeExplainWithBindings(db *sql.DB, bindings map[string]any) (map[string]any, error) {
+func (p *Plan) runExplain(q Querier, bindings map[string]any) (map[string]any, error) {
 	if bindings == nil {
-		return ExecuteExplain(db, p.Query.OrdinalQuery)
+		return ExecuteExplain(q, p.Query.OrdinalQuery)
 	}
 	sql, args := p.Query.Prepare(bindings)
-	return ExecuteExplain(db, sql, args...)
+	return ExecuteExplain(q, sql, args...)
 }
 
 func extractTotalCost(explainPlan map[string]any) float64 {

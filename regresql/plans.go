@@ -1,7 +1,6 @@
 package regresql
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
 	"path"
@@ -119,9 +118,15 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	// Extract known top-level fields
 	var planQuality *PlanQualityConfig
 
-	// Skip fixtures and cleanup fields (deprecated - ignored for backwards compatibility)
-	delete(raw, "fixtures")
-	delete(raw, "cleanup")
+	// Skip fixtures and cleanup fields (deprecated - emit warning for backwards compatibility)
+	if _, hasFixtures := raw["fixtures"]; hasFixtures {
+		fmt.Fprintf(os.Stderr, "Warning: 'fixtures:' in plan file '%s' is deprecated and ignored\n", pfile)
+		delete(raw, "fixtures")
+	}
+	if _, hasCleanup := raw["cleanup"]; hasCleanup {
+		fmt.Fprintf(os.Stderr, "Warning: 'cleanup:' in plan file '%s' is deprecated and ignored\n", pfile)
+		delete(raw, "cleanup")
+	}
 
 	if planQualityRaw, ok := raw["plan_quality"]; ok {
 		// Re-marshal and unmarshal to convert to struct
@@ -160,11 +165,14 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	}, nil
 }
 
-// Executes a plan and returns the filepath where the output has been
-// written, for later comparing
-func (p *Plan) Execute(db *sql.DB) error {
+// Execute runs the plan's query against the given querier (db or transaction)
+func (p *Plan) Execute(q Querier) error {
+	if os.Getenv("REGRESQL_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Executing query %s with %d bindings: %v\n", p.Query.Name, len(p.Bindings), p.Names)
+	}
+
 	if len(p.Query.Args) == 0 {
-		res, err := QueryDB(db, p.Query.OrdinalQuery)
+		res, err := RunQuery(q, p.Query.OrdinalQuery)
 		if err != nil {
 			return fmt.Errorf("error executing query: %w\n%s", err, p.Query.OrdinalQuery)
 		}
@@ -172,16 +180,10 @@ func (p *Plan) Execute(db *sql.DB) error {
 		return nil
 	}
 
-	// Debug: Log execution details
-	if os.Getenv("REGRESQL_DEBUG") == "1" {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Executing query %s with %d bindings: %v\n", p.Query.Name, len(p.Bindings), p.Names)
-	}
-
 	p.ResultSets = make([]ResultSet, len(p.Bindings))
-
 	for i, bindings := range p.Bindings {
 		sql, args := p.Query.Prepare(bindings)
-		res, err := QueryDB(db, sql, args...)
+		res, err := RunQuery(q, sql, args...)
 		if err != nil {
 			return fmt.Errorf("error executing query with params %v: %w\n%s", args, err, sql)
 		}

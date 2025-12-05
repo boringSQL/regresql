@@ -13,6 +13,7 @@ var (
 	testRunFilter  string
 	testFormat     string
 	testOutputPath string
+	testCommit     bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -22,7 +23,7 @@ var (
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath)
+			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath, testCommit)
 		},
 	}
 )
@@ -34,4 +35,5 @@ func init() {
 	testCmd.Flags().StringVar(&testRunFilter, "run", "", "Run only queries matching regexp (matches file names and query names)")
 	testCmd.Flags().StringVar(&testFormat, "format", "console", "Output format: console, pgtap, junit, json, github-actions")
 	testCmd.Flags().StringVarP(&testOutputPath, "output", "o", "", "Output file path (default: stdout)")
+	testCmd.Flags().BoolVar(&testCommit, "commit", false, "Commit transactions instead of rollback (use with caution)")
 }

@@ -45,14 +45,13 @@ func TestConnectionString(pguri string) error {
 	return nil
 }
 
-// QueryDB runs the query against the db database connection, and returns a
-// ResultSet
-func QueryDB(db *sql.DB, query string, args ...any) (*ResultSet, error) {
-	if db == nil {
-		return nil, errors.New("db is nil")
+// RunQuery executes a query and returns a ResultSet
+func RunQuery(q Querier, query string, args ...any) (*ResultSet, error) {
+	if q == nil {
+		return nil, errors.New("querier is nil")
 	}
 
-	rows, err := db.Query(query, args...)
+	rows, err := q.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +63,6 @@ func QueryDB(db *sql.DB, query string, args ...any) (*ResultSet, error) {
 	}
 
 	res := make([][]any, 0)
-
 	for rows.Next() {
 		container := make([]any, len(cols))
 		dest := make([]any, len(cols))
@@ -77,10 +75,14 @@ func QueryDB(db *sql.DB, query string, args ...any) (*ResultSet, error) {
 			val := dest[i].(*any)
 			r[i] = *val
 		}
-
 		res = append(res, r)
 	}
 	return &ResultSet{cols, res, ""}, nil
+}
+
+// QueryDB runs the query against a database connection (legacy wrapper)
+func QueryDB(db *sql.DB, query string, args ...any) (*ResultSet, error) {
+	return RunQuery(db, query, args...)
 }
 
 // Println outputs to standard output a Pretty Printed result set.
