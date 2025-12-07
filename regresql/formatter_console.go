@@ -11,7 +11,7 @@ type ConsoleFormatter struct{
 }
 
 func (f *ConsoleFormatter) Start(w io.Writer) error {
-	fmt.Fprintln(w, "\nRunning regression tests...\n")
+	fmt.Fprintln(w, "\nRunning regression tests...")
 	f.lastQueryGroup = ""
 	return nil
 }

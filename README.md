@@ -162,11 +162,38 @@ Notes:
 - Semicolons inside strings or comments are ignored; only the semicolon terminating a query ends the block.
 - The query handling is available as a separate [queries](http://github.com/boringSQL/queries) library.
 
+## Snapshots
+
+Snapshots capture database state for reproducible regression testing. Instead of
+applying fixtures before each test run, you build a snapshot once and restore it
+before testing. This ensures tests always start from a known state, making them
+isolated and idempotent.
+
+**NOTICE**: Snapshot functionality is work in progress.
+
+```bash
+# Capture current database state
+regresql snapshot capture
+
+# Capture schema only (git-friendly SQL format)
+regresql snapshot capture --schema-only --format plain -o snapshots/schema.sql
+```
+
+Snapshots are stored using pg_dump and can be configured in `regresql/regress.yaml`:
+
+```yaml
+pguri: "postgres://..."
+snapshot:
+  path: snapshots/test_data.dump
+  format: custom  # custom, plain, or directory
+```
+
 ## Test Fixtures
 
-RegreSQL provides a declarative fixture system for managing test data. Fixtures allow you to set up complex database states with static or generated data.
+Fixtures are an optional way to build snapshots. They provide a declarative
+system for defining test data that gets compiled into a snapshot.
 
-**NOTICE**: Fixtures are being refactored to support reproducible, isolated and idempotent tests.
+**NOTICE**: Fixtures are being refactored to work with the snapshot workflow.
 
 ### Quick Example
 
@@ -182,15 +209,6 @@ data:
         email: test@example.com
         name: Test User
 ```
-
-Use it in your test plan `regresql/plans/get-user.yaml`:
-
-```yaml
-"1":
-  email: test@example.com
-```
-
-The fixture will be automatically loaded before test and cleaned up after.
 
 ### Key Features
 

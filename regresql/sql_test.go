@@ -2,13 +2,14 @@ package regresql
 
 import (
 	"testing"
-
-	"github.com/boringsql/queries"
 )
 
 func TestParseQueryString(t *testing.T) {
 	queryString := `select * from foo where id = :user_id`
-	q := queries.NewQuery("default", "", queryString, nil)
+	q, err := NewQueryFromString("default", queryString)
+	if err != nil {
+		t.Fatalf("NewQueryFromString failed: %v", err)
+	}
 
 	if len(q.NamedArgs) != 1 || q.NamedArgs[0].Name != "user_id" {
 		t.Error("Expected unique arg [\"user_id\"], got ", q.NamedArgs)
@@ -20,7 +21,10 @@ func TestParseQueryString(t *testing.T) {
 
 func TestParseQueryStringWithTypeCast(t *testing.T) {
 	queryString := `select name::text from foo where id = :user_id`
-	q := queries.NewQuery("default", "", queryString, nil)
+	q, err := NewQueryFromString("default", queryString)
+	if err != nil {
+		t.Fatalf("NewQueryFromString failed: %v", err)
+	}
 
 	if len(q.NamedArgs) != 1 || q.NamedArgs[0].Name != "user_id" {
 		t.Error("Expected unique arg [\"user_id\"], got ", q.NamedArgs)
@@ -32,9 +36,11 @@ func TestParseQueryStringWithTypeCast(t *testing.T) {
 
 func TestPrepareOneParam(t *testing.T) {
 	queryString := `select * from foo where id = :id`
-	bq := queries.NewQuery("default", "", queryString, nil)
-	q := &Query{Query: bq}
-	b := make(map[string]string)
+	q, err := NewQueryFromString("default", queryString)
+	if err != nil {
+		t.Fatalf("NewQueryFromString failed: %v", err)
+	}
+	b := make(map[string]any)
 	b["id"] = "1"
 
 	sql, params := q.Prepare(b)
@@ -52,9 +58,11 @@ func TestPrepareOneParam(t *testing.T) {
 
 func TestPrepareTwoParams(t *testing.T) {
 	queryString := `select * from foo where a = :a and b between :a and :b`
-	bq := queries.NewQuery("default", "", queryString, nil)
-	q := &Query{Query: bq}
-	b := make(map[string]string)
+	q, err := NewQueryFromString("default", queryString)
+	if err != nil {
+		t.Fatalf("NewQueryFromString failed: %v", err)
+	}
+	b := make(map[string]any)
 	b["a"] = "a"
 	b["b"] = "b"
 
@@ -65,10 +73,10 @@ func TestPrepareTwoParams(t *testing.T) {
 		t.Errorf("Query string not as expected.\nGot:\n%s\n\nExpected:\n%s", sql, expected)
 	}
 
-	if !(len(params) == 3 &&
+	// Prepare deduplicates parameters, so :a only appears once
+	if !(len(params) == 2 &&
 		params[0] == "a" &&
-		params[1] == "a" &&
-		params[2] == "b") {
+		params[1] == "b") {
 		t.Error("Bindings not properly applied, got ", params)
 	}
 }

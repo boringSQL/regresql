@@ -8,9 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config structure is useful to store the PostgreSQL connection string, and
-// also remember the code root directory, which as of now is always either
-// ./ or the -C command line parameter.
 type (
 	config struct {
 		Root           string                `yaml:"root"`
@@ -18,6 +15,7 @@ type (
 		Ignore         []string              `yaml:"ignore,omitempty"`
 		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
 		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
+		Snapshot       *SnapshotConfig       `yaml:"snapshot,omitempty"`
 	}
 
 	PlanQualityGlobal struct {
@@ -27,6 +25,12 @@ type (
 	DiffComparisonGlobal struct {
 		FloatTolerance float64 `yaml:"float_tolerance,omitempty"`
 		MaxSamples     int     `yaml:"max_samples,omitempty"`
+	}
+
+	SnapshotConfig struct {
+		Path     string   `yaml:"path,omitempty"`     // snapshot dump file path (default: snapshots/default.dump)
+		Format   string   `yaml:"format,omitempty"`   // pg_dump format: custom, plain, or directory
+		Fixtures []string `yaml:"fixtures,omitempty"` // SQL/YAML fixture files for snapshot build
 	}
 )
 
