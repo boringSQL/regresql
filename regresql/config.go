@@ -109,6 +109,34 @@ func ReadConfig(root string) (config, error) {
 	return cfg, nil
 }
 
+// UpdateConfigField updates a single field in the config file, preserving other values
+func UpdateConfigField(root, key, value string) error {
+	configFile := filepath.Join(root, "regresql", "regress.yaml")
+
+	cfg, err := ReadConfig(root)
+	if err != nil {
+		return err
+	}
+
+	switch key {
+	case "pguri":
+		cfg.PgUri = value
+	default:
+		return fmt.Errorf("unsupported config key: %s", key)
+	}
+
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	return nil
+}
+
 var cachedConfig *config
 
 func SetGlobalConfig(cfg config) {
