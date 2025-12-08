@@ -347,3 +347,54 @@ func TestGetSnapshotFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectSnapshotFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// create test files
+	sqlFile := filepath.Join(tmpDir, "test.sql")
+	if err := os.WriteFile(sqlFile, []byte("SELECT 1;"), 0644); err != nil {
+		t.Fatalf("failed to create sql file: %v", err)
+	}
+
+	dumpFile := filepath.Join(tmpDir, "test.dump")
+	if err := os.WriteFile(dumpFile, []byte{}, 0644); err != nil {
+		t.Fatalf("failed to create dump file: %v", err)
+	}
+
+	dirSnapshot := filepath.Join(tmpDir, "snapshot_dir")
+	if err := os.Mkdir(dirSnapshot, 0755); err != nil {
+		t.Fatalf("failed to create directory: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want SnapshotFormat
+	}{
+		{"sql file", sqlFile, FormatPlain},
+		{"dump file", dumpFile, FormatCustom},
+		{"directory", dirSnapshot, FormatDirectory},
+		{"nonexistent", "/nonexistent/path", FormatCustom},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectSnapshotFormat(tt.path)
+			if got != tt.want {
+				t.Errorf("detectSnapshotFormat(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRestoreSnapshotMissingFile(t *testing.T) {
+	opts := RestoreOptions{
+		InputPath: "/nonexistent/snapshot.dump",
+	}
+
+	err := RestoreSnapshot("postgres://test", opts)
+	if err == nil {
+		t.Error("RestoreSnapshot() should return error for missing file")
+	}
+}

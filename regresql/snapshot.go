@@ -36,6 +36,12 @@ type (
 		SchemaOnly bool
 		Section    string
 	}
+
+	RestoreOptions struct {
+		InputPath string
+		Format    SnapshotFormat
+		Clean     bool // drop existing objects before restore
+	}
 )
 
 const (
@@ -269,4 +275,82 @@ func GetSnapshotFormat(cfg *SnapshotConfig) SnapshotFormat {
 
 func GetSnapshotsDir(root string) string {
 	return filepath.Join(root, "snapshots")
+}
+
+// RestoreSnapshot restores a database snapshot using pg_restore or psql
+func RestoreSnapshot(pguri string, opts RestoreOptions) error {
+	if _, err := os.Stat(opts.InputPath); os.IsNotExist(err) {
+		return fmt.Errorf("snapshot file not found: %s", opts.InputPath)
+	}
+
+	format := opts.Format
+	if format == "" {
+		format = detectSnapshotFormat(opts.InputPath)
+	}
+
+	if format == FormatPlain {
+		return restoreWithPsql(pguri, opts)
+	}
+	return restoreWithPgRestore(pguri, opts, format)
+}
+
+func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotFormat) error {
+	args := []string{"--dbname", pguri}
+
+	if opts.Clean {
+		args = append(args, "--clean", "--if-exists")
+	}
+
+	switch format {
+	case FormatCustom:
+		args = append(args, "--format=custom")
+	case FormatDirectory:
+		args = append(args, "--format=directory")
+	}
+
+	args = append(args, opts.InputPath)
+
+	cmd := exec.Command("pg_restore", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("pg_restore failed: %w", err)
+	}
+	return nil
+}
+
+func restoreWithPsql(pguri string, opts RestoreOptions) error {
+	args := []string{pguri, "-f", opts.InputPath}
+
+	if !opts.Clean {
+		args = append(args, "-v", "ON_ERROR_STOP=1")
+	}
+
+	cmd := exec.Command("psql", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("psql failed: %w", err)
+	}
+	return nil
+}
+
+func detectSnapshotFormat(path string) SnapshotFormat {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return FormatCustom
+	}
+
+	if stat.IsDir() {
+		return FormatDirectory
+	}
+
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".sql" {
+		return FormatPlain
+	}
+
+	return FormatCustom
 }

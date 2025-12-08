@@ -41,6 +41,26 @@ to run `regresql` from anywhere.
 If you're new to Go, see <https://golang.org/doc/install> for installation
 instructions and environment setup.
 
+### Requirements
+
+Snapshot commands (`regresql snapshot capture` and `regresql snapshot restore`)
+require PostgreSQL client tools to be available in your PATH:
+
+- `pg_dump` - for capturing snapshots
+- `pg_restore` - for restoring custom/directory format snapshots
+- `psql` - for restoring plain SQL format snapshots
+
+These tools are included with PostgreSQL client packages. On most systems:
+
+    # macOS (Homebrew)
+    brew install libpq
+
+    # Debian/Ubuntu
+    apt install postgresql-client
+
+    # RHEL/Fedora
+    dnf install postgresql
+
 ## Basic usage
 
 Basic usage or regresql:

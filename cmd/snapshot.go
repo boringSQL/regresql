@@ -15,6 +15,8 @@ var (
 	snapshotFormat     string
 	snapshotSchemaOnly bool
 	snapshotSection    string
+	snapshotInput      string
+	snapshotClean      bool
 
 	snapshotCmd = &cobra.Command{
 		Use:   "snapshot",
@@ -61,20 +63,56 @@ Examples:
 			}
 		},
 	}
+
+	snapshotRestoreCmd = &cobra.Command{
+		Use:   "restore [flags]",
+		Short: "Restore database from a snapshot",
+		Long: `Restore the database state from a previously captured snapshot.
+
+Uses pg_restore for custom/directory formats or psql for plain SQL format.
+The format is auto-detected from the file extension and type.
+
+Examples:
+  # Restore from default snapshot location
+  regresql snapshot restore
+
+  # Restore from a specific file
+  regresql snapshot restore --from snapshots/mydata.dump
+
+  # Drop existing objects before restore
+  regresql snapshot restore --clean
+
+  # Restore plain SQL file
+  regresql snapshot restore --from snapshots/schema.sql`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(snapshotCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+
+			if err := runSnapshotRestore(); err != nil {
+				fmt.Printf("Error: %s\n", err.Error())
+				os.Exit(1)
+			}
+		},
+	}
 )
 
 func init() {
 	RootCmd.AddCommand(snapshotCmd)
 	snapshotCmd.AddCommand(snapshotCaptureCmd)
+	snapshotCmd.AddCommand(snapshotRestoreCmd)
 
-	// Shared flags for snapshot commands
 	snapshotCmd.PersistentFlags().StringVarP(&snapshotCwd, "cwd", "C", ".", "Change to directory")
 
-	// Capture-specific flags
 	snapshotCaptureCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path (default: from config or snapshots/default.dump)")
 	snapshotCaptureCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory (default: custom)")
 	snapshotCaptureCmd.Flags().BoolVar(&snapshotSchemaOnly, "schema-only", false, "Dump only schema, no data")
 	snapshotCaptureCmd.Flags().StringVar(&snapshotSection, "section", "", "Dump specific section: pre-data, data, or post-data")
+
+	snapshotRestoreCmd.Flags().StringVar(&snapshotInput, "from", "", "Input file path (default: from config or snapshots/default.dump)")
+	snapshotRestoreCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Snapshot format: custom, plain, or directory (default: auto-detect)")
+	snapshotRestoreCmd.Flags().BoolVar(&snapshotClean, "clean", false, "Drop existing objects before restore")
 }
 
 func runSnapshotCapture() error {
@@ -182,4 +220,52 @@ func findPasswordEnd(s string) int {
 		}
 	}
 	return -1
+}
+
+func runSnapshotRestore() error {
+	cfg, err := regresql.ReadConfig(snapshotCwd)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+	}
+
+	if cfg.PgUri == "" {
+		return fmt.Errorf("pguri not configured in regress.yaml")
+	}
+
+	if err := regresql.TestConnectionString(cfg.PgUri); err != nil {
+		return fmt.Errorf("database connection failed: %w", err)
+	}
+
+	inputPath := snapshotInput
+	if inputPath == "" {
+		inputPath = regresql.GetSnapshotPath(cfg.Snapshot, snapshotCwd)
+	} else if !filepath.IsAbs(inputPath) {
+		inputPath = filepath.Join(snapshotCwd, inputPath)
+	}
+
+	var format regresql.SnapshotFormat
+	if snapshotFormat != "" {
+		format = regresql.SnapshotFormat(snapshotFormat)
+	}
+
+	opts := regresql.RestoreOptions{
+		InputPath: inputPath,
+		Format:    format,
+		Clean:     snapshotClean,
+	}
+
+	fmt.Printf("Restoring database snapshot...\n")
+	fmt.Printf("  Database: %s\n", maskConnectionString(cfg.PgUri))
+	fmt.Printf("  Input:    %s\n", inputPath)
+	if snapshotClean {
+		fmt.Printf("  Mode:     clean (drop existing objects)\n")
+	}
+	fmt.Println()
+
+	if err := regresql.RestoreSnapshot(cfg.PgUri, opts); err != nil {
+		return err
+	}
+
+	fmt.Printf("Snapshot restored successfully.\n")
+	return nil
 }
