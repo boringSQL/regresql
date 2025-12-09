@@ -54,8 +54,21 @@ const (
 	SnapshotMetadataFile  = ".regresql-snapshot.yaml"
 )
 
+// checkPgToolAvailable verifies that a PostgreSQL client tool is available in PATH
+func checkPgToolAvailable(tool string) error {
+	_, err := exec.LookPath(tool)
+	if err != nil {
+		return fmt.Errorf("%s is required but not found in PATH. Please install PostgreSQL client tools", tool)
+	}
+	return nil
+}
+
 // CaptureSnapshot captures the current database state using pg_dump
 func CaptureSnapshot(pguri string, opts SnapshotOptions) (*SnapshotInfo, error) {
+	if err := checkPgToolAvailable("pg_dump"); err != nil {
+		return nil, err
+	}
+
 	if opts.Format == "" {
 		opts.Format = DefaultSnapshotFormat
 	}
@@ -295,6 +308,10 @@ func RestoreSnapshot(pguri string, opts RestoreOptions) error {
 }
 
 func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotFormat) error {
+	if err := checkPgToolAvailable("pg_restore"); err != nil {
+		return err
+	}
+
 	args := []string{"--dbname", pguri}
 
 	if opts.Clean {
@@ -321,6 +338,10 @@ func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotForm
 }
 
 func restoreWithPsql(pguri string, opts RestoreOptions) error {
+	if err := checkPgToolAvailable("psql"); err != nil {
+		return err
+	}
+
 	args := []string{pguri, "-f", opts.InputPath}
 
 	if !opts.Clean {
