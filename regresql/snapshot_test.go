@@ -139,7 +139,7 @@ func TestComputeSingleFileHash(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 
 	content := []byte("hello world")
-	if err := os.WriteFile(testFile, content, 0644); err != nil {
+	if err := os.WriteFile(testFile, content, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -169,14 +169,14 @@ func TestComputeDirectoryHash(t *testing.T) {
 
 	// Create a directory structure
 	subDir := filepath.Join(tmpDir, "subdir")
-	if err := os.Mkdir(subDir, 0755); err != nil {
+	if err := os.Mkdir(subDir, 0o755); err != nil {
 		t.Fatalf("Failed to create subdir: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content1"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content1"), 0o644); err != nil {
 		t.Fatalf("Failed to create file1: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(subDir, "file2.txt"), []byte("content2"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(subDir, "file2.txt"), []byte("content2"), 0o644); err != nil {
 		t.Fatalf("Failed to create file2: %v", err)
 	}
 
@@ -353,17 +353,17 @@ func TestDetectSnapshotFormat(t *testing.T) {
 
 	// create test files
 	sqlFile := filepath.Join(tmpDir, "test.sql")
-	if err := os.WriteFile(sqlFile, []byte("SELECT 1;"), 0644); err != nil {
+	if err := os.WriteFile(sqlFile, []byte("SELECT 1;"), 0o644); err != nil {
 		t.Fatalf("failed to create sql file: %v", err)
 	}
 
 	dumpFile := filepath.Join(tmpDir, "test.dump")
-	if err := os.WriteFile(dumpFile, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(dumpFile, []byte{}, 0o644); err != nil {
 		t.Fatalf("failed to create dump file: %v", err)
 	}
 
 	dirSnapshot := filepath.Join(tmpDir, "snapshot_dir")
-	if err := os.Mkdir(dirSnapshot, 0755); err != nil {
+	if err := os.Mkdir(dirSnapshot, 0o755); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
 	}
 
@@ -380,9 +380,9 @@ func TestDetectSnapshotFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := detectSnapshotFormat(tt.path)
+			got := DetectSnapshotFormat(tt.path)
 			if got != tt.want {
-				t.Errorf("detectSnapshotFormat(%q) = %q, want %q", tt.path, got, tt.want)
+				t.Errorf("DetectSnapshotFormat(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
 	}
@@ -396,5 +396,62 @@ func TestRestoreSnapshotMissingFile(t *testing.T) {
 	err := RestoreSnapshot("postgres://test", opts)
 	if err == nil {
 		t.Error("RestoreSnapshot() should return error for missing file")
+	}
+}
+
+func TestParseToolVersions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		content string
+		want    int
+	}{
+		{
+			name:    "postgres only",
+			content: "postgres 18",
+			want:    18,
+		},
+		{
+			name:    "postgres with minor version",
+			content: "postgres 15.3",
+			want:    15,
+		},
+		{
+			name:    "postgres among other tools",
+			content: "nodejs 25.2.0\npostgres 14\nruby 3.4.7"
+			want:    14,
+		},
+		{
+			name:    "no postgres",
+			content: "nodejs 25.2.0\nruby 3.4.7",
+			want:    0,
+		},
+		{
+			name:    "postgres prefix but not tool",
+			content: "postgresql 16",
+			want:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(tmpDir, ".tool-versions")
+			if err := os.WriteFile(path, []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("failed to write test file: %v", err)
+			}
+
+			got := parseToolVersions(path)
+			if got != tt.want {
+				t.Errorf("parseToolVersions() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseToolVersionsFileNotFound(t *testing.T) {
+	got := parseToolVersions("/nonexistent/.tool-versions")
+	if got != 0 {
+		t.Errorf("parseToolVersions() = %d, want 0 for missing file", got)
 	}
 }

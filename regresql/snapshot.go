@@ -54,21 +54,65 @@ const (
 	SnapshotMetadataFile  = ".regresql-snapshot.yaml"
 )
 
-// checkPgToolAvailable verifies that a PostgreSQL client tool is available in PATH
-func checkPgToolAvailable(tool string) error {
-	_, err := exec.LookPath(tool)
-	if err != nil {
+// RestoreTool returns the appropriate PostgreSQL tool for restoring this format.
+func (f SnapshotFormat) RestoreTool() string {
+	if f == FormatPlain {
+		return "psql"
+	}
+	return "pg_restore"
+}
+
+// CheckPgTool verifies that a PostgreSQL client tool is available and meets version requirements.
+// If .tool-versions specifies postgres version, the tool must be at least that major version.
+func CheckPgTool(tool, projectRoot string) error {
+	if _, err := exec.LookPath(tool); err != nil {
 		return fmt.Errorf("%s is required but not found in PATH. Please install PostgreSQL client tools", tool)
+	}
+
+	requiredMajor := parseToolVersions(filepath.Join(projectRoot, ".tool-versions"))
+	if requiredMajor == 0 {
+		return nil
+	}
+
+	installedMajor := parseToolMajorVersion(tool)
+	if installedMajor > 0 && installedMajor < requiredMajor {
+		return fmt.Errorf("%s version %d is older than postgres %d in .tool-versions", tool, installedMajor, requiredMajor)
 	}
 	return nil
 }
 
+// parseToolVersions extracts postgres major version from .tool-versions file.
+func parseToolVersions(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if version, ok := strings.CutPrefix(line, "postgres "); ok {
+			var major int
+			fmt.Sscanf(version, "%d", &major)
+			return major
+		}
+	}
+	return 0
+}
+
+// parseToolMajorVersion extracts major version from a pg tool's --version output.
+func parseToolMajorVersion(tool string) int {
+	out, err := exec.Command(tool, "--version").Output()
+	if err != nil {
+		return 0
+	}
+	if fields := strings.Fields(string(out)); len(fields) >= 3 {
+		var major int
+		fmt.Sscanf(fields[len(fields)-1], "%d", &major)
+		return major
+	}
+	return 0
+}
+
 // CaptureSnapshot captures the current database state using pg_dump
 func CaptureSnapshot(pguri string, opts SnapshotOptions) (*SnapshotInfo, error) {
-	if err := checkPgToolAvailable("pg_dump"); err != nil {
-		return nil, err
-	}
-
 	if opts.Format == "" {
 		opts.Format = DefaultSnapshotFormat
 	}
@@ -83,7 +127,7 @@ func CaptureSnapshot(pguri string, opts SnapshotOptions) (*SnapshotInfo, error) 
 	}
 
 	outputDir := filepath.Dir(opts.OutputPath)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create snapshot directory: %w", err)
 	}
 
@@ -215,7 +259,6 @@ func computeDirectoryHash(dirPath string) (string, error) {
 		}
 		return nil
 	})
-
 	if err != nil {
 		return "", err
 	}
@@ -233,7 +276,7 @@ func WriteSnapshotMetadata(snapshotsDir string, info *SnapshotInfo) error {
 		return fmt.Errorf("failed to marshal snapshot metadata: %w", err)
 	}
 
-	if err := os.WriteFile(metadataPath, data, 0644); err != nil {
+	if err := os.WriteFile(metadataPath, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write snapshot metadata: %w", err)
 	}
 
@@ -298,7 +341,7 @@ func RestoreSnapshot(pguri string, opts RestoreOptions) error {
 
 	format := opts.Format
 	if format == "" {
-		format = detectSnapshotFormat(opts.InputPath)
+		format = DetectSnapshotFormat(opts.InputPath)
 	}
 
 	if format == FormatPlain {
@@ -308,10 +351,6 @@ func RestoreSnapshot(pguri string, opts RestoreOptions) error {
 }
 
 func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotFormat) error {
-	if err := checkPgToolAvailable("pg_restore"); err != nil {
-		return err
-	}
-
 	args := []string{"--dbname", pguri}
 
 	if opts.Clean {
@@ -338,10 +377,6 @@ func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotForm
 }
 
 func restoreWithPsql(pguri string, opts RestoreOptions) error {
-	if err := checkPgToolAvailable("psql"); err != nil {
-		return err
-	}
-
 	args := []string{pguri, "-f", opts.InputPath}
 
 	if !opts.Clean {
@@ -358,7 +393,7 @@ func restoreWithPsql(pguri string, opts RestoreOptions) error {
 	return nil
 }
 
-func detectSnapshotFormat(path string) SnapshotFormat {
+func DetectSnapshotFormat(path string) SnapshotFormat {
 	stat, err := os.Stat(path)
 	if err != nil {
 		return FormatCustom

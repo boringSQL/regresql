@@ -143,6 +143,10 @@ func runSnapshotCapture() error {
 		format = regresql.GetSnapshotFormat(cfg.Snapshot)
 	}
 
+	if err := regresql.CheckPgTool("pg_dump", snapshotCwd); err != nil {
+		return err
+	}
+
 	opts := regresql.SnapshotOptions{
 		OutputPath: outputPath,
 		Format:     format,
@@ -246,6 +250,15 @@ func runSnapshotRestore() error {
 	var format regresql.SnapshotFormat
 	if snapshotFormat != "" {
 		format = regresql.SnapshotFormat(snapshotFormat)
+	}
+
+	// check for pg_restore or psql depending on format
+	detectedFormat := format
+	if detectedFormat == "" {
+		detectedFormat = regresql.DetectSnapshotFormat(inputPath)
+	}
+	if err := regresql.CheckPgTool(detectedFormat.RestoreTool(), snapshotCwd); err != nil {
+		return err
 	}
 
 	opts := regresql.RestoreOptions{
