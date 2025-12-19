@@ -197,6 +197,12 @@ regresql snapshot capture
 
 # Capture schema only (git-friendly SQL format)
 regresql snapshot capture --schema-only --format plain -o snapshots/schema.sql
+
+# Build snapshot from fixtures
+regresql snapshot build --fixtures users,products,orders
+
+# Restore snapshot before testing
+regresql snapshot restore
 ```
 
 Snapshots are stored using pg_dump and can be configured in `regresql/regress.yaml`:
@@ -206,6 +212,10 @@ pguri: "postgres://..."
 snapshot:
   path: snapshots/test_data.dump
   format: custom  # custom, plain, or directory
+  fixtures:       # for snapshot build command
+    - users
+    - products
+    - orders
 ```
 
 ## Test Fixtures

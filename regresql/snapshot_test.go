@@ -419,7 +419,7 @@ func TestParseToolVersions(t *testing.T) {
 		},
 		{
 			name:    "postgres among other tools",
-			content: "nodejs 25.2.0\npostgres 14\nruby 3.4.7"
+			content: "nodejs 25.2.0\npostgres 14\nruby 3.4.7",
 			want:    14,
 		},
 		{

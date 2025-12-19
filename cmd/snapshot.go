@@ -4,27 +4,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/boringsql/regresql/regresql"
 	"github.com/spf13/cobra"
 )
 
 var (
-	snapshotCwd        string
-	snapshotOutput     string
-	snapshotFormat     string
-	snapshotSchemaOnly bool
-	snapshotSection    string
-	snapshotInput      string
-	snapshotClean      bool
+	snapshotCwd           string
+	snapshotOutput        string
+	snapshotFormat        string
+	snapshotSchemaOnly    bool
+	snapshotSection       string
+	snapshotInput         string
+	snapshotClean         bool
+	snapshotBuildFixtures []string
+	snapshotBuildVerbose  bool
 
 	snapshotCmd = &cobra.Command{
 		Use:   "snapshot",
 		Short: "Manage database snapshots",
-		Long: `Manage database snapshots for reproducible testing.
-
-Snapshots capture the database state using pg_dump and can be restored
-before running tests to ensure a consistent starting point.`,
+		Long:  `Manage database snapshots for reproducible testing.`,
 	}
 
 	snapshotCaptureCmd = &cobra.Command{
@@ -32,31 +32,16 @@ before running tests to ensure a consistent starting point.`,
 		Short: "Capture current database state as a snapshot",
 		Long: `Capture the current database state using pg_dump.
 
-The snapshot is stored in the snapshots directory and can be restored
-before running tests. By default, the snapshot is saved in pg_dump custom
-format which is efficient and portable.
-
 Examples:
-  # Capture with default settings (custom format)
   regresql snapshot capture
-
-  # Capture to a specific file
   regresql snapshot capture --output snapshots/mydata.dump
-
-  # Capture schema only (no data)
   regresql snapshot capture --schema-only
-
-  # Capture in plain SQL format (git-friendly)
-  regresql snapshot capture --format plain --output snapshots/schema.sql
-
-  # Capture only a specific section
-  regresql snapshot capture --section pre-data --output snapshots/schema-only.sql`,
+  regresql snapshot capture --format plain --output snapshots/schema.sql`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(snapshotCwd); err != nil {
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-
 			if err := runSnapshotCapture(); err != nil {
 				fmt.Printf("Error: %s\n", err.Error())
 				os.Exit(1)
@@ -69,28 +54,37 @@ Examples:
 		Short: "Restore database from a snapshot",
 		Long: `Restore the database state from a previously captured snapshot.
 
-Uses pg_restore for custom/directory formats or psql for plain SQL format.
-The format is auto-detected from the file extension and type.
-
 Examples:
-  # Restore from default snapshot location
   regresql snapshot restore
-
-  # Restore from a specific file
   regresql snapshot restore --from snapshots/mydata.dump
-
-  # Drop existing objects before restore
-  regresql snapshot restore --clean
-
-  # Restore plain SQL file
-  regresql snapshot restore --from snapshots/schema.sql`,
+  regresql snapshot restore --clean`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(snapshotCwd); err != nil {
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-
 			if err := runSnapshotRestore(); err != nil {
+				fmt.Printf("Error: %s\n", err.Error())
+				os.Exit(1)
+			}
+		},
+	}
+
+	snapshotBuildCmd = &cobra.Command{
+		Use:   "build [flags]",
+		Short: "Build snapshot from fixtures",
+		Long: `Build a reproducible database snapshot from fixtures.
+
+Examples:
+  regresql snapshot build
+  regresql snapshot build --fixtures users,products,orders
+  regresql snapshot build --output snapshots/test_data.dump --verbose`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(snapshotCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			if err := runSnapshotBuild(); err != nil {
 				fmt.Printf("Error: %s\n", err.Error())
 				os.Exit(1)
 			}
@@ -102,17 +96,23 @@ func init() {
 	RootCmd.AddCommand(snapshotCmd)
 	snapshotCmd.AddCommand(snapshotCaptureCmd)
 	snapshotCmd.AddCommand(snapshotRestoreCmd)
+	snapshotCmd.AddCommand(snapshotBuildCmd)
 
 	snapshotCmd.PersistentFlags().StringVarP(&snapshotCwd, "cwd", "C", ".", "Change to directory")
 
-	snapshotCaptureCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path (default: from config or snapshots/default.dump)")
-	snapshotCaptureCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory (default: custom)")
+	snapshotCaptureCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path")
+	snapshotCaptureCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory")
 	snapshotCaptureCmd.Flags().BoolVar(&snapshotSchemaOnly, "schema-only", false, "Dump only schema, no data")
 	snapshotCaptureCmd.Flags().StringVar(&snapshotSection, "section", "", "Dump specific section: pre-data, data, or post-data")
 
-	snapshotRestoreCmd.Flags().StringVar(&snapshotInput, "from", "", "Input file path (default: from config or snapshots/default.dump)")
-	snapshotRestoreCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Snapshot format: custom, plain, or directory (default: auto-detect)")
+	snapshotRestoreCmd.Flags().StringVar(&snapshotInput, "from", "", "Input file path")
+	snapshotRestoreCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Snapshot format: custom, plain, or directory")
 	snapshotRestoreCmd.Flags().BoolVar(&snapshotClean, "clean", false, "Drop existing objects before restore")
+
+	snapshotBuildCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path")
+	snapshotBuildCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory")
+	snapshotBuildCmd.Flags().StringSliceVar(&snapshotBuildFixtures, "fixtures", nil, "Fixture names to apply")
+	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
 }
 
 func runSnapshotCapture() error {
@@ -252,7 +252,6 @@ func runSnapshotRestore() error {
 		format = regresql.SnapshotFormat(snapshotFormat)
 	}
 
-	// check for pg_restore or psql depending on format
 	detectedFormat := format
 	if detectedFormat == "" {
 		detectedFormat = regresql.DetectSnapshotFormat(inputPath)
@@ -280,5 +279,73 @@ func runSnapshotRestore() error {
 	}
 
 	fmt.Printf("Snapshot restored successfully.\n")
+	return nil
+}
+
+func runSnapshotBuild() error {
+	cfg, err := regresql.ReadConfig(snapshotCwd)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+	}
+
+	if cfg.PgUri == "" {
+		return fmt.Errorf("pguri not configured in regress.yaml")
+	}
+
+	fixtures := snapshotBuildFixtures
+	if len(fixtures) == 0 {
+		fixtures = regresql.GetSnapshotFixtures(cfg.Snapshot)
+	}
+
+	if len(fixtures) == 0 {
+		return fmt.Errorf("no fixtures specified. Use --fixtures flag or configure snapshot.fixtures in regress.yaml")
+	}
+
+	if err := regresql.FixturesExist(snapshotCwd, fixtures); err != nil {
+		return err
+	}
+
+	outputPath := snapshotOutput
+	if outputPath == "" {
+		outputPath = regresql.GetSnapshotPath(cfg.Snapshot, snapshotCwd)
+	} else if !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(snapshotCwd, outputPath)
+	}
+
+	var format regresql.SnapshotFormat
+	if snapshotFormat != "" {
+		format = regresql.SnapshotFormat(snapshotFormat)
+	} else {
+		format = regresql.GetSnapshotFormat(cfg.Snapshot)
+	}
+
+	fmt.Printf("Building snapshot from fixtures...\n")
+	fmt.Printf("  Database: %s\n", maskConnectionString(cfg.PgUri))
+	fmt.Printf("  Output:   %s\n", outputPath)
+	fmt.Printf("  Format:   %s\n", format)
+	fmt.Printf("  Fixtures: %v\n", fixtures)
+	fmt.Println()
+
+	result, err := regresql.BuildSnapshot(cfg.PgUri, snapshotCwd, regresql.SnapshotBuildOptions{
+		OutputPath: outputPath,
+		Format:     format,
+		Fixtures:   fixtures,
+		Verbose:    snapshotBuildVerbose,
+	})
+	if err != nil {
+		return err
+	}
+
+	snapshotsDir := filepath.Dir(outputPath)
+	if err := regresql.WriteSnapshotMetadata(snapshotsDir, result.Info); err != nil {
+		fmt.Printf("Warning: failed to write snapshot metadata: %s\n", err)
+	}
+
+	fmt.Printf("Snapshot built successfully.\n")
+	fmt.Printf("  Size:     %s\n", regresql.FormatBytes(result.Info.SizeBytes))
+	fmt.Printf("  Hash:     %s\n", result.Info.Hash)
+	fmt.Printf("  Duration: %s\n", result.Duration.Round(time.Millisecond))
+	fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
+
 	return nil
 }
