@@ -19,6 +19,9 @@ database states with generated or static data.
 Of course, for the results the be comparable the queries need to be run
 against a known PostgreSQL database content.
 
+**WARNING**: per test-fixtures are going to be deprecated soon (part of 
+roadmap toward version 2.0)
+
 ## Installing
 
 ### Using Homebrew (macOS)
