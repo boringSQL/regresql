@@ -1,9 +1,11 @@
 package regresql
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -41,13 +43,12 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp database: %w", err)
 	}
-
 	defer func() {
 		if opts.Verbose {
 			fmt.Printf("Dropping temporary database %s...\n", tempDB.Name)
 		}
-		if dropErr := tempDB.Drop(); dropErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to drop temp database: %v\n", dropErr)
+		if err := tempDB.Drop(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to drop temp database: %v\n", err)
 		}
 	}()
 
@@ -61,44 +62,13 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	}
 	defer db.Close()
 
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping temp database: %w", err)
-	}
-
 	if opts.Verbose {
-		fmt.Printf("Connected to temporary database\n")
 		fmt.Printf("Applying %d fixture(s)...\n", len(opts.Fixtures))
 	}
 
-	fm, err := NewFixtureManager(root, db)
+	fixturesUsed, err := applyFixtures(db, root, opts.Fixtures, opts.Verbose)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create fixture manager: %w", err)
-	}
-
-	fixtures, err := fm.ResolveDependencies(opts.Fixtures)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve fixture dependencies: %w", err)
-	}
-
-	if opts.Verbose {
-		for _, f := range fixtures {
-			fmt.Printf("  Will apply: %s\n", f.Name)
-		}
-	}
-
-	if err := fm.BeginTransaction(); err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-
-	_ = fm.IntrospectSchema()
-
-	if err := fm.ApplyFixtures(opts.Fixtures); err != nil {
-		fm.Rollback()
-		return nil, fmt.Errorf("failed to apply fixtures: %w", err)
-	}
-
-	if err := fm.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit fixtures: %w", err)
+		return nil, err
 	}
 
 	if opts.Verbose {
@@ -114,10 +84,6 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		return nil, fmt.Errorf("failed to capture snapshot: %w", err)
 	}
 
-	fixturesUsed := make([]string, len(fixtures))
-	for i, f := range fixtures {
-		fixturesUsed[i] = f.Name
-	}
 	info.FixturesUsed = fixturesUsed
 
 	return &snapshotBuildResult{
@@ -127,6 +93,76 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	}, nil
 }
 
+// applyFixtures processes fixtures in order. SQL files are executed directly,
+// YAML fixtures go through FixtureManager.
+func applyFixtures(db *sql.DB, root string, fixtures []string, verbose bool) ([]string, error) {
+	fm, err := NewFixtureManager(root, db)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create fixture manager: %w", err)
+	}
+
+	var applied []string
+
+	for _, f := range fixtures {
+		if isSQLFixture(f) {
+			if verbose {
+				fmt.Printf("  Executing SQL: %s\n", f)
+			}
+			if err := execSQLFile(db, filepath.Join(root, f)); err != nil {
+				return nil, fmt.Errorf("fixture %q: %w", f, err)
+			}
+			applied = append(applied, f)
+		} else {
+			name := trimYAMLExt(f)
+			if verbose {
+				fmt.Printf("  Applying fixture: %s\n", name)
+			}
+			if err := applyYAMLFixture(fm, name); err != nil {
+				return nil, fmt.Errorf("fixture %q: %w", name, err)
+			}
+			applied = append(applied, name)
+		}
+	}
+
+	return applied, nil
+}
+
+func applyYAMLFixture(fm *FixtureManager, name string) error {
+	if err := fm.BeginTransaction(); err != nil {
+		return err
+	}
+
+	_ = fm.IntrospectSchema()
+
+	if err := fm.ApplyFixtures([]string{name}); err != nil {
+		fm.Rollback()
+		return err
+	}
+
+	return fm.Commit()
+}
+
+func execSQLFile(db *sql.DB, path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read: %w", err)
+	}
+	if _, err := db.Exec(string(content)); err != nil {
+		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
+}
+
+func isSQLFixture(name string) bool {
+	return strings.HasSuffix(strings.ToLower(name), ".sql")
+}
+
+func trimYAMLExt(name string) string {
+	name = strings.TrimSuffix(name, ".yaml")
+	name = strings.TrimSuffix(name, ".yml")
+	return name
+}
+
 func GetSnapshotFixtures(cfg *SnapshotConfig) []string {
 	if cfg == nil {
 		return nil
@@ -134,19 +170,36 @@ func GetSnapshotFixtures(cfg *SnapshotConfig) []string {
 	return cfg.Fixtures
 }
 
-func FixturesExist(root string, fixtureNames []string) error {
-	fixturesDir := filepath.Join(root, "regresql", "fixtures")
-
-	for _, name := range fixtureNames {
-		yamlPath := filepath.Join(fixturesDir, name+".yaml")
-		ymlPath := filepath.Join(fixturesDir, name+".yml")
-
-		if _, err := os.Stat(yamlPath); os.IsNotExist(err) {
-			if _, err := os.Stat(ymlPath); os.IsNotExist(err) {
-				return fmt.Errorf("fixture %q not found at %s or %s", name, yamlPath, ymlPath)
+// FixturesExist validates that all fixture files exist before build.
+func FixturesExist(root string, fixtures []string) error {
+	for _, f := range fixtures {
+		if isSQLFixture(f) {
+			if err := checkFile(filepath.Join(root, f)); err != nil {
+				return fmt.Errorf("SQL fixture %q: %w", f, err)
+			}
+		} else {
+			name := trimYAMLExt(f)
+			if err := checkYAMLFixture(root, name); err != nil {
+				return err
 			}
 		}
 	}
-
 	return nil
+}
+
+func checkFile(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return err
+	}
+	return nil
+}
+
+func checkYAMLFixture(root, name string) error {
+	dir := filepath.Join(root, "regresql", "fixtures")
+	for _, ext := range []string{".yaml", ".yml"} {
+		if _, err := os.Stat(filepath.Join(dir, name+ext)); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("fixture %q not found in %s", name, dir)
 }
