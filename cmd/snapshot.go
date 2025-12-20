@@ -90,6 +90,27 @@ Examples:
 			}
 		},
 	}
+
+	snapshotInfoCmd = &cobra.Command{
+		Use:   "info",
+		Short: "Display snapshot metadata",
+		Long: `Display metadata about the current snapshot.
+
+Shows the snapshot path, hash, size, creation time, and fixtures used.
+
+Examples:
+  regresql snapshot info`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(snapshotCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			if err := runSnapshotInfo(); err != nil {
+				fmt.Printf("Error: %s\n", err.Error())
+				os.Exit(1)
+			}
+		},
+	}
 )
 
 func init() {
@@ -97,6 +118,7 @@ func init() {
 	snapshotCmd.AddCommand(snapshotCaptureCmd)
 	snapshotCmd.AddCommand(snapshotRestoreCmd)
 	snapshotCmd.AddCommand(snapshotBuildCmd)
+	snapshotCmd.AddCommand(snapshotInfoCmd)
 
 	snapshotCmd.PersistentFlags().StringVarP(&snapshotCwd, "cwd", "C", ".", "Change to directory")
 
@@ -346,6 +368,37 @@ func runSnapshotBuild() error {
 	fmt.Printf("  Hash:     %s\n", result.Info.Hash)
 	fmt.Printf("  Duration: %s\n", result.Duration.Round(time.Millisecond))
 	fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
+
+	return nil
+}
+
+func runSnapshotInfo() error {
+	snapshotsDir := regresql.GetSnapshotsDir(snapshotCwd)
+
+	metadata, err := regresql.ReadSnapshotMetadata(snapshotsDir)
+	if err != nil {
+		return fmt.Errorf("no snapshot metadata found. Run 'regresql snapshot build' or 'regresql snapshot capture' first")
+	}
+
+	if metadata.Current == nil {
+		return fmt.Errorf("snapshot metadata is empty")
+	}
+
+	info := metadata.Current
+
+	fmt.Printf("Snapshot: %s\n", info.Path)
+	fmt.Printf("  Format:  %s\n", info.Format)
+	fmt.Printf("  Size:    %s\n", regresql.FormatBytes(info.SizeBytes))
+	fmt.Printf("  Created: %s\n", info.Created.Format("2006-01-02 15:04:05 UTC"))
+	fmt.Printf("  Hash:    %s\n", info.Hash)
+
+	if len(info.FixturesUsed) > 0 {
+		fmt.Println()
+		fmt.Println("Fixtures used:")
+		for _, f := range info.FixturesUsed {
+			fmt.Printf("  - %s\n", f)
+		}
+	}
 
 	return nil
 }
