@@ -25,6 +25,8 @@ type (
 		Created      time.Time `yaml:"created"`
 		SizeBytes    int64     `yaml:"size_bytes"`
 		Format       string    `yaml:"format"`
+		SchemaPath   string    `yaml:"schema_path,omitempty"`
+		SchemaHash   string    `yaml:"schema_hash,omitempty"`
 		FixturesUsed []string  `yaml:"fixtures_used,omitempty"`
 	}
 

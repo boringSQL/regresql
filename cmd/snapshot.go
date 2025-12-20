@@ -21,6 +21,7 @@ var (
 	snapshotInput         string
 	snapshotClean         bool
 	snapshotBuildFixtures []string
+	snapshotBuildSchema   string
 	snapshotBuildVerbose  bool
 
 	snapshotCmd = &cobra.Command{
@@ -88,6 +89,7 @@ Examples:
 Examples:
   regresql snapshot build
   regresql snapshot build --fixtures users,products,orders
+  regresql snapshot build --schema schema.sql --fixtures seed_data
   regresql snapshot build --output snapshots/test_data.dump --verbose`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(snapshotCwd); err != nil {
@@ -145,6 +147,7 @@ func init() {
 
 	snapshotBuildCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path")
 	snapshotBuildCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory")
+	snapshotBuildCmd.Flags().StringVar(&snapshotBuildSchema, "schema", "", "Schema SQL file to apply before fixtures")
 	snapshotBuildCmd.Flags().StringSliceVar(&snapshotBuildFixtures, "fixtures", nil, "Fixture names to apply")
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
 }
@@ -376,17 +379,32 @@ func runSnapshotBuild() error {
 		return fmt.Errorf("pguri not configured in regress.yaml")
 	}
 
+	// Resolve and validate schema path
+	var schemaPath string
+	if snapshotBuildSchema != "" {
+		schemaPath = snapshotBuildSchema
+		if !filepath.IsAbs(schemaPath) {
+			schemaPath = filepath.Join(snapshotCwd, schemaPath)
+		}
+		if _, err := os.Stat(schemaPath); err != nil {
+			return fmt.Errorf("schema file not found: %s", schemaPath)
+		}
+	}
+
 	fixtures := snapshotBuildFixtures
 	if len(fixtures) == 0 {
 		fixtures = regresql.GetSnapshotFixtures(cfg.Snapshot)
 	}
 
-	if len(fixtures) == 0 {
+	// Allow build with just schema (no fixtures)
+	if len(fixtures) == 0 && schemaPath == "" {
 		return fmt.Errorf("no fixtures specified. Use --fixtures flag or configure snapshot.fixtures in regress.yaml")
 	}
 
-	if err := regresql.FixturesExist(snapshotCwd, fixtures); err != nil {
-		return err
+	if len(fixtures) > 0 {
+		if err := regresql.FixturesExist(snapshotCwd, fixtures); err != nil {
+			return err
+		}
 	}
 
 	outputPath := snapshotOutput
@@ -407,12 +425,18 @@ func runSnapshotBuild() error {
 	fmt.Printf("  Database: %s\n", maskConnectionString(cfg.PgUri))
 	fmt.Printf("  Output:   %s\n", outputPath)
 	fmt.Printf("  Format:   %s\n", format)
-	fmt.Printf("  Fixtures: %v\n", fixtures)
+	if schemaPath != "" {
+		fmt.Printf("  Schema:   %s\n", schemaPath)
+	}
+	if len(fixtures) > 0 {
+		fmt.Printf("  Fixtures: %v\n", fixtures)
+	}
 	fmt.Println()
 
 	result, err := regresql.BuildSnapshot(cfg.PgUri, snapshotCwd, regresql.SnapshotBuildOptions{
 		OutputPath: outputPath,
 		Format:     format,
+		SchemaPath: schemaPath,
 		Fixtures:   fixtures,
 		Verbose:    snapshotBuildVerbose,
 	})
@@ -429,7 +453,12 @@ func runSnapshotBuild() error {
 	fmt.Printf("  Size:     %s\n", regresql.FormatBytes(result.Info.SizeBytes))
 	fmt.Printf("  Hash:     %s\n", result.Info.Hash)
 	fmt.Printf("  Duration: %s\n", result.Duration.Round(time.Millisecond))
-	fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
+	if result.Info.SchemaHash != "" {
+		fmt.Printf("  Schema:   %s\n", result.Info.SchemaHash[:20]+"...")
+	}
+	if len(result.FixturesUsed) > 0 {
+		fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
+	}
 
 	return nil
 }
@@ -453,6 +482,13 @@ func runSnapshotInfo() error {
 	fmt.Printf("  Size:    %s\n", regresql.FormatBytes(info.SizeBytes))
 	fmt.Printf("  Created: %s\n", info.Created.Format("2006-01-02 15:04:05 UTC"))
 	fmt.Printf("  Hash:    %s\n", info.Hash)
+
+	if info.SchemaPath != "" {
+		fmt.Println()
+		fmt.Println("Schema:")
+		fmt.Printf("  Path: %s\n", info.SchemaPath)
+		fmt.Printf("  Hash: %s\n", info.SchemaHash)
+	}
 
 	if len(info.FixturesUsed) > 0 {
 		fmt.Println()

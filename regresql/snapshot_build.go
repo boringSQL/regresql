@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ type (
 	SnapshotBuildOptions struct {
 		OutputPath string
 		Format     SnapshotFormat
+		SchemaPath string
 		Fixtures   []string
 		Verbose    bool
 	}
@@ -31,8 +33,15 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		return nil, err
 	}
 
-	if len(opts.Fixtures) == 0 {
-		return nil, fmt.Errorf("no fixtures specified for snapshot build")
+	// Check pg_restore is available for non-plain schema files
+	if opts.SchemaPath != "" && DetectSnapshotFormat(opts.SchemaPath) != FormatPlain {
+		if err := CheckPgTool("pg_restore", root); err != nil {
+			return nil, err
+		}
+	}
+
+	if len(opts.Fixtures) == 0 && opts.SchemaPath == "" {
+		return nil, fmt.Errorf("no schema or fixtures specified for snapshot build")
 	}
 
 	if opts.Verbose {
@@ -62,17 +71,34 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	}
 	defer db.Close()
 
-	if opts.Verbose {
-		fmt.Printf("Applying %d fixture(s)...\n", len(opts.Fixtures))
+	// Apply schema first if provided
+	var schemaHash string
+	if opts.SchemaPath != "" {
+		if opts.Verbose {
+			format := DetectSnapshotFormat(opts.SchemaPath)
+			fmt.Printf("Applying schema: %s (format: %s)\n", opts.SchemaPath, format)
+		}
+		if err := applySchemaFile(tempDB.PgUri, opts.SchemaPath); err != nil {
+			return nil, fmt.Errorf("schema %q: %w", opts.SchemaPath, err)
+		}
+		schemaHash, err = computeSchemaHash(opts.SchemaPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute schema hash: %w", err)
+		}
 	}
 
-	fixturesUsed, err := applyFixtures(db, root, opts.Fixtures, opts.Verbose)
-	if err != nil {
-		return nil, err
+	var fixturesUsed []string
+	if len(opts.Fixtures) > 0 {
+		if opts.Verbose {
+			fmt.Printf("Applying %d fixture(s)...\n", len(opts.Fixtures))
+		}
+		fixturesUsed, err = applyFixtures(db, root, opts.Fixtures, opts.Verbose)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if opts.Verbose {
-		fmt.Printf("Fixtures applied successfully\n")
 		fmt.Printf("Capturing snapshot with pg_dump...\n")
 	}
 
@@ -84,6 +110,8 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		return nil, fmt.Errorf("failed to capture snapshot: %w", err)
 	}
 
+	info.SchemaPath = opts.SchemaPath
+	info.SchemaHash = schemaHash
 	info.FixturesUsed = fixturesUsed
 
 	return &snapshotBuildResult{
@@ -149,6 +177,43 @@ func execSQLFile(db *sql.DB, path string) error {
 	}
 	if _, err := db.Exec(string(content)); err != nil {
 		return fmt.Errorf("exec: %w", err)
+	}
+	return nil
+}
+
+func computeSchemaHash(schemaPath string) (string, error) {
+	format := DetectSnapshotFormat(schemaPath)
+	return computeFileHash(schemaPath, format)
+}
+
+func applySchemaFile(pguri, schemaPath string) error {
+	format := DetectSnapshotFormat(schemaPath)
+
+	if format == FormatPlain {
+		db, err := OpenDB(pguri)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return execSQLFile(db, schemaPath)
+	}
+
+	// Custom or Directory format - use pg_restore --schema-only
+	args := []string{
+		"--dbname", pguri,
+		"--schema-only",
+		"--no-owner",
+		"--no-acl",
+	}
+	if format == FormatDirectory {
+		args = append(args, "--format=directory")
+	}
+	args = append(args, schemaPath)
+
+	cmd := exec.Command("pg_restore", args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("pg_restore failed: %w", err)
 	}
 	return nil
 }
