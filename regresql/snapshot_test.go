@@ -455,3 +455,15 @@ func TestParseToolVersionsFileNotFound(t *testing.T) {
 		t.Errorf("parseToolVersions() = %d, want 0 for missing file", got)
 	}
 }
+
+func TestCaptureSectionsCreatesDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	outputDir := filepath.Join(tmpDir, "new", "nested", "dir")
+
+	// pg_dump will fail but directory creation happens first
+	_, _ = CaptureSections("postgres://invalid", SectionsOptions{OutputDir: outputDir})
+
+	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
+		t.Error("CaptureSections should create output directory before calling pg_dump")
+	}
+}

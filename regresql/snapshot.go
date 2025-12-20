@@ -37,6 +37,22 @@ type (
 		Section    string
 	}
 
+	SectionsOptions struct {
+		OutputDir string
+	}
+
+	SectionInfo struct {
+		Section   string
+		Path      string
+		Hash      string
+		SizeBytes int64
+	}
+
+	SectionsResult struct {
+		Sections []SectionInfo
+		Created  time.Time
+	}
+
 	RestoreOptions struct {
 		InputPath string
 		Format    SnapshotFormat
@@ -169,6 +185,68 @@ func CaptureSnapshot(pguri string, opts SnapshotOptions) (*SnapshotInfo, error) 
 	}
 
 	return info, nil
+}
+
+// CaptureSections captures all three database sections (pre-data, data, post-data)
+// to separate plain SQL files for git-friendly version control.
+func CaptureSections(pguri string, opts SectionsOptions) (*SectionsResult, error) {
+	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	sections := []string{"pre-data", "data", "post-data"}
+	result := &SectionsResult{
+		Created: time.Now().UTC(),
+	}
+
+	for _, section := range sections {
+		outputPath := filepath.Join(opts.OutputDir, section+".sql")
+
+		info, err := captureSection(pguri, section, outputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to capture %s section: %w", section, err)
+		}
+
+		result.Sections = append(result.Sections, *info)
+	}
+
+	return result, nil
+}
+
+func captureSection(pguri, section, outputPath string) (*SectionInfo, error) {
+	args := []string{"--dbname", pguri, "--format=plain", "--section", section}
+
+	cmd := exec.Command("pg_dump", args...)
+	cmd.Stderr = os.Stderr
+
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	cmd.Stdout = outFile
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("pg_dump failed: %w", err)
+	}
+
+	stat, err := os.Stat(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat output file: %w", err)
+	}
+
+	hash, err := computeSingleFileHash(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute hash: %w", err)
+	}
+
+	return &SectionInfo{
+		Section:   section,
+		Path:      outputPath,
+		Hash:      hash,
+		SizeBytes: stat.Size(),
+	}, nil
 }
 
 func buildPgDumpArgs(pguri string, opts SnapshotOptions) []string {

@@ -13,9 +13,11 @@ import (
 var (
 	snapshotCwd           string
 	snapshotOutput        string
+	snapshotOutputDir     string
 	snapshotFormat        string
 	snapshotSchemaOnly    bool
 	snapshotSection       string
+	snapshotSections      bool
 	snapshotInput         string
 	snapshotClean         bool
 	snapshotBuildFixtures []string
@@ -36,13 +38,21 @@ Examples:
   regresql snapshot capture
   regresql snapshot capture --output snapshots/mydata.dump
   regresql snapshot capture --schema-only
-  regresql snapshot capture --format plain --output snapshots/schema.sql`,
+  regresql snapshot capture --format plain --output snapshots/schema.sql
+  regresql snapshot capture --section pre-data --output snapshots/pre-data.sql
+  regresql snapshot capture --sections --output-dir snapshots/`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(snapshotCwd); err != nil {
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-			if err := runSnapshotCapture(); err != nil {
+			var err error
+			if snapshotSections {
+				err = runSnapshotCaptureSections()
+			} else {
+				err = runSnapshotCapture()
+			}
+			if err != nil {
 				fmt.Printf("Error: %s\n", err.Error())
 				os.Exit(1)
 			}
@@ -123,9 +133,11 @@ func init() {
 	snapshotCmd.PersistentFlags().StringVarP(&snapshotCwd, "cwd", "C", ".", "Change to directory")
 
 	snapshotCaptureCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path")
+	snapshotCaptureCmd.Flags().StringVar(&snapshotOutputDir, "output-dir", "", "Output directory for sectioned capture")
 	snapshotCaptureCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory")
 	snapshotCaptureCmd.Flags().BoolVar(&snapshotSchemaOnly, "schema-only", false, "Dump only schema, no data")
 	snapshotCaptureCmd.Flags().StringVar(&snapshotSection, "section", "", "Dump specific section: pre-data, data, or post-data")
+	snapshotCaptureCmd.Flags().BoolVar(&snapshotSections, "sections", false, "Capture all sections to separate SQL files")
 
 	snapshotRestoreCmd.Flags().StringVar(&snapshotInput, "from", "", "Input file path")
 	snapshotRestoreCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Snapshot format: custom, plain, or directory")
@@ -137,18 +149,26 @@ func init() {
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
 }
 
+func validateSnapshotPrereqs(pguri string) error {
+	if pguri == "" {
+		return fmt.Errorf("pguri not configured in regress.yaml")
+	}
+	if err := regresql.TestConnectionString(pguri); err != nil {
+		return fmt.Errorf("database connection failed: %w", err)
+	}
+	if err := regresql.CheckPgTool("pg_dump", snapshotCwd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func runSnapshotCapture() error {
 	cfg, err := regresql.ReadConfig(snapshotCwd)
 	if err != nil {
 		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
 	}
-
-	if cfg.PgUri == "" {
-		return fmt.Errorf("pguri not configured in regress.yaml")
-	}
-
-	if err := regresql.TestConnectionString(cfg.PgUri); err != nil {
-		return fmt.Errorf("database connection failed: %w", err)
+	if err := validateSnapshotPrereqs(cfg.PgUri); err != nil {
+		return err
 	}
 
 	outputPath := snapshotOutput
@@ -163,10 +183,6 @@ func runSnapshotCapture() error {
 		format = regresql.SnapshotFormat(snapshotFormat)
 	} else {
 		format = regresql.GetSnapshotFormat(cfg.Snapshot)
-	}
-
-	if err := regresql.CheckPgTool("pg_dump", snapshotCwd); err != nil {
-		return err
 	}
 
 	opts := regresql.SnapshotOptions{
@@ -202,6 +218,52 @@ func runSnapshotCapture() error {
 	fmt.Printf("  Size: %s\n", regresql.FormatBytes(info.SizeBytes))
 	fmt.Printf("  Hash: %s\n", info.Hash)
 	fmt.Printf("  Time: %s\n", info.Created.Format("2006-01-02 15:04:05 UTC"))
+
+	return nil
+}
+
+func runSnapshotCaptureSections() error {
+	cfg, err := regresql.ReadConfig(snapshotCwd)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+	}
+	if err := validateSnapshotPrereqs(cfg.PgUri); err != nil {
+		return err
+	}
+
+	outputDir := snapshotOutputDir
+	if outputDir == "" {
+		outputDir = regresql.GetSnapshotsDir(snapshotCwd)
+	} else if !filepath.IsAbs(outputDir) {
+		outputDir = filepath.Join(snapshotCwd, outputDir)
+	}
+
+	fmt.Printf("Capturing database sections...\n")
+	fmt.Printf("  Database:   %s\n", maskConnectionString(cfg.PgUri))
+	fmt.Printf("  Output dir: %s\n", outputDir)
+	fmt.Printf("  Sections:   pre-data, data, post-data\n")
+	fmt.Println()
+
+	result, err := regresql.CaptureSections(cfg.PgUri, regresql.SectionsOptions{
+		OutputDir: outputDir,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Sections captured successfully.\n")
+	fmt.Printf("  Time: %s\n", result.Created.Format("2006-01-02 15:04:05 UTC"))
+	fmt.Println()
+
+	var totalSize int64
+	for _, s := range result.Sections {
+		fmt.Printf("  %s.sql\n", s.Section)
+		fmt.Printf("    Size: %s\n", regresql.FormatBytes(s.SizeBytes))
+		fmt.Printf("    Hash: %s\n", s.Hash)
+		totalSize += s.SizeBytes
+	}
+	fmt.Println()
+	fmt.Printf("  Total: %s\n", regresql.FormatBytes(totalSize))
 
 	return nil
 }
