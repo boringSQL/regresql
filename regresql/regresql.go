@@ -155,6 +155,12 @@ func Test(root, runFilter, formatName, outputPath string, commit bool) {
 	// Cache config for plan quality analysis
 	SetGlobalConfig(config)
 
+	// Validate schema hasn't changed since last snapshot build
+	if err := ValidateSchemaHash(root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
+	}
+
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(2)

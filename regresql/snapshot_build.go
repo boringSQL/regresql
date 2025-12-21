@@ -181,11 +181,6 @@ func execSQLFile(db *sql.DB, path string) error {
 	return nil
 }
 
-func computeSchemaHash(schemaPath string) (string, error) {
-	format := DetectSnapshotFormat(schemaPath)
-	return computeFileHash(schemaPath, format)
-}
-
 func applySchemaFile(pguri, schemaPath string) error {
 	format := DetectSnapshotFormat(schemaPath)
 

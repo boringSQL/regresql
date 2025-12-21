@@ -490,3 +490,49 @@ func DetectSnapshotFormat(path string) SnapshotFormat {
 
 	return FormatCustom
 }
+
+func computeSchemaHash(schemaPath string) (string, error) {
+	format := DetectSnapshotFormat(schemaPath)
+	return computeFileHash(schemaPath, format)
+}
+
+func ValidateSchemaHash(root string) error {
+	snapshotsDir := GetSnapshotsDir(root)
+
+	metadata, err := ReadSnapshotMetadata(snapshotsDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: no snapshot metadata found. Consider using 'regresql snapshot build' for reproducible tests.\n")
+		return nil
+	}
+
+	if metadata.Current == nil || metadata.Current.SchemaPath == "" {
+		return nil
+	}
+
+	// Check if schema file still exists
+	if _, err := os.Stat(metadata.Current.SchemaPath); os.IsNotExist(err) {
+		// Schema file referenced in metadata doesn't exist - stale metadata
+		return nil
+	}
+
+	currentHash, err := computeSchemaHash(metadata.Current.SchemaPath)
+	if err != nil {
+		return fmt.Errorf("failed to hash schema %s: %w", metadata.Current.SchemaPath, err)
+	}
+
+	if currentHash != metadata.Current.SchemaHash {
+		return fmt.Errorf(`schema has changed since last snapshot build
+
+  Schema file: %s
+  Expected:    %s
+  Current:     %s
+
+Run 'regresql snapshot build --schema=%s' to rebuild the snapshot`,
+			metadata.Current.SchemaPath,
+			metadata.Current.SchemaHash[:20]+"...",
+			currentHash[:20]+"...",
+			metadata.Current.SchemaPath)
+	}
+
+	return nil
+}
