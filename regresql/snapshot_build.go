@@ -15,12 +15,13 @@ import (
 
 type (
 	SnapshotBuildOptions struct {
-		OutputPath    string
-		Format        SnapshotFormat
-		SchemaPath    string
-		MigrationsDir string
-		Fixtures      []string
-		Verbose       bool
+		OutputPath       string
+		Format           SnapshotFormat
+		SchemaPath       string
+		MigrationsDir    string
+		MigrationCommand string
+		Fixtures         []string
+		Verbose          bool
 	}
 
 	snapshotBuildResult struct {
@@ -91,9 +92,11 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		}
 	}
 
-	// Apply migrations if provided
+	// Apply migrations - either from directory or via external command (mutually exclusive)
 	var migrationsApplied []string
 	var migrationsHash string
+	var migrationCommandHash string
+
 	if opts.MigrationsDir != "" {
 		migrationFiles, err := discoverMigrations(opts.MigrationsDir)
 		if err != nil {
@@ -117,6 +120,11 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 				return nil, fmt.Errorf("failed to compute migrations hash: %w", err)
 			}
 		}
+	} else if opts.MigrationCommand != "" {
+		if err := runMigrationCommand(opts.MigrationCommand, tempDB.PgUri, opts.Verbose); err != nil {
+			return nil, err
+		}
+		migrationCommandHash = computeCommandHash(opts.MigrationCommand)
 	}
 
 	var fixturesUsed []string
@@ -147,6 +155,8 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	info.MigrationsDir = opts.MigrationsDir
 	info.MigrationsHash = migrationsHash
 	info.MigrationsApplied = migrationsApplied
+	info.MigrationCommand = opts.MigrationCommand
+	info.MigrationCommandHash = migrationCommandHash
 	info.FixturesUsed = fixturesUsed
 
 	return &snapshotBuildResult{
@@ -277,6 +287,42 @@ func GetSnapshotMigrations(cfg *SnapshotConfig) string {
 		return ""
 	}
 	return cfg.Migrations
+}
+
+func GetSnapshotMigrationCommand(cfg *SnapshotConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.MigrationCommand
+}
+
+// runMigrationCommand executes an external migration tool with PGURI env var set
+func runMigrationCommand(command, pguri string, verbose bool) error {
+	if verbose {
+		fmt.Printf("Running migration command: %s\n", command)
+	}
+
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Env = append(os.Environ(), "PGURI="+pguri, "DATABASE_URL="+pguri)
+
+	output, err := cmd.CombinedOutput()
+	if verbose && len(output) > 0 {
+		fmt.Printf("%s", output)
+	}
+
+	if err != nil {
+		// Always show output on error, even if not verbose
+		if !verbose && len(output) > 0 {
+			return fmt.Errorf("migration command failed: %w\n%s", err, output)
+		}
+		return fmt.Errorf("migration command failed: %w", err)
+	}
+	return nil
+}
+
+func computeCommandHash(command string) string {
+	h := sha256.Sum256([]byte(command))
+	return "sha256:" + hex.EncodeToString(h[:])
 }
 
 // discoverMigrations finds *.sql files in directory (skips *.down.sql), sorted by name

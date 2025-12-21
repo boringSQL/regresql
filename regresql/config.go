@@ -28,11 +28,12 @@ type (
 	}
 
 	SnapshotConfig struct {
-		Path       string   `yaml:"path,omitempty"`       // snapshot dump file path (default: snapshots/default.dump)
-		Format     string   `yaml:"format,omitempty"`     // pg_dump format: custom, plain, or directory
-		Schema     string   `yaml:"schema,omitempty"`     // external schema file (SQL, dump, or directory)
-		Migrations string   `yaml:"migrations,omitempty"` // directory of SQL migrations to apply
-		Fixtures   []string `yaml:"fixtures,omitempty"`   // SQL/YAML fixture files for snapshot build
+		Path             string   `yaml:"path,omitempty"`              // snapshot dump file path (default: snapshots/default.dump)
+		Format           string   `yaml:"format,omitempty"`            // pg_dump format: custom, plain, or directory
+		Schema           string   `yaml:"schema,omitempty"`            // external schema file (SQL, dump, or directory)
+		Migrations       string   `yaml:"migrations,omitempty"`        // directory of SQL migrations to apply
+		MigrationCommand string   `yaml:"migration_command,omitempty"` // external command to run migrations (e.g., goose, migrate)
+		Fixtures         []string `yaml:"fixtures,omitempty"`          // SQL/YAML fixture files for snapshot build
 	}
 )
 

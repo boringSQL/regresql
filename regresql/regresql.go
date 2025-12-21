@@ -57,7 +57,6 @@ func PlanQueries(root string, runFilter string) {
 	suite := Walk(root, ignorePatterns)
 	suite.SetRunFilter(runFilter)
 	config, err = suite.readConfig()
-
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(3)
@@ -103,7 +102,6 @@ func Update(root string, runFilter string, commit bool) {
 	suite := Walk(root, ignorePatterns)
 	suite.SetRunFilter(runFilter)
 	config, err = suite.readConfig()
-
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(3)
@@ -161,8 +159,14 @@ func Test(root, runFilter, formatName, outputPath string, commit bool) {
 		os.Exit(1)
 	}
 
-	// Validate migrations haven't changed since last snapshot build
+	// migrations haven't changed since last snapshot build?:
 	if err := ValidateMigrationsHash(root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Validate migration command hasn't changed since last snapshot build
+	if err := ValidateMigrationCommandHash(root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}

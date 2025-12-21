@@ -11,15 +11,15 @@ import (
 )
 
 var (
-	snapshotCwd           string
-	snapshotOutput        string
-	snapshotOutputDir     string
-	snapshotFormat        string
-	snapshotSchemaOnly    bool
-	snapshotSection       string
-	snapshotSections      bool
-	snapshotInput         string
-	snapshotClean         bool
+	snapshotCwd             string
+	snapshotOutput          string
+	snapshotOutputDir       string
+	snapshotFormat          string
+	snapshotSchemaOnly      bool
+	snapshotSection         string
+	snapshotSections        bool
+	snapshotInput           string
+	snapshotClean           bool
 	snapshotBuildFixtures   []string
 	snapshotBuildSchema     string
 	snapshotBuildMigrations string
@@ -408,13 +408,20 @@ func runSnapshotBuild() error {
 		}
 	}
 
+	migrationCommand := regresql.GetSnapshotMigrationCommand(cfg.Snapshot)
+
+	// migrations dir and migration_command are mutually exclusive
+	if migrationsDir != "" && migrationCommand != "" {
+		return fmt.Errorf("cannot use both 'migrations' directory and 'migration_command' - choose one")
+	}
+
 	fixtures := snapshotBuildFixtures
 	if len(fixtures) == 0 {
 		fixtures = regresql.GetSnapshotFixtures(cfg.Snapshot)
 	}
 
-	// Require at least schema, migrations, or fixtures
-	if len(fixtures) == 0 && schemaPath == "" && migrationsDir == "" {
+	// require at least schema, migrations, migration_command, or fixtures
+	if len(fixtures) == 0 && schemaPath == "" && migrationsDir == "" && migrationCommand == "" {
 		return fmt.Errorf("no schema, migrations, or fixtures specified. Use flags or configure in regress.yaml")
 	}
 
@@ -448,18 +455,22 @@ func runSnapshotBuild() error {
 	if migrationsDir != "" {
 		fmt.Printf("  Migrations: %s\n", migrationsDir)
 	}
+	if migrationCommand != "" {
+		fmt.Printf("  Migration cmd: %s\n", migrationCommand)
+	}
 	if len(fixtures) > 0 {
 		fmt.Printf("  Fixtures: %v\n", fixtures)
 	}
 	fmt.Println()
 
 	result, err := regresql.BuildSnapshot(cfg.PgUri, snapshotCwd, regresql.SnapshotBuildOptions{
-		OutputPath:    outputPath,
-		Format:        format,
-		SchemaPath:    schemaPath,
-		MigrationsDir: migrationsDir,
-		Fixtures:      fixtures,
-		Verbose:       snapshotBuildVerbose,
+		OutputPath:       outputPath,
+		Format:           format,
+		SchemaPath:       schemaPath,
+		MigrationsDir:    migrationsDir,
+		MigrationCommand: migrationCommand,
+		Fixtures:         fixtures,
+		Verbose:          snapshotBuildVerbose,
 	})
 	if err != nil {
 		return err
@@ -479,6 +490,9 @@ func runSnapshotBuild() error {
 	}
 	if len(result.Info.MigrationsApplied) > 0 {
 		fmt.Printf("  Migrations: %d applied\n", len(result.Info.MigrationsApplied))
+	}
+	if result.Info.MigrationCommandHash != "" {
+		fmt.Printf("  Migration cmd: executed\n")
 	}
 	if len(result.FixturesUsed) > 0 {
 		fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
@@ -525,6 +539,13 @@ func runSnapshotInfo() error {
 				fmt.Printf("    - %s\n", m)
 			}
 		}
+	}
+
+	if info.MigrationCommand != "" {
+		fmt.Println()
+		fmt.Println("Migration command:")
+		fmt.Printf("  Command: %s\n", info.MigrationCommand)
+		fmt.Printf("  Hash:    %s\n", info.MigrationCommandHash)
 	}
 
 	if len(info.FixturesUsed) > 0 {

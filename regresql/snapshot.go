@@ -20,17 +20,19 @@ type (
 	}
 
 	SnapshotInfo struct {
-		Path              string    `yaml:"path"`
-		Hash              string    `yaml:"hash"`
-		Created           time.Time `yaml:"created"`
-		SizeBytes         int64     `yaml:"size_bytes"`
-		Format            string    `yaml:"format"`
-		SchemaPath        string    `yaml:"schema_path,omitempty"`
-		SchemaHash        string    `yaml:"schema_hash,omitempty"`
-		MigrationsDir     string    `yaml:"migrations_dir,omitempty"`
-		MigrationsHash    string    `yaml:"migrations_hash,omitempty"`
-		MigrationsApplied []string  `yaml:"migrations_applied,omitempty"`
-		FixturesUsed      []string  `yaml:"fixtures_used,omitempty"`
+		Path                 string    `yaml:"path"`
+		Hash                 string    `yaml:"hash"`
+		Created              time.Time `yaml:"created"`
+		SizeBytes            int64     `yaml:"size_bytes"`
+		Format               string    `yaml:"format"`
+		SchemaPath           string    `yaml:"schema_path,omitempty"`
+		SchemaHash           string    `yaml:"schema_hash,omitempty"`
+		MigrationsDir        string    `yaml:"migrations_dir,omitempty"`
+		MigrationsHash       string    `yaml:"migrations_hash,omitempty"`
+		MigrationsApplied    []string  `yaml:"migrations_applied,omitempty"`
+		MigrationCommand     string    `yaml:"migration_command,omitempty"`
+		MigrationCommandHash string    `yaml:"migration_command_hash,omitempty"`
+		FixturesUsed         []string  `yaml:"fixtures_used,omitempty"`
 	}
 
 	SnapshotFormat string
@@ -644,4 +646,48 @@ func migrationChangeError(info *SnapshotInfo, currentHash string, current, store
 
 Run 'regresql snapshot build --migrations=%s' to rebuild the snapshot`,
 		info.MigrationsDir, expectedHash, currentHash, changes.String(), info.MigrationsDir)
+}
+
+func ValidateMigrationCommandHash(root string) error {
+	snapshotsDir := GetSnapshotsDir(root)
+
+	metadata, err := ReadSnapshotMetadata(snapshotsDir)
+	if err != nil {
+		return nil // No metadata
+	}
+
+	info := metadata.Current
+	if info == nil || info.MigrationCommand == "" {
+		return nil
+	}
+
+	// Read current config to get current migration_command
+	cfg, err := ReadConfig(root)
+	if err != nil {
+		return nil // Can't read config - skip validation
+	}
+
+	currentCommand := GetSnapshotMigrationCommand(cfg.Snapshot)
+	if currentCommand == "" {
+		// Command was used before but now removed from config
+		return fmt.Errorf(`migration_command was removed from config since last snapshot build
+
+  Previous command: %s
+
+Run 'regresql snapshot build' to rebuild the snapshot without migration_command`,
+			info.MigrationCommand)
+	}
+
+	currentHash := computeCommandHash(currentCommand)
+	if currentHash != info.MigrationCommandHash {
+		return fmt.Errorf(`migration_command has changed since last snapshot build
+
+  Previous: %s
+  Current:  %s
+
+Run 'regresql snapshot build' to rebuild the snapshot`,
+			info.MigrationCommand, currentCommand)
+	}
+
+	return nil
 }
