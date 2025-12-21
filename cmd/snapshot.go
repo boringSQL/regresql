@@ -20,9 +20,10 @@ var (
 	snapshotSections      bool
 	snapshotInput         string
 	snapshotClean         bool
-	snapshotBuildFixtures []string
-	snapshotBuildSchema   string
-	snapshotBuildVerbose  bool
+	snapshotBuildFixtures   []string
+	snapshotBuildSchema     string
+	snapshotBuildMigrations string
+	snapshotBuildVerbose    bool
 
 	snapshotCmd = &cobra.Command{
 		Use:   "snapshot",
@@ -147,7 +148,8 @@ func init() {
 
 	snapshotBuildCmd.Flags().StringVarP(&snapshotOutput, "output", "o", "", "Output file path")
 	snapshotBuildCmd.Flags().StringVarP(&snapshotFormat, "format", "f", "", "Dump format: custom, plain, or directory")
-	snapshotBuildCmd.Flags().StringVar(&snapshotBuildSchema, "schema", "", "Schema SQL file to apply before fixtures")
+	snapshotBuildCmd.Flags().StringVar(&snapshotBuildSchema, "schema", "", "Schema file to apply before migrations")
+	snapshotBuildCmd.Flags().StringVar(&snapshotBuildMigrations, "migrations", "", "Directory of SQL migrations to apply")
 	snapshotBuildCmd.Flags().StringSliceVar(&snapshotBuildFixtures, "fixtures", nil, "Fixture names to apply")
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
 }
@@ -393,14 +395,27 @@ func runSnapshotBuild() error {
 		}
 	}
 
+	migrationsDir := snapshotBuildMigrations
+	if migrationsDir == "" {
+		migrationsDir = regresql.GetSnapshotMigrations(cfg.Snapshot)
+	}
+	if migrationsDir != "" {
+		if !filepath.IsAbs(migrationsDir) {
+			migrationsDir = filepath.Join(snapshotCwd, migrationsDir)
+		}
+		if stat, err := os.Stat(migrationsDir); err != nil || !stat.IsDir() {
+			return fmt.Errorf("migrations directory not found: %s", migrationsDir)
+		}
+	}
+
 	fixtures := snapshotBuildFixtures
 	if len(fixtures) == 0 {
 		fixtures = regresql.GetSnapshotFixtures(cfg.Snapshot)
 	}
 
-	// Require at least schema or fixtures
-	if len(fixtures) == 0 && schemaPath == "" {
-		return fmt.Errorf("no schema or fixtures specified. Use --schema/--fixtures flags or configure snapshot.schema/snapshot.fixtures in regress.yaml")
+	// Require at least schema, migrations, or fixtures
+	if len(fixtures) == 0 && schemaPath == "" && migrationsDir == "" {
+		return fmt.Errorf("no schema, migrations, or fixtures specified. Use flags or configure in regress.yaml")
 	}
 
 	if len(fixtures) > 0 {
@@ -423,12 +438,15 @@ func runSnapshotBuild() error {
 		format = regresql.GetSnapshotFormat(cfg.Snapshot)
 	}
 
-	fmt.Printf("Building snapshot from fixtures...\n")
+	fmt.Printf("Building snapshot...\n")
 	fmt.Printf("  Database: %s\n", maskConnectionString(cfg.PgUri))
 	fmt.Printf("  Output:   %s\n", outputPath)
 	fmt.Printf("  Format:   %s\n", format)
 	if schemaPath != "" {
 		fmt.Printf("  Schema:   %s\n", schemaPath)
+	}
+	if migrationsDir != "" {
+		fmt.Printf("  Migrations: %s\n", migrationsDir)
 	}
 	if len(fixtures) > 0 {
 		fmt.Printf("  Fixtures: %v\n", fixtures)
@@ -436,11 +454,12 @@ func runSnapshotBuild() error {
 	fmt.Println()
 
 	result, err := regresql.BuildSnapshot(cfg.PgUri, snapshotCwd, regresql.SnapshotBuildOptions{
-		OutputPath: outputPath,
-		Format:     format,
-		SchemaPath: schemaPath,
-		Fixtures:   fixtures,
-		Verbose:    snapshotBuildVerbose,
+		OutputPath:    outputPath,
+		Format:        format,
+		SchemaPath:    schemaPath,
+		MigrationsDir: migrationsDir,
+		Fixtures:      fixtures,
+		Verbose:       snapshotBuildVerbose,
 	})
 	if err != nil {
 		return err
@@ -457,6 +476,9 @@ func runSnapshotBuild() error {
 	fmt.Printf("  Duration: %s\n", result.Duration.Round(time.Millisecond))
 	if result.Info.SchemaHash != "" {
 		fmt.Printf("  Schema:   %s\n", result.Info.SchemaHash[:20]+"...")
+	}
+	if len(result.Info.MigrationsApplied) > 0 {
+		fmt.Printf("  Migrations: %d applied\n", len(result.Info.MigrationsApplied))
 	}
 	if len(result.FixturesUsed) > 0 {
 		fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
@@ -490,6 +512,19 @@ func runSnapshotInfo() error {
 		fmt.Println("Schema:")
 		fmt.Printf("  Path: %s\n", info.SchemaPath)
 		fmt.Printf("  Hash: %s\n", info.SchemaHash)
+	}
+
+	if info.MigrationsDir != "" {
+		fmt.Println()
+		fmt.Println("Migrations:")
+		fmt.Printf("  Dir:  %s\n", info.MigrationsDir)
+		fmt.Printf("  Hash: %s\n", info.MigrationsHash)
+		if len(info.MigrationsApplied) > 0 {
+			fmt.Println("  Applied:")
+			for _, m := range info.MigrationsApplied {
+				fmt.Printf("    - %s\n", m)
+			}
+		}
 	}
 
 	if len(info.FixturesUsed) > 0 {

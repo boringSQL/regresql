@@ -20,14 +20,17 @@ type (
 	}
 
 	SnapshotInfo struct {
-		Path         string    `yaml:"path"`
-		Hash         string    `yaml:"hash"`
-		Created      time.Time `yaml:"created"`
-		SizeBytes    int64     `yaml:"size_bytes"`
-		Format       string    `yaml:"format"`
-		SchemaPath   string    `yaml:"schema_path,omitempty"`
-		SchemaHash   string    `yaml:"schema_hash,omitempty"`
-		FixturesUsed []string  `yaml:"fixtures_used,omitempty"`
+		Path              string    `yaml:"path"`
+		Hash              string    `yaml:"hash"`
+		Created           time.Time `yaml:"created"`
+		SizeBytes         int64     `yaml:"size_bytes"`
+		Format            string    `yaml:"format"`
+		SchemaPath        string    `yaml:"schema_path,omitempty"`
+		SchemaHash        string    `yaml:"schema_hash,omitempty"`
+		MigrationsDir     string    `yaml:"migrations_dir,omitempty"`
+		MigrationsHash    string    `yaml:"migrations_hash,omitempty"`
+		MigrationsApplied []string  `yaml:"migrations_applied,omitempty"`
+		FixturesUsed      []string  `yaml:"fixtures_used,omitempty"`
 	}
 
 	SnapshotFormat string

@@ -1,22 +1,26 @@
 package regresql
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
 
 type (
 	SnapshotBuildOptions struct {
-		OutputPath string
-		Format     SnapshotFormat
-		SchemaPath string
-		Fixtures   []string
-		Verbose    bool
+		OutputPath    string
+		Format        SnapshotFormat
+		SchemaPath    string
+		MigrationsDir string
+		Fixtures      []string
+		Verbose       bool
 	}
 
 	snapshotBuildResult struct {
@@ -87,6 +91,34 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		}
 	}
 
+	// Apply migrations if provided
+	var migrationsApplied []string
+	var migrationsHash string
+	if opts.MigrationsDir != "" {
+		migrationFiles, err := discoverMigrations(opts.MigrationsDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to discover migrations: %w", err)
+		}
+
+		if len(migrationFiles) > 0 {
+			if opts.Verbose {
+				fmt.Printf("Applying %d migration(s)...\n", len(migrationFiles))
+			}
+			if err := applyMigrations(db, migrationFiles, opts.Verbose); err != nil {
+				return nil, err
+			}
+
+			for _, f := range migrationFiles {
+				migrationsApplied = append(migrationsApplied, filepath.Base(f))
+			}
+
+			migrationsHash, err = computeMigrationsHash(migrationFiles)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute migrations hash: %w", err)
+			}
+		}
+	}
+
 	var fixturesUsed []string
 	if len(opts.Fixtures) > 0 {
 		if opts.Verbose {
@@ -112,6 +144,9 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 
 	info.SchemaPath = opts.SchemaPath
 	info.SchemaHash = schemaHash
+	info.MigrationsDir = opts.MigrationsDir
+	info.MigrationsHash = migrationsHash
+	info.MigrationsApplied = migrationsApplied
 	info.FixturesUsed = fixturesUsed
 
 	return &snapshotBuildResult{
@@ -235,6 +270,69 @@ func GetSnapshotSchema(cfg *SnapshotConfig) string {
 		return ""
 	}
 	return cfg.Schema
+}
+
+func GetSnapshotMigrations(cfg *SnapshotConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.Migrations
+}
+
+// discoverMigrations finds *.sql files in directory (skips *.down.sql), sorted by name
+func discoverMigrations(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		lower := strings.ToLower(name)
+		if !strings.HasSuffix(lower, ".sql") {
+			continue
+		}
+		// Skip .down.sql files (reverse migrations)
+		if strings.HasSuffix(lower, ".down.sql") {
+			continue
+		}
+		files = append(files, filepath.Join(dir, name))
+	}
+	sort.Strings(files) // Lexical sort: 001_init.sql, 002_users.sql, etc.
+	return files, nil
+}
+
+// applyMigrations executes migration files in order
+func applyMigrations(db *sql.DB, files []string, verbose bool) error {
+	for _, f := range files {
+		if verbose {
+			fmt.Printf("  Migration: %s\n", filepath.Base(f))
+		}
+		if err := execSQLFile(db, f); err != nil {
+			return fmt.Errorf("migration %q: %w", filepath.Base(f), err)
+		}
+	}
+	return nil
+}
+
+// computeMigrationsHash computes combined hash of all migration files
+func computeMigrationsHash(files []string) (string, error) {
+	h := sha256.New()
+	for _, f := range files {
+		// Include filename in hash for ordering sensitivity
+		h.Write([]byte(filepath.Base(f)))
+
+		content, err := os.ReadFile(f)
+		if err != nil {
+			return "", err
+		}
+		h.Write(content)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // FixturesExist validates that all fixture files exist before build.
