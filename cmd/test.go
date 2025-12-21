@@ -9,12 +9,13 @@ import (
 )
 
 var (
-	testCwd        string
-	testRunFilter  string
-	testFormat     string
-	testOutputPath string
-	testCommit     bool
-	testNoRestore  bool
+	testCwd          string
+	testRunFilter    string
+	testFormat       string
+	testOutputPath   string
+	testCommit       bool
+	testNoRestore    bool
+	testForceRestore bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -24,7 +25,7 @@ var (
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath, testCommit, testNoRestore)
+			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath, testCommit, testNoRestore, testForceRestore)
 		},
 	}
 )
@@ -38,4 +39,5 @@ func init() {
 	testCmd.Flags().StringVarP(&testOutputPath, "output", "o", "", "Output file path (default: stdout)")
 	testCmd.Flags().BoolVar(&testCommit, "commit", false, "Commit transactions instead of rollback (use with caution)")
 	testCmd.Flags().BoolVar(&testNoRestore, "no-restore", false, "Skip snapshot restore before test")
+	testCmd.Flags().BoolVar(&testForceRestore, "force-restore", false, "Force snapshot restore even if unchanged")
 }

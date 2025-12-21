@@ -36,6 +36,15 @@ type (
 		FixturesUsed         []string  `yaml:"fixtures_used,omitempty"`
 	}
 
+	RestoreState struct {
+		SnapshotPath   string    `yaml:"snapshot_path"`
+		SnapshotMtime  time.Time `yaml:"snapshot_mtime"`
+		SnapshotSize   int64     `yaml:"snapshot_size"`
+		Database       string    `yaml:"database"`
+		RestoredAt     time.Time `yaml:"restored_at"`
+		DurationMillis int64     `yaml:"duration_millis"`
+	}
+
 	SnapshotFormat string
 
 	SnapshotOptions struct {
@@ -77,6 +86,7 @@ const (
 	DefaultSnapshotPath   = "snapshots/default.dump"
 	DefaultSnapshotFormat = FormatCustom
 	SnapshotMetadataFile  = ".regresql-snapshot.yaml"
+	RestoreStateFile      = ".regresql-restore-state.yaml"
 )
 
 // RestoreTool returns the appropriate PostgreSQL tool for restoring this format.
@@ -428,6 +438,58 @@ func ShouldAutoRestore(cfg *SnapshotConfig) bool {
 		return true
 	}
 	return *cfg.AutoRestore
+}
+
+func ReadRestoreState(snapshotsDir string) (*RestoreState, error) {
+	statePath := filepath.Join(snapshotsDir, RestoreStateFile)
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil, err
+	}
+	var state RestoreState
+	if err := yaml.Unmarshal(data, &state); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+func WriteRestoreState(snapshotsDir string, state *RestoreState) error {
+	statePath := filepath.Join(snapshotsDir, RestoreStateFile)
+	data, err := yaml.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(statePath, data, 0o644)
+}
+
+func NeedsRestore(snapshotsDir, snapshotPath, targetDB string) (bool, string) {
+	state, err := ReadRestoreState(snapshotsDir)
+	if err != nil {
+		return true, "no previous restore state"
+	}
+
+	if state.SnapshotPath != snapshotPath {
+		return true, "snapshot path changed"
+	}
+
+	if state.Database != targetDB {
+		return true, "target database changed"
+	}
+
+	stat, err := os.Stat(snapshotPath)
+	if err != nil {
+		return true, "failed to stat snapshot"
+	}
+
+	if stat.Size() != state.SnapshotSize {
+		return true, "snapshot size changed"
+	}
+
+	if !stat.ModTime().Equal(state.SnapshotMtime) {
+		return true, "snapshot modified"
+	}
+
+	return false, ""
 }
 
 // replaceDatabase returns a new connection string with a different database

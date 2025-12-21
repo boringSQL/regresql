@@ -3,6 +3,7 @@ package regresql
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 /*
@@ -92,7 +93,7 @@ case and add a value for each parameter. `)
 Update updates the expected files from the queries and their parameters.
 Each query runs in its own transaction that rolls back (unless commit is true).
 */
-func Update(root string, runFilter string, commit, noRestore bool) {
+func Update(root string, runFilter string, commit, noRestore, forceRestore bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -107,7 +108,7 @@ func Update(root string, runFilter string, commit, noRestore bool) {
 		os.Exit(3)
 	}
 
-	autoRestore(config, root, noRestore)
+	autoRestore(config, root, noRestore, forceRestore)
 
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
@@ -135,7 +136,7 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
-func autoRestore(cfg config, root string, noRestore bool) {
+func autoRestore(cfg config, root string, noRestore, forceRestore bool) {
 	if noRestore || !ShouldAutoRestore(cfg.Snapshot) {
 		return
 	}
@@ -144,22 +145,53 @@ func autoRestore(cfg config, root string, noRestore bool) {
 		fmt.Printf("Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
 		os.Exit(1)
 	}
-	fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
+
+	snapshotsDir := GetSnapshotsDir(root)
+	targetDB := cfg.Snapshot.RestoreDatabase
+
+	if !forceRestore {
+		needsRestore, reason := NeedsRestore(snapshotsDir, snapshotPath, targetDB)
+		if !needsRestore {
+			state, _ := ReadRestoreState(snapshotsDir)
+			fmt.Printf("Skipping restore: snapshot unchanged since %s (restored in %.1fs)\n\n",
+				state.RestoredAt.Local().Format("2006-01-02 15:04:05"),
+				float64(state.DurationMillis)/1000)
+			return
+		}
+		fmt.Printf("Restoring snapshot: %s (%s)\n", snapshotPath, reason)
+	} else {
+		fmt.Printf("Restoring snapshot: %s (forced)\n", snapshotPath)
+	}
+
+	start := time.Now()
 	opts := RestoreOptions{
 		InputPath:      snapshotPath,
 		Clean:          true,
-		TargetDatabase: cfg.Snapshot.RestoreDatabase,
+		TargetDatabase: targetDB,
 	}
 	if err := RestoreSnapshot(cfg.PgUri, opts); err != nil {
 		fmt.Printf("Error: failed to restore snapshot: %s\n", err)
 		os.Exit(1)
 	}
-	fmt.Println()
+	duration := time.Since(start)
+
+	stat, _ := os.Stat(snapshotPath)
+	state := &RestoreState{
+		SnapshotPath:   snapshotPath,
+		SnapshotMtime:  stat.ModTime(),
+		SnapshotSize:   stat.Size(),
+		Database:       targetDB,
+		RestoredAt:     time.Now().UTC(),
+		DurationMillis: duration.Milliseconds(),
+	}
+	WriteRestoreState(snapshotsDir, state)
+
+	fmt.Printf("Restored in %.1fs\n\n", duration.Seconds())
 }
 
 // Test runs regression tests for all queries.
 // Each query runs in its own transaction that rolls back (unless commit is true).
-func Test(root, runFilter, formatName, outputPath string, commit, noRestore bool) {
+func Test(root, runFilter, formatName, outputPath string, commit, noRestore, forceRestore bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -177,7 +209,7 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore bool
 	// Cache config for plan quality analysis
 	SetGlobalConfig(config)
 
-	autoRestore(config, root, noRestore)
+	autoRestore(config, root, noRestore, forceRestore)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(root); err != nil {
