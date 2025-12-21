@@ -230,6 +230,13 @@ func GetSnapshotFixtures(cfg *SnapshotConfig) []string {
 	return cfg.Fixtures
 }
 
+func GetSnapshotSchema(cfg *SnapshotConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return cfg.Schema
+}
+
 // FixturesExist validates that all fixture files exist before build.
 func FixturesExist(root string, fixtures []string) error {
 	for _, f := range fixtures {

@@ -30,6 +30,7 @@ type (
 	SnapshotConfig struct {
 		Path     string   `yaml:"path,omitempty"`     // snapshot dump file path (default: snapshots/default.dump)
 		Format   string   `yaml:"format,omitempty"`   // pg_dump format: custom, plain, or directory
+		Schema   string   `yaml:"schema,omitempty"`   // external schema file (SQL, dump, or directory)
 		Fixtures []string `yaml:"fixtures,omitempty"` // SQL/YAML fixture files for snapshot build
 	}
 )

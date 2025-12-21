@@ -379,10 +379,12 @@ func runSnapshotBuild() error {
 		return fmt.Errorf("pguri not configured in regress.yaml")
 	}
 
-	// Resolve and validate schema path
-	var schemaPath string
-	if snapshotBuildSchema != "" {
-		schemaPath = snapshotBuildSchema
+	// Use config values as defaults when flags not provided
+	schemaPath := snapshotBuildSchema
+	if schemaPath == "" {
+		schemaPath = regresql.GetSnapshotSchema(cfg.Snapshot)
+	}
+	if schemaPath != "" {
 		if !filepath.IsAbs(schemaPath) {
 			schemaPath = filepath.Join(snapshotCwd, schemaPath)
 		}
@@ -396,9 +398,9 @@ func runSnapshotBuild() error {
 		fixtures = regresql.GetSnapshotFixtures(cfg.Snapshot)
 	}
 
-	// Allow build with just schema (no fixtures)
+	// Require at least schema or fixtures
 	if len(fixtures) == 0 && schemaPath == "" {
-		return fmt.Errorf("no fixtures specified. Use --fixtures flag or configure snapshot.fixtures in regress.yaml")
+		return fmt.Errorf("no schema or fixtures specified. Use --schema/--fixtures flags or configure snapshot.schema/snapshot.fixtures in regress.yaml")
 	}
 
 	if len(fixtures) > 0 {
