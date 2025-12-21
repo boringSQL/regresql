@@ -161,6 +161,12 @@ func Test(root, runFilter, formatName, outputPath string, commit bool) {
 		os.Exit(1)
 	}
 
+	// Validate migrations haven't changed since last snapshot build
+	if err := ValidateMigrationsHash(root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
+	}
+
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(2)

@@ -539,3 +539,109 @@ Run 'regresql snapshot build --schema=%s' to rebuild the snapshot`,
 
 	return nil
 }
+
+func ValidateMigrationsHash(root string) error {
+	snapshotsDir := GetSnapshotsDir(root)
+
+	metadata, err := ReadSnapshotMetadata(snapshotsDir)
+	if err != nil {
+		return nil // No metadata - already warned by ValidateSchemaHash
+	}
+
+	info := metadata.Current
+	if info == nil || info.MigrationsDir == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(info.MigrationsDir); os.IsNotExist(err) {
+		return nil // Stale metadata - directory no longer exists
+	}
+
+	currentFiles, err := discoverMigrations(info.MigrationsDir)
+	if err != nil {
+		return fmt.Errorf("failed to discover migrations in %s: %w", info.MigrationsDir, err)
+	}
+
+	if len(currentFiles) == 0 && info.MigrationsHash == "" {
+		return nil // No migrations before, none now
+	}
+
+	if len(currentFiles) == 0 {
+		return migrationChangeError(info, "", nil, info.MigrationsApplied)
+	}
+
+	currentHash, err := computeMigrationsHash(currentFiles)
+	if err != nil {
+		return fmt.Errorf("failed to hash migrations: %w", err)
+	}
+
+	if currentHash == info.MigrationsHash {
+		return nil
+	}
+
+	// Detect what changed
+	currentNames := make([]string, len(currentFiles))
+	for i, f := range currentFiles {
+		currentNames[i] = filepath.Base(f)
+	}
+
+	return migrationChangeError(info, currentHash, currentNames, info.MigrationsApplied)
+}
+
+func migrationChangeError(info *SnapshotInfo, currentHash string, current, stored []string) error {
+	currentSet := make(map[string]bool)
+	for _, name := range current {
+		currentSet[name] = true
+	}
+	storedSet := make(map[string]bool)
+	for _, name := range stored {
+		storedSet[name] = true
+	}
+
+	var added, removed []string
+	for _, name := range current {
+		if !storedSet[name] {
+			added = append(added, name)
+		}
+	}
+	for _, name := range stored {
+		if !currentSet[name] {
+			removed = append(removed, name)
+		}
+	}
+
+	var changes strings.Builder
+	changes.WriteString("\n  Changes detected:")
+	if len(added) == 0 && len(removed) == 0 {
+		changes.WriteString("\n    ~ content modified")
+	}
+	for _, name := range added {
+		changes.WriteString("\n    + ")
+		changes.WriteString(name)
+	}
+	for _, name := range removed {
+		changes.WriteString("\n    - ")
+		changes.WriteString(name)
+	}
+
+	expectedHash := info.MigrationsHash
+	if expectedHash != "" {
+		expectedHash = expectedHash[:20] + "..."
+	} else {
+		expectedHash = "(none)"
+	}
+	if currentHash != "" {
+		currentHash = currentHash[:20] + "..."
+	} else {
+		currentHash = "(empty)"
+	}
+
+	return fmt.Errorf(`migrations have changed since last snapshot build
+
+  Migrations dir: %s
+  Expected hash:  %s
+  Current hash:   %s%s
+
+Run 'regresql snapshot build --migrations=%s' to rebuild the snapshot`,
+		info.MigrationsDir, expectedHash, currentHash, changes.String(), info.MigrationsDir)
+}
