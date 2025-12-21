@@ -92,7 +92,7 @@ case and add a value for each parameter. `)
 Update updates the expected files from the queries and their parameters.
 Each query runs in its own transaction that rolls back (unless commit is true).
 */
-func Update(root string, runFilter string, commit bool) {
+func Update(root string, runFilter string, commit, noRestore bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -106,6 +106,8 @@ func Update(root string, runFilter string, commit bool) {
 		fmt.Print(err.Error())
 		os.Exit(3)
 	}
+
+	autoRestore(config, root, noRestore)
 
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
@@ -133,6 +135,27 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
+func autoRestore(cfg config, root string, noRestore bool) {
+	if noRestore || !ShouldAutoRestore(cfg.Snapshot) {
+		return
+	}
+	snapshotPath := GetSnapshotPath(cfg.Snapshot, root)
+	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+		fmt.Printf("Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
+		os.Exit(1)
+	}
+	fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
+	opts := RestoreOptions{
+		InputPath: snapshotPath,
+		Clean:     true,
+	}
+	if err := RestoreSnapshot(cfg.PgUri, opts); err != nil {
+		fmt.Printf("Error: failed to restore snapshot: %s\n", err)
+		os.Exit(1)
+	}
+	fmt.Println()
+}
+
 // Test runs regression tests for all queries.
 // Each query runs in its own transaction that rolls back (unless commit is true).
 func Test(root, runFilter, formatName, outputPath string, commit, noRestore bool) {
@@ -153,24 +176,7 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore bool
 	// Cache config for plan quality analysis
 	SetGlobalConfig(config)
 
-	// Auto-restore snapshot before test
-	if !noRestore && ShouldAutoRestore(config.Snapshot) {
-		snapshotPath := GetSnapshotPath(config.Snapshot, root)
-		if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-			fmt.Printf("Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
-			os.Exit(1)
-		}
-		fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
-		opts := RestoreOptions{
-			InputPath: snapshotPath,
-			Clean:     true,
-		}
-		if err := RestoreSnapshot(config.PgUri, opts); err != nil {
-			fmt.Printf("Error: failed to restore snapshot: %s\n", err)
-			os.Exit(1)
-		}
-		fmt.Println()
-	}
+	autoRestore(config, root, noRestore)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(root); err != nil {
