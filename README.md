@@ -193,33 +193,114 @@ Notes:
 Snapshots capture database state for reproducible regression testing. Build a
 snapshot from schema + migrations + fixtures, then restore it before testing.
 
-**NOTICE**: Snapshot functionality is work in progress.
-
-```bash
-# Capture current database state
-regresql snapshot capture
-
-# Capture schema only (git-friendly SQL format)
-regresql snapshot capture --schema-only --format plain -o snapshots/schema.sql
-
-# Build snapshot from fixtures
-regresql snapshot build --fixtures users,products,orders
-
-# Restore snapshot before testing
-regresql snapshot restore
-```
-
-Snapshots are stored using pg_dump and can be configured in `regresql/regress.yaml`:
+### Snapshot-Based Workflow (Recommended)
 
 ```yaml
-pguri: "postgres://..."
+# regresql/regress.yaml
+pguri: postgres://user:pass@localhost/mydb
 snapshot:
-  path: snapshots/test_data.dump
-  format: custom  # custom, plain, or directory
-  fixtures:       # for snapshot build command
+  schema: db/schema.sql
+  migrations: db/migrations/pending/
+  fixtures:
     - users
     - products
-    - orders
+```
+
+```bash
+regresql snapshot build    # Creates snapshots/default.dump
+regresql test              # Validates hashes, runs tests
+```
+
+### Schema Sources
+
+**Plain SQL file:**
+```yaml
+snapshot:
+  schema: db/schema.sql
+```
+
+**pg_dump custom format:**
+```yaml
+snapshot:
+  schema: snapshots/schema.dump
+```
+
+**pg_dump directory format:**
+```yaml
+snapshot:
+  schema: snapshots/schema_dir/
+```
+
+### Migrations
+
+**SQL files in directory** (sorted lexically, `*.down.sql` skipped):
+```yaml
+snapshot:
+  migrations: db/migrations/pending/
+```
+
+**External migration tool:**
+```yaml
+snapshot:
+  migration_command: goose -dir db/migrations postgres "$PGURI" up
+```
+
+Environment variables `PGURI` and `DATABASE_URL` are set to the temp database URI.
+
+`migrations` and `migration_command` are mutually exclusive.
+
+### Change Detection
+
+On `regresql test`, these are validated against snapshot metadata:
+- Schema file hash
+- Migrations directory hash (includes filenames and content)
+- Migration command string hash
+
+If changed, test fails with instructions to rebuild:
+
+```
+Error: schema has changed since last snapshot build
+
+  Schema file: db/schema.sql
+  Expected:    sha256:abc123...
+  Current:     sha256:789xyz...
+
+Run 'regresql snapshot build' to rebuild the snapshot
+```
+
+### Snapshot Commands
+
+```bash
+regresql snapshot build [flags]      # Build from schema/migrations/fixtures
+regresql snapshot capture [flags]    # Capture current database state
+regresql snapshot restore [flags]    # Restore snapshot to database
+regresql snapshot info               # Show snapshot metadata and hashes
+```
+
+**Build flags:**
+- `--schema FILE` - Schema file (overrides config)
+- `--migrations DIR` - Migrations directory (overrides config)
+- `--fixtures LIST` - Comma-separated fixture names
+- `--output FILE` - Output path (default: snapshots/default.dump)
+- `--format FORMAT` - custom, plain, directory (default: custom)
+- `-v, --verbose` - Show detailed progress
+
+**Capture flags:**
+- `--schema-only` - Dump schema without data
+- `--sections` - Capture pre-data, data, post-data as separate SQL files
+- `--format FORMAT` - custom, plain, directory
+
+### Configuration
+
+```yaml
+snapshot:
+  path: snapshots/default.dump    # Output path
+  format: custom                  # custom, plain, directory
+  schema: db/schema.sql           # Schema source
+  migrations: db/migrations/      # OR migration_command
+  fixtures:
+    - users
+    - products
 ```
 
 ## Test Fixtures
