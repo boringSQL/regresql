@@ -418,6 +418,16 @@ func GetSnapshotsDir(root string) string {
 	return filepath.Join(root, "snapshots")
 }
 
+func ShouldAutoRestore(cfg *SnapshotConfig) bool {
+	if cfg == nil || cfg.Path == "" {
+		return false
+	}
+	if cfg.AutoRestore == nil {
+		return true
+	}
+	return *cfg.AutoRestore
+}
+
 // RestoreSnapshot restores a database snapshot using pg_restore or psql
 func RestoreSnapshot(pguri string, opts RestoreOptions) error {
 	if _, err := os.Stat(opts.InputPath); os.IsNotExist(err) {

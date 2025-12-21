@@ -135,7 +135,7 @@ the regresql update command again to reset the expected output files.
 
 // Test runs regression tests for all queries.
 // Each query runs in its own transaction that rolls back (unless commit is true).
-func Test(root, runFilter, formatName, outputPath string, commit bool) {
+func Test(root, runFilter, formatName, outputPath string, commit, noRestore bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -152,6 +152,25 @@ func Test(root, runFilter, formatName, outputPath string, commit bool) {
 
 	// Cache config for plan quality analysis
 	SetGlobalConfig(config)
+
+	// Auto-restore snapshot before test
+	if !noRestore && ShouldAutoRestore(config.Snapshot) {
+		snapshotPath := GetSnapshotPath(config.Snapshot, root)
+		if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
+			fmt.Printf("Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
+			os.Exit(1)
+		}
+		fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
+		opts := RestoreOptions{
+			InputPath: snapshotPath,
+			Clean:     true,
+		}
+		if err := RestoreSnapshot(config.PgUri, opts); err != nil {
+			fmt.Printf("Error: failed to restore snapshot: %s\n", err)
+			os.Exit(1)
+		}
+		fmt.Println()
+	}
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(root); err != nil {

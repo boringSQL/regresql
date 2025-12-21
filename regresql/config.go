@@ -34,6 +34,7 @@ type (
 		Migrations       string   `yaml:"migrations,omitempty"`        // directory of SQL migrations to apply
 		MigrationCommand string   `yaml:"migration_command,omitempty"` // external command to run migrations (e.g., goose, migrate)
 		Fixtures         []string `yaml:"fixtures,omitempty"`          // SQL/YAML fixture files for snapshot build
+		AutoRestore      *bool    `yaml:"auto_restore,omitempty"`      // restore snapshot before test (default: true if path is set)
 	}
 )
 
