@@ -180,17 +180,18 @@ name: my_query
 SELECT 42
 ```
 
-Notes:
-- Queries can include named parameters (:param_name) or positional parameters ($1, $2).
-- Semicolons inside strings or comments are ignored; only the semicolon terminating a query ends the block.
-- The query handling is available as a separate [queries](http://github.com/boringSQL/queries) library.
+Notes: 
+- Queries can include named parameters (:param_name) or positional
+  parameters ($1, $2). 
+- Semicolons inside strings or comments are ignored; only the semicolon
+  terminating a query ends the block. 
+- The query handling is available as a separate
+  [queries](http://github.com/boringSQL/queries) library.
 
 ## Snapshots
 
-Snapshots capture database state for reproducible regression testing. Instead of
-applying fixtures before each test run, you build a snapshot once and restore it
-before testing. This ensures tests always start from a known state, making them
-isolated and idempotent.
+Snapshots capture database state for reproducible regression testing. Build a
+snapshot from schema + migrations + fixtures, then restore it before testing.
 
 **NOTICE**: Snapshot functionality is work in progress.
 
@@ -299,7 +300,8 @@ generate:
 
 ## Ignoring Files
 
-You can exclude SQL files from discovery using a `.regresignore` file in your project root:
+You can exclude SQL files from discovery using a `.regresignore` file in your
+project root:
 
 ```
 # Comments start with #
@@ -530,10 +532,16 @@ regresql/
 
 ## History
 
-The project is a fork of original `regresql` written by [Dimitri Fontaine](https://github.com/dimitri) as part his book [Mastering PostgreSQL](http://masteringpostgresql.com/). The tool was originally inspired by PostgreSQL’s own regression testing framework, providing a lightweight and SQL-native approach to unit and regression testing.
+The project is a fork of original `regresql` written by [Dimitri
+Fontaine](https://github.com/dimitri) as part his book [Mastering
+PostgreSQL](http://masteringpostgresql.com/). The tool was originally inspired
+by PostgreSQL’s own regression testing framework, providing a lightweight and
+SQL-native approach to unit and regression testing.
 
-The fork’s goal is to extend RegreSQL into a modern, extensible framework that supports the broader [boringSQL](https://boringsql.com) vision - helping developers to feel more confident working with SQL queries.
+The fork’s goal is to extend RegreSQL into a modern, extensible framework that
+supports the broader [boringSQL](https://boringsql.com) vision - helping
+developers to feel more confident working with SQL queries.
 
 ## License
 
-The RegreSQL utility is released under [The PostgreSQL License](https://www.postgresql.org/about/licence/).
+The RegreSQL utility is released under [BSD-2-Clause license](LICENSE).
