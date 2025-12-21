@@ -146,8 +146,9 @@ func autoRestore(cfg config, root string, noRestore bool) {
 	}
 	fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
 	opts := RestoreOptions{
-		InputPath: snapshotPath,
-		Clean:     true,
+		InputPath:      snapshotPath,
+		Clean:          true,
+		TargetDatabase: cfg.Snapshot.RestoreDatabase,
 	}
 	if err := RestoreSnapshot(cfg.PgUri, opts); err != nil {
 		fmt.Printf("Error: failed to restore snapshot: %s\n", err)

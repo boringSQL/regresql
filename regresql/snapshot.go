@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,9 +62,10 @@ type (
 	}
 
 	RestoreOptions struct {
-		InputPath string
-		Format    SnapshotFormat
-		Clean     bool // drop existing objects before restore
+		InputPath      string
+		Format         SnapshotFormat
+		Clean          bool   // drop existing objects before restore
+		TargetDatabase string // override database name from connection string
 	}
 )
 
@@ -428,10 +430,30 @@ func ShouldAutoRestore(cfg *SnapshotConfig) bool {
 	return *cfg.AutoRestore
 }
 
+// replaceDatabase returns a new connection string with a different database
+func replaceDatabase(pguri, newDB string) (string, error) {
+	u, err := url.Parse(pguri)
+	if err != nil {
+		return "", err
+	}
+	u.Path = "/" + newDB
+	return u.String(), nil
+}
+
 // RestoreSnapshot restores a database snapshot using pg_restore or psql
 func RestoreSnapshot(pguri string, opts RestoreOptions) error {
 	if _, err := os.Stat(opts.InputPath); os.IsNotExist(err) {
 		return fmt.Errorf("snapshot file not found: %s", opts.InputPath)
+	}
+
+	// Override target database if specified
+	targetURI := pguri
+	if opts.TargetDatabase != "" {
+		var err error
+		targetURI, err = replaceDatabase(pguri, opts.TargetDatabase)
+		if err != nil {
+			return fmt.Errorf("failed to set target database: %w", err)
+		}
 	}
 
 	format := opts.Format
@@ -440,9 +462,9 @@ func RestoreSnapshot(pguri string, opts RestoreOptions) error {
 	}
 
 	if format == FormatPlain {
-		return restoreWithPsql(pguri, opts)
+		return restoreWithPsql(targetURI, opts)
 	}
-	return restoreWithPgRestore(pguri, opts, format)
+	return restoreWithPgRestore(targetURI, opts, format)
 }
 
 func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotFormat) error {
