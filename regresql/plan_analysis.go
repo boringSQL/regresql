@@ -40,6 +40,50 @@ var (
 	simpleColumnPattern = regexp.MustCompile(`\(([a-zA-Z_][a-zA-Z0-9_]*)\s*=`)
 )
 
+// ExtractPlanSignatureFromNode extracts plan signature from typed PlanNode
+func ExtractPlanSignatureFromNode(node *PlanNode) *PlanSignature {
+	sig := &PlanSignature{
+		Relations: make(map[string]ScanInfo),
+	}
+	extractFromTypedNode(node, sig)
+	return sig
+}
+
+func extractFromTypedNode(node *PlanNode, sig *PlanSignature) {
+	if node.NodeType != "" {
+		sig.NodeTypes = append(sig.NodeTypes, node.NodeType)
+
+		if node.NodeType == "Seq Scan" {
+			sig.HasSeqScan = true
+		}
+		if node.NodeType == "Sort" {
+			sig.HasSort = true
+		}
+		if joinNodeTypes[node.NodeType] {
+			sig.JoinTypes = append(sig.JoinTypes, node.NodeType)
+		}
+	}
+
+	if node.RelationName != "" {
+		scanInfo := ScanInfo{
+			ScanType:  node.NodeType,
+			IndexName: node.IndexName,
+			IndexCond: node.IndexCond,
+			Filter:    node.Filter,
+		}
+		sig.Relations[node.RelationName] = scanInfo
+
+		if scanInfo.IndexName != "" {
+			sig.IndexesUsed = append(sig.IndexesUsed, scanInfo.IndexName)
+		}
+	}
+
+	for i := range node.Plans {
+		extractFromTypedNode(&node.Plans[i], sig)
+	}
+}
+
+// ExtractPlanSignature extracts plan signature from untyped map (for backwards compatibility)
 func ExtractPlanSignature(explainPlan map[string]any) (*PlanSignature, error) {
 	planData, ok := explainPlan["Plan"].(map[string]any)
 	if !ok {

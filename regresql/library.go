@@ -97,7 +97,7 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 			continue
 		}
 
-		var explainPlan map[string]any
+		var explainPlan *ExplainOutput
 		var err error
 		if len(p.Query.Args) == 0 {
 			explainPlan, err = ExecuteExplain(db, p.Query.OrdinalQuery)
@@ -110,13 +110,7 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 			continue
 		}
 
-		actualCost := 0.0
-		if planData, ok := explainPlan["Plan"].(map[string]any); ok {
-			if cost, ok := planData["Total Cost"]; ok {
-				actualCost = toFloat64(cost)
-			}
-		}
-
+		actualCost := explainPlan.Plan.TotalCost
 		baselineCost := toFloat64(baselines[i].Plan["total_cost"])
 		passed, percentIncrease := CompareCost(actualCost, baselineCost, thresholdPercent)
 
@@ -129,29 +123,23 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 		}
 
 		if baselines[i].PlanSignature != nil {
-			currentSig, err := ExtractPlanSignature(explainPlan)
-			if err == nil {
-				result.PlanChanged = HasPlanChanged(baselines[i].PlanSignature, currentSig)
-				result.PlanRegressions = DetectPlanRegressions(baselines[i].PlanSignature, currentSig)
+			currentSig := ExtractPlanSignatureFromNode(&explainPlan.Plan)
+			result.PlanChanged = HasPlanChanged(baselines[i].PlanSignature, currentSig)
+			result.PlanRegressions = DetectPlanRegressions(baselines[i].PlanSignature, currentSig)
 
-				for _, regression := range result.PlanRegressions {
-					if regression.Severity == "critical" {
-						result.Passed = false
-						break
-					}
+			for _, regression := range result.PlanRegressions {
+				if regression.Severity == "critical" {
+					result.Passed = false
+					break
 				}
 			}
 		}
 
 		// Detect quality issues (works even without baseline)
-		if explainPlan != nil {
-			currentSig, err := ExtractPlanSignature(explainPlan)
-			if err == nil {
-				opts := p.Query.GetRegressQLOptions()
-				ignoredTables := GetIgnoredSeqScanTables()
-				result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, ignoredTables)
-			}
-		}
+		currentSig := ExtractPlanSignatureFromNode(&explainPlan.Plan)
+		opts := p.Query.GetRegressQLOptions()
+		ignoredTables := GetIgnoredSeqScanTables()
+		result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, ignoredTables)
 
 		results[i] = result
 	}
@@ -159,9 +147,9 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 	return results
 }
 
-func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, []map[string]any, error) {
+func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, []*ExplainOutput, error) {
 	baselines := make([]Baseline, len(p.Names))
-	fullPlans := make([]map[string]any, len(p.Names))
+	fullPlans := make([]*ExplainOutput, len(p.Names))
 
 	for i := range p.Names {
 		baseline, fullPlan, err := p.createSingleBaseline(db, i)
@@ -175,8 +163,8 @@ func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, []map[string]any, error)
 	return baselines, fullPlans, nil
 }
 
-func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, map[string]any, error) {
-	var explainPlan map[string]any
+func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, *ExplainOutput, error) {
+	var explainPlan *ExplainOutput
 	var err error
 
 	if len(p.Query.Args) == 0 {
@@ -189,17 +177,10 @@ func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, map[string
 		return Baseline{}, nil, fmt.Errorf("failed to create baseline for %s: %w", p.Names[index], err)
 	}
 
-	filteredPlan := make(map[string]any)
-	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
-		if startupCost, ok := planData["Startup Cost"]; ok {
-			filteredPlan["startup_cost"] = startupCost
-		}
-		if totalCost, ok := planData["Total Cost"]; ok {
-			filteredPlan["total_cost"] = totalCost
-		}
-		if planRows, ok := planData["Plan Rows"]; ok {
-			filteredPlan["plan_rows"] = planRows
-		}
+	filteredPlan := map[string]any{
+		"startup_cost": explainPlan.Plan.StartupCost,
+		"total_cost":   explainPlan.Plan.TotalCost,
+		"plan_rows":    explainPlan.Plan.PlanRows,
 	}
 
 	return Baseline{Query: p.Query.Name, Plan: filteredPlan}, explainPlan, nil

@@ -205,7 +205,7 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		return result
 	}
 
-	actualCost := extractTotalCost(explainPlan)
+	actualCost := explainPlan.Plan.TotalCost
 	baselineCost := toFloat64(baseline.Plan["total_cost"])
 	isOk, percentageIncrease := CompareCost(actualCost, baselineCost, thresholdPercent)
 
@@ -214,23 +214,19 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	result.PercentIncrease = percentageIncrease
 	result.Duration = time.Since(start).Seconds()
 
+	currentSig := ExtractPlanSignatureFromNode(&explainPlan.Plan)
+
 	if baseline.PlanSignature != nil {
-		if currentSig, err := ExtractPlanSignature(explainPlan); err == nil {
-			result.PlanChanged = HasPlanChanged(baseline.PlanSignature, currentSig)
-			result.PlanRegressions = DetectPlanRegressions(baseline.PlanSignature, currentSig)
+		result.PlanChanged = HasPlanChanged(baseline.PlanSignature, currentSig)
+		result.PlanRegressions = DetectPlanRegressions(baseline.PlanSignature, currentSig)
 
-			if hasCriticalRegression(result.PlanRegressions) {
-				isOk = false
-			}
+		if hasCriticalRegression(result.PlanRegressions) {
+			isOk = false
 		}
 	}
 
-	if explainPlan != nil {
-		if currentSig, err := ExtractPlanSignature(explainPlan); err == nil {
-			opts := p.Query.GetRegressQLOptions()
-			result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables())
-		}
-	}
+	opts := p.Query.GetRegressQLOptions()
+	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables())
 
 	if isOk {
 		result.Status = "passed"
@@ -243,21 +239,12 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	return result
 }
 
-func (p *Plan) runExplain(q Querier, bindings map[string]any) (map[string]any, error) {
+func (p *Plan) runExplain(q Querier, bindings map[string]any) (*ExplainOutput, error) {
 	if bindings == nil {
 		return ExecuteExplain(q, p.Query.OrdinalQuery)
 	}
 	sql, args := p.Query.Prepare(bindings)
 	return ExecuteExplain(q, sql, args...)
-}
-
-func extractTotalCost(explainPlan map[string]any) float64 {
-	if planData, ok := explainPlan["Plan"].(map[string]any); ok {
-		if cost, ok := planData["Total Cost"]; ok {
-			return toFloat64(cost)
-		}
-	}
-	return 0
 }
 
 func hasCriticalRegression(regressions []PlanRegression) bool {

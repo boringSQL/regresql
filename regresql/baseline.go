@@ -39,7 +39,7 @@ func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
 }
 
 // ExecuteExplain runs EXPLAIN (FORMAT JSON) for a query and returns the parsed plan
-func ExecuteExplain(q Querier, query string, args ...any) (map[string]any, error) {
+func ExecuteExplain(q Querier, query string, args ...any) (*ExplainOutput, error) {
 	explainQuery := fmt.Sprintf("EXPLAIN (FORMAT JSON, ANALYZE false, VERBOSE false, COSTS true, BUFFERS false) %s", query)
 
 	rows, err := q.Query(explainQuery, args...)
@@ -55,16 +55,16 @@ func ExecuteExplain(q Querier, query string, args ...any) (map[string]any, error
 		}
 	}
 
-	var plan []map[string]any
-	if err := json.Unmarshal([]byte(jsonPlan), &plan); err != nil {
+	var plans []ExplainOutput
+	if err := json.Unmarshal([]byte(jsonPlan), &plans); err != nil {
 		return nil, fmt.Errorf("failed to parse EXPLAIN JSON: %w", err)
 	}
 
-	if len(plan) == 0 {
+	if len(plans) == 0 {
 		return nil, fmt.Errorf("empty EXPLAIN result")
 	}
 
-	return plan[0], nil
+	return &plans[0], nil
 }
 
 func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) error {
@@ -91,7 +91,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) e
 
 	for i, baseline := range baselines {
 		baselinePath := getBaselinePath(q, baselineDir, plan.Names[i])
-		var fullPlan map[string]any
+		var fullPlan *ExplainOutput
 		if i < len(fullPlans) {
 			fullPlan = fullPlans[i]
 		}
@@ -103,16 +103,10 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) e
 	return nil
 }
 
-func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any, fullExplainPlan map[string]any) error {
+func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any, fullExplainPlan *ExplainOutput) error {
 	var planSignature *PlanSignature
 	if fullExplainPlan != nil {
-		sig, err := ExtractPlanSignature(fullExplainPlan)
-		if err != nil {
-			// Log warning but don't fail - plan signature is optional
-			fmt.Printf("  Warning: failed to extract plan signature for %s: %v\n", queryName, err)
-		} else {
-			planSignature = sig
-		}
+		planSignature = ExtractPlanSignatureFromNode(&fullExplainPlan.Plan)
 	}
 
 	baseline := Baseline{
