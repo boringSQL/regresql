@@ -63,14 +63,14 @@ type (
 		SubplansRemoved int `json:"Subplans Removed,omitempty"`
 
 		// Row removal stats
-		RowsRemovedByFilter       int64 `json:"Rows Removed by Filter,omitempty"`
-		RowsRemovedByIndexRecheck int64 `json:"Rows Removed by Index Recheck,omitempty"`
+		RowsRemovedByFilter       float64 `json:"Rows Removed by Filter,omitempty"`
+		RowsRemovedByIndexRecheck float64 `json:"Rows Removed by Index Recheck,omitempty"`
 
 		// ANALYZE fields (only present with ANALYZE true)
 		ActualStartupTime float64 `json:"Actual Startup Time,omitempty"`
 		ActualTotalTime   float64 `json:"Actual Total Time,omitempty"`
-		ActualRows        int64   `json:"Actual Rows,omitempty"`
-		ActualLoops       int64   `json:"Actual Loops,omitempty"`
+		ActualRows        float64 `json:"Actual Rows,omitempty"`
+		ActualLoops       float64 `json:"Actual Loops,omitempty"`
 
 		// BUFFERS fields (only present with BUFFERS true)
 		SharedHitBlocks     int64   `json:"Shared Hit Blocks,omitempty"`
@@ -115,8 +115,8 @@ type (
 		NodeType     string  `json:"node_type"`
 		RelationName string  `json:"relation_name,omitempty"`
 		PlanRows     float64 `json:"plan_rows"`
-		ActualRows   int64   `json:"actual_rows"`
-		ActualLoops  int64   `json:"actual_loops"`
+		ActualRows   float64 `json:"actual_rows"`
+		ActualLoops  float64 `json:"actual_loops"`
 		Ratio        float64 `json:"ratio"`
 	}
 
@@ -133,7 +133,7 @@ type (
 		TotalCost       float64 `json:"total_cost"`
 		ExecutionTimeMs float64 `json:"execution_time_ms"`
 		PlanningTimeMs  float64 `json:"planning_time_ms"`
-		ActualRows      int64   `json:"actual_rows"`
+		ActualRows      float64 `json:"actual_rows"`
 
 		// Buffer stats (root node only)
 		SharedHitBlocks   int64 `json:"shared_hit_blocks"`
@@ -212,7 +212,7 @@ func collectNodeRowEstimates(node *PlanNode, analysis *RowEstimateAnalysis) {
 	if node.ActualLoops > 0 {
 		ratio := 0.0
 		if node.PlanRows > 0 {
-			ratio = float64(node.ActualRows) / node.PlanRows
+			ratio = node.ActualRows / node.PlanRows
 		} else if node.ActualRows > 0 {
 			ratio = math.Inf(1)
 		}
