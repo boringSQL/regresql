@@ -29,6 +29,9 @@ type (
 		PlanChanged     bool
 		PlanRegressions []PlanRegression
 		PlanWarnings    []PlanWarning
+
+		// Metrics from EXPLAIN ANALYZE (nil if ANALYZE not used or on error)
+		Metrics *PlanMetrics
 	}
 )
 
@@ -120,6 +123,12 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 			ActualCost:      actualCost,
 			BaselineCost:    baselineCost,
 			PercentIncrease: percentIncrease,
+		}
+
+		// Only populate metrics when ANALYZE was used
+		if explainPlan.ExecutionTime > 0 {
+			metrics := explainPlan.ExtractMetrics()
+			result.Metrics = &metrics
 		}
 
 		if baselines[i].PlanSignature != nil {

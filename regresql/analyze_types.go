@@ -126,7 +126,46 @@ type (
 		WorstOver  *RowEstimate  `json:"worst_overestimate,omitempty"`
 		WorstUnder *RowEstimate  `json:"worst_underestimate,omitempty"`
 	}
+
+	// PlanMetrics contains performance metrics from EXPLAIN ANALYZE.
+	// Timing fields require ANALYZE, buffer fields require BUFFERS option.
+	PlanMetrics struct {
+		TotalCost       float64 `json:"total_cost"`
+		ExecutionTimeMs float64 `json:"execution_time_ms"`
+		PlanningTimeMs  float64 `json:"planning_time_ms"`
+		ActualRows      int64   `json:"actual_rows"`
+
+		// Buffer stats (root node only)
+		SharedHitBlocks   int64 `json:"shared_hit_blocks"`
+		SharedReadBlocks  int64 `json:"shared_read_blocks"`
+		LocalHitBlocks    int64 `json:"local_hit_blocks"`
+		LocalReadBlocks   int64 `json:"local_read_blocks"`
+		TempReadBlocks    int64 `json:"temp_read_blocks"`
+		TempWrittenBlocks int64 `json:"temp_written_blocks"`
+		TotalBuffers      int64 `json:"total_buffers"`
+		IOReadTimeMs      float64 `json:"io_read_time_ms"`
+		IOWriteTimeMs     float64 `json:"io_write_time_ms"`
+	}
 )
+
+// ExtractMetrics extracts performance metrics from the root plan node.
+func (e *ExplainOutput) ExtractMetrics() PlanMetrics {
+	return PlanMetrics{
+		TotalCost:         e.Plan.TotalCost,
+		ExecutionTimeMs:   e.ExecutionTime,
+		PlanningTimeMs:    e.PlanningTime,
+		ActualRows:        e.Plan.ActualRows,
+		SharedHitBlocks:   e.Plan.SharedHitBlocks,
+		SharedReadBlocks:  e.Plan.SharedReadBlocks,
+		LocalHitBlocks:    e.Plan.LocalHitBlocks,
+		LocalReadBlocks:   e.Plan.LocalReadBlocks,
+		TempReadBlocks:    e.Plan.TempReadBlocks,
+		TempWrittenBlocks: e.Plan.TempWrittenBlocks,
+		TotalBuffers:      e.Plan.SharedHitBlocks + e.Plan.SharedReadBlocks,
+		IOReadTimeMs:      e.Plan.IOReadTime,
+		IOWriteTimeMs:     e.Plan.IOWriteTime,
+	}
+}
 
 // GetBufferStats returns buffer statistics for a plan node
 func (n *PlanNode) GetBufferStats() BufferStats {
