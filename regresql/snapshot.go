@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,7 +36,29 @@ type (
 		MigrationCommand     string    `yaml:"migration_command,omitempty"`
 		MigrationCommandHash string    `yaml:"migration_command_hash,omitempty"`
 		FixturesUsed         []string  `yaml:"fixtures_used,omitempty"`
+		Server               *ServerContext `yaml:"server,omitempty"`
 	}
+
+	ServerContext struct {
+		Version         string            `yaml:"version"`
+		VersionNum      int               `yaml:"version_num"`
+		PlannerSettings map[string]string `yaml:"planner_settings"`
+	}
+
+	SettingsDiff struct {
+		Name     string
+		Expected string
+		Actual   string
+	}
+
+	ServerValidation struct {
+		VersionMatch  bool
+		MajorMismatch bool
+		VersionDiff   *SettingsDiff
+		SettingsDiffs []SettingsDiff
+	}
+
+	ValidateSettingsMode string
 
 	RestoreState struct {
 		SnapshotPath   string    `yaml:"snapshot_path"`
@@ -87,6 +111,10 @@ const (
 	DefaultSnapshotFormat = FormatCustom
 	SnapshotMetadataFile  = ".regresql-snapshot.yaml"
 	RestoreStateFile      = ".regresql-restore-state.yaml"
+
+	ValidateSettingsWarn   ValidateSettingsMode = "warn"
+	ValidateSettingsStrict ValidateSettingsMode = "strict"
+	ValidateSettingsIgnore ValidateSettingsMode = "ignore"
 )
 
 // RestoreTool returns the appropriate PostgreSQL tool for restoring this format.
@@ -784,4 +812,138 @@ Run 'regresql snapshot build' to rebuild the snapshot`,
 	}
 
 	return nil
+}
+
+// PlannerSettings is the list of PostgreSQL settings that affect query plans
+var PlannerSettings = []string{
+	"random_page_cost",
+	"seq_page_cost",
+	"cpu_tuple_cost",
+	"cpu_index_tuple_cost",
+	"cpu_operator_cost",
+	"effective_cache_size",
+	"work_mem",
+}
+
+// CaptureServerContext captures PostgreSQL server version and planner settings
+func CaptureServerContext(db *sql.DB) (*ServerContext, error) {
+	ctx := &ServerContext{
+		PlannerSettings: make(map[string]string),
+	}
+
+	// Get version info - use current_setting for clean version string
+	err := db.QueryRow("SELECT current_setting('server_version'), current_setting('server_version_num')::int").
+		Scan(&ctx.Version, &ctx.VersionNum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server version: %w", err)
+	}
+
+	// Get planner settings
+	for _, name := range PlannerSettings {
+		var value string
+		err := db.QueryRow("SELECT current_setting($1)", name).Scan(&value)
+		if err != nil {
+			continue // setting might not exist in older versions
+		}
+		ctx.PlannerSettings[name] = value
+	}
+
+	return ctx, nil
+}
+
+// MajorVersion extracts major version from version_num (e.g., 160002 -> 16)
+func (s *ServerContext) MajorVersion() int {
+	return s.VersionNum / 10000
+}
+
+// ValidateServerContext compares current server context with stored metadata
+func ValidateServerContext(db *sql.DB, expected *ServerContext) (*ServerValidation, error) {
+	if expected == nil {
+		return &ServerValidation{VersionMatch: true}, nil
+	}
+
+	current, err := CaptureServerContext(db)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &ServerValidation{
+		VersionMatch:  current.VersionNum == expected.VersionNum,
+		MajorMismatch: current.MajorVersion() != expected.MajorVersion(),
+	}
+
+	if !result.VersionMatch {
+		result.VersionDiff = &SettingsDiff{
+			Name:     "version",
+			Expected: fmt.Sprintf("%s (%d)", expected.Version, expected.VersionNum),
+			Actual:   fmt.Sprintf("%s (%d)", current.Version, current.VersionNum),
+		}
+	}
+
+	// Compare planner settings
+	for _, name := range PlannerSettings {
+		expectedVal := expected.PlannerSettings[name]
+		actualVal := current.PlannerSettings[name]
+		if expectedVal != actualVal && expectedVal != "" {
+			result.SettingsDiffs = append(result.SettingsDiffs, SettingsDiff{
+				Name:     name,
+				Expected: expectedVal,
+				Actual:   actualVal,
+			})
+		}
+	}
+
+	return result, nil
+}
+
+// HasDifferences returns true if there are any version or settings differences
+func (v *ServerValidation) HasDifferences() bool {
+	return !v.VersionMatch || len(v.SettingsDiffs) > 0
+}
+
+// FormatWarning formats the validation result as a warning message
+func (v *ServerValidation) FormatWarning() string {
+	if !v.HasDifferences() {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Warning: Server settings differ from snapshot creation:\n")
+
+	if v.VersionDiff != nil {
+		sb.WriteString(fmt.Sprintf("  PostgreSQL version: %s (snapshot) vs %s (current)\n",
+			v.VersionDiff.Expected, v.VersionDiff.Actual))
+		if v.MajorMismatch {
+			sb.WriteString("  ⚠ Major version mismatch - query behavior may differ\n")
+		}
+	}
+
+	if len(v.SettingsDiffs) > 0 {
+		// Sort for consistent output
+		sort.Slice(v.SettingsDiffs, func(i, j int) bool {
+			return v.SettingsDiffs[i].Name < v.SettingsDiffs[j].Name
+		})
+		for _, d := range v.SettingsDiffs {
+			sb.WriteString(fmt.Sprintf("  %s: %s (snapshot) vs %s (current)\n",
+				d.Name, d.Expected, d.Actual))
+		}
+	}
+
+	sb.WriteString("\nQuery plans may differ. Use validate_settings: ignore to suppress.")
+	return sb.String()
+}
+
+// GetValidateSettings returns the validation mode from config (warn, strict, ignore)
+func GetValidateSettings(cfg *SnapshotConfig) ValidateSettingsMode {
+	if cfg == nil || cfg.ValidateSettings == "" {
+		return ValidateSettingsWarn
+	}
+	switch cfg.ValidateSettings {
+	case "strict":
+		return ValidateSettingsStrict
+	case "ignore":
+		return ValidateSettingsIgnore
+	default:
+		return ValidateSettingsWarn
+	}
 }

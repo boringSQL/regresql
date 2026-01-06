@@ -110,9 +110,33 @@ func Update(root string, runFilter string, commit, noRestore, forceRestore bool)
 
 	autoRestore(config, root, noRestore, forceRestore)
 
+	// Validate schema hasn't changed since last snapshot build
+	if err := ValidateSchemaHash(root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Validate migrations haven't changed since last snapshot build
+	if err := ValidateMigrationsHash(root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Validate migration command hasn't changed since last snapshot build
+	if err := ValidateMigrationCommandHash(root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
+	}
+
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(2)
+	}
+
+	// Validate server settings match snapshot (warn, strict, or ignore)
+	if err := validateServerSettings(config, root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
 	}
 
 	if err := suite.createExpectedResults(config.PgUri, commit); err != nil {
@@ -189,6 +213,47 @@ func autoRestore(cfg config, root string, noRestore, forceRestore bool) {
 	fmt.Printf("Restored in %.1fs\n\n", duration.Seconds())
 }
 
+func validateServerSettings(cfg config, root string) error {
+	mode := GetValidateSettings(cfg.Snapshot)
+	if mode == ValidateSettingsIgnore {
+		return nil
+	}
+
+	snapshotsDir := GetSnapshotsDir(root)
+	metadata, err := ReadSnapshotMetadata(snapshotsDir)
+	if err != nil {
+		return nil // no metadata - nothing to validate
+	}
+
+	if metadata.Current == nil || metadata.Current.Server == nil {
+		return nil // no server context stored
+	}
+
+	db, err := OpenDB(cfg.PgUri)
+	if err != nil {
+		return fmt.Errorf("failed to connect for server validation: %w", err)
+	}
+	defer db.Close()
+
+	validation, err := ValidateServerContext(db, metadata.Current.Server)
+	if err != nil {
+		return fmt.Errorf("failed to validate server context: %w", err)
+	}
+
+	if !validation.HasDifferences() {
+		return nil
+	}
+
+	warning := validation.FormatWarning()
+
+	if mode == ValidateSettingsStrict {
+		return fmt.Errorf("%s\n\nUse validate_settings: warn to continue with warnings", warning)
+	}
+
+	fmt.Printf("%s\n\n", warning)
+	return nil
+}
+
 // Test runs regression tests for all queries.
 // Each query runs in its own transaction that rolls back (unless commit is true).
 func Test(root, runFilter, formatName, outputPath string, commit, noRestore, forceRestore bool) {
@@ -232,6 +297,12 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore, for
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(2)
+	}
+
+	// Validate server settings match snapshot (warn, strict, or ignore)
+	if err := validateServerSettings(config, root); err != nil {
+		fmt.Printf("Error: %s\n", err)
+		os.Exit(1)
 	}
 
 	if formatName == "" {

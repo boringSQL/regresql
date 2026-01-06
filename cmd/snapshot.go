@@ -24,6 +24,7 @@ var (
 	snapshotBuildSchema     string
 	snapshotBuildMigrations string
 	snapshotBuildVerbose    bool
+	snapshotInfoCompare     bool
 
 	snapshotCmd = &cobra.Command{
 		Use:   "snapshot",
@@ -109,10 +110,13 @@ Examples:
 		Short: "Display snapshot metadata",
 		Long: `Display metadata about the current snapshot.
 
-Shows the snapshot path, hash, size, creation time, and fixtures used.
+Shows the snapshot path, hash, size, creation time, server version, planner settings, and fixtures used.
+
+Use --compare to compare stored settings with current database settings.
 
 Examples:
-  regresql snapshot info`,
+  regresql snapshot info
+  regresql snapshot info --compare`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(snapshotCwd); err != nil {
 				fmt.Print(err.Error())
@@ -152,6 +156,8 @@ func init() {
 	snapshotBuildCmd.Flags().StringVar(&snapshotBuildMigrations, "migrations", "", "Directory of SQL migrations to apply")
 	snapshotBuildCmd.Flags().StringSliceVar(&snapshotBuildFixtures, "fixtures", nil, "Fixture names to apply")
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
+
+	snapshotInfoCmd.Flags().BoolVar(&snapshotInfoCompare, "compare", false, "Compare stored settings with current database")
 }
 
 func validateSnapshotPrereqs(pguri string) error {
@@ -497,6 +503,9 @@ func runSnapshotBuild() error {
 	if len(result.FixturesUsed) > 0 {
 		fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
 	}
+	if result.Info.Server != nil {
+		fmt.Printf("  Server:   PostgreSQL %d\n", result.Info.Server.MajorVersion())
+	}
 
 	return nil
 }
@@ -554,6 +563,73 @@ func runSnapshotInfo() error {
 		for _, f := range info.FixturesUsed {
 			fmt.Printf("  - %s\n", f)
 		}
+	}
+
+	if info.Server != nil {
+		fmt.Println()
+		fmt.Printf("Server: PostgreSQL %s\n", info.Server.Version)
+		if len(info.Server.PlannerSettings) > 0 {
+			fmt.Println()
+			fmt.Println("Planner Settings:")
+			for _, name := range regresql.PlannerSettings {
+				if val, ok := info.Server.PlannerSettings[name]; ok {
+					fmt.Printf("  %s: %s\n", name, val)
+				}
+			}
+		}
+	}
+
+	if snapshotInfoCompare {
+		if err := runSnapshotInfoCompare(info); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func runSnapshotInfoCompare(info *regresql.SnapshotInfo) error {
+	if info.Server == nil {
+		fmt.Println()
+		fmt.Println("No server context stored - nothing to compare")
+		return nil
+	}
+
+	cfg, err := regresql.ReadConfig(snapshotCwd)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	db, err := regresql.OpenDB(cfg.PgUri)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer db.Close()
+
+	validation, err := regresql.ValidateServerContext(db, info.Server)
+	if err != nil {
+		return fmt.Errorf("failed to compare: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("Comparison with current database:")
+	if !validation.HasDifferences() {
+		fmt.Println("  [ok] All settings match")
+		return nil
+	}
+
+	if validation.VersionDiff != nil {
+		marker := "[!]"
+		if validation.MajorMismatch {
+			marker = "[X]"
+		}
+		fmt.Printf("  %s version: %s -> %s\n", marker, info.Server.Version, validation.VersionDiff.Actual)
+	} else {
+		fmt.Printf("  [ok] version: %s\n", info.Server.Version)
+	}
+
+	for _, d := range validation.SettingsDiffs {
+		fmt.Printf("  [!] %s: %s -> %s\n", d.Name, d.Expected, d.Actual)
 	}
 
 	return nil

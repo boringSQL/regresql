@@ -36,6 +36,7 @@ type (
 		Fixtures         []string `yaml:"fixtures,omitempty"`          // SQL/YAML fixture files for snapshot build
 		AutoRestore      *bool    `yaml:"auto_restore,omitempty"`      // restore snapshot before test (default: true if path is set)
 		RestoreDatabase  string   `yaml:"restore_database,omitempty"`  // override target database for restore
+		ValidateSettings string   `yaml:"validate_settings,omitempty"` // server settings validation: warn (default), strict, ignore
 	}
 )
 

@@ -138,6 +138,15 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		}
 	}
 
+	// Capture server context before snapshot
+	if opts.Verbose {
+		fmt.Printf("Capturing server context...\n")
+	}
+	serverCtx, err := CaptureServerContext(db)
+	if err != nil {
+		return nil, fmt.Errorf("failed to capture server context: %w", err)
+	}
+
 	if opts.Verbose {
 		fmt.Printf("Capturing snapshot with pg_dump...\n")
 	}
@@ -158,6 +167,7 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	info.MigrationCommand = opts.MigrationCommand
 	info.MigrationCommandHash = migrationCommandHash
 	info.FixturesUsed = fixturesUsed
+	info.Server = serverCtx
 
 	return &snapshotBuildResult{
 		Info:         info,
