@@ -49,6 +49,8 @@ Query Parameters: '%v'
 		t.Ok(false, r.Name)
 	case "skipped":
 		t.Skip(1, r.Name)
+	case "pending":
+		t.Todo().Ok(false, r.Name)
 	}
 }
 
@@ -126,6 +128,15 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 			BindingsFile: p.Path,
 			BindingName:  bindingName,
 			Parameters:   bindings,
+		}
+
+		// Check if expected file exists - mark as pending if missing
+		if _, err := os.Stat(expectedFilename); os.IsNotExist(err) {
+			result.Status = "pending"
+			result.Error = fmt.Sprintf("Expected file not found: %s (run 'regresql update' to create)", expectedFilename)
+			result.Duration = time.Since(start).Seconds()
+			results = append(results, result)
+			continue
 		}
 
 		// Try to load expected result set and perform semantic comparison

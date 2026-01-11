@@ -40,6 +40,7 @@ type (
 		Passed    int
 		Failed    int
 		Skipped   int
+		Pending   int // queries without expected file
 		Duration  float64
 		Results   []TestResult
 		StartTime time.Time
@@ -84,6 +85,8 @@ func (s *TestSummary) AddResult(r TestResult) {
 		s.Failed++
 	case "skipped":
 		s.Skipped++
+	case "pending":
+		s.Pending++
 	}
 }
 
