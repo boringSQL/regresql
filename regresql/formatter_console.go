@@ -6,64 +6,33 @@ import (
 	"strings"
 )
 
-type ConsoleFormatter struct{
-	lastQueryGroup string
+type ConsoleFormatter struct {
+	results []TestResult
 }
 
 func (f *ConsoleFormatter) Start(w io.Writer) error {
 	fmt.Fprintln(w, "\nRunning regression tests...")
-	f.lastQueryGroup = ""
+	f.results = make([]TestResult, 0)
 	return nil
 }
 
 func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
-	queryGroup := f.extractQueryGroup(r.Name)
-	if queryGroup != f.lastQueryGroup && f.lastQueryGroup != "" {
-		fmt.Fprintln(w)
-	}
-	f.lastQueryGroup = queryGroup
+	f.results = append(f.results, r)
 
+	// Show progress indicator
 	switch r.Status {
 	case "passed":
-		fmt.Fprintf(w, "✓ %s (%.2fs)\n", r.Name, r.Duration)
-		f.printWarnings(r.PlanWarnings, w)
-
+		fmt.Fprint(w, ".")
 	case "failed":
-		fmt.Fprintf(w, "✗ %s (%.2fs)\n", r.Name, r.Duration)
-		if r.Type == "cost" {
-			f.printCostFailure(r, w)
-		} else if r.Type == "output" {
-			f.printOutputDiff(r, w)
-		}
-		if r.Error != "" {
-			fmt.Fprintf(w, "  Error: %s\n", r.Error)
-		}
-		fmt.Fprintln(w)
-
-	case "warning":
-		fmt.Fprintf(w, "⚠️  %s (%.2fs)\n", r.Name, r.Duration)
-		f.printWarnings(r.PlanWarnings, w)
-		fmt.Fprintln(w)
-
+		fmt.Fprint(w, "F")
 	case "pending":
-		fmt.Fprintf(w, "? %s (%.2fs)\n", r.Name, r.Duration)
-		if r.Error != "" {
-			fmt.Fprintf(w, "  %s\n", r.Error)
-		}
-		fmt.Fprintln(w)
-
+		fmt.Fprint(w, "?")
+	case "warning":
+		fmt.Fprint(w, "W")
 	case "skipped":
-		return nil
+		fmt.Fprint(w, "S")
 	}
 	return nil
-}
-
-func (f *ConsoleFormatter) extractQueryGroup(testName string) string {
-	parts := strings.Split(testName, ".")
-	if len(parts) <= 1 {
-		return testName
-	}
-	return parts[0]
 }
 
 func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
@@ -230,20 +199,88 @@ func (f *ConsoleFormatter) printWarnings(warnings []PlanWarning, w io.Writer) {
 }
 
 func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
+	fmt.Fprintln(w) // End progress line
 	fmt.Fprintln(w)
-	if s.Failed > 0 || s.Skipped > 0 || s.Pending > 0 {
-		fmt.Fprintf(w, "Results: %d passed, %d failed", s.Passed, s.Failed)
-		if s.Skipped > 0 {
-			fmt.Fprintf(w, ", %d skipped", s.Skipped)
-		}
-		if s.Pending > 0 {
-			fmt.Fprintf(w, ", %d pending", s.Pending)
-		}
-		fmt.Fprintf(w, " (%.2fs)\n", s.Duration)
-	} else {
-		fmt.Fprintf(w, "Results: %d passed (%.2fs)\n", s.Passed, s.Duration)
+
+	// Summary section
+	fmt.Fprintln(w, "RESULTS:")
+	fmt.Fprintf(w, "  ✓ %d passing\n", s.Passed)
+	if s.Failed > 0 {
+		fmt.Fprintf(w, "  ✗ %d failing\n", s.Failed)
 	}
+	if s.Pending > 0 {
+		fmt.Fprintf(w, "  ? %d pending (no baseline)\n", s.Pending)
+	}
+	if s.Skipped > 0 {
+		fmt.Fprintf(w, "  - %d skipped\n", s.Skipped)
+	}
+	fmt.Fprintf(w, "  %.2fs total\n", s.Duration)
+
+	// Failing tests details
+	if s.Failed > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "FAILING:")
+		for _, r := range f.results {
+			if r.Status == "failed" {
+				fmt.Fprintf(w, "  %s\n", r.Name)
+				if r.Type == "cost" {
+					f.printCostFailure(r, w)
+				} else if r.Type == "output" {
+					f.printOutputDiff(r, w)
+				}
+				if r.Error != "" {
+					fmt.Fprintf(w, "    Error: %s\n", r.Error)
+				}
+			}
+		}
+	}
+
+	// Warnings (passed tests with plan warnings)
+	var warnings []TestResult
+	for _, r := range f.results {
+		if r.Status == "passed" && len(r.PlanWarnings) > 0 {
+			warnings = append(warnings, r)
+		}
+	}
+	if len(warnings) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "WARNINGS:")
+		for _, r := range warnings {
+			fmt.Fprintf(w, "  %s\n", r.Name)
+			f.printWarnings(r.PlanWarnings, w)
+		}
+	}
+
+	// Pending tests
+	if s.Pending > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "PENDING (no baseline):")
+		for _, r := range f.results {
+			if r.Status == "pending" {
+				fmt.Fprintf(w, "  %s\n", r.Name)
+			}
+		}
+	}
+
+	// Suggestions
+	f.printSuggestions(s, w)
+
 	return nil
+}
+
+func (f *ConsoleFormatter) printSuggestions(s *TestSummary, w io.Writer) {
+	if s.Failed == 0 && s.Pending == 0 {
+		return
+	}
+
+	fmt.Fprintln(w)
+
+	if s.Failed > 0 {
+		fmt.Fprintln(w, "To accept changes: regresql update <query-name>")
+	}
+	if s.Pending > 0 {
+		fmt.Fprintln(w, "To create baselines: regresql update --pending")
+	}
 }
 
 func hasAnyCritical(regressions []PlanRegression) bool {
