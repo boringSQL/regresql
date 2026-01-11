@@ -22,11 +22,11 @@ type (
 	}
 
 	JUnitTestCase struct {
-		Name      string              `xml:"name,attr"`
-		Classname string              `xml:"classname,attr"`
-		Time      float64             `xml:"time,attr"`
-		Failure   *JUnitFailure       `xml:"failure,omitempty"`
-		Skipped   *JUnitSkipped       `xml:"skipped,omitempty"`
+		Name      string        `xml:"name,attr"`
+		Classname string        `xml:"classname,attr"`
+		Time      float64       `xml:"time,attr"`
+		Failure   *JUnitFailure `xml:"failure,omitempty"`
+		Skipped   *JUnitSkipped `xml:"skipped,omitempty"`
 	}
 
 	JUnitFailure struct {
@@ -107,6 +107,11 @@ func (f *JUnitFormatter) Finish(s *TestSummary, w io.Writer) error {
 			tc.Skipped = &JUnitSkipped{
 				Message: r.Error,
 			}
+		} else if r.Status == "pending" {
+			// pending tests are included in skipped
+			tc.Skipped = &JUnitSkipped{
+				Message: "pending: " + r.Error,
+			}
 		}
 
 		cases = append(cases, tc)
@@ -116,7 +121,7 @@ func (f *JUnitFormatter) Finish(s *TestSummary, w io.Writer) error {
 		Name:     "regresql",
 		Tests:    s.Total,
 		Failures: s.Failed,
-		Skipped:  s.Skipped,
+		Skipped:  s.Skipped + s.Pending, // Include pending in skipped count
 		Time:     s.Duration,
 		Cases:    cases,
 	}

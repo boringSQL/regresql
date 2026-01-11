@@ -97,6 +97,8 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 		}
 	case "skipped":
 		fmt.Fprintf(w, "::warning::%s skipped: %s\n", r.Name, r.Error)
+	case "pending":
+		fmt.Fprintf(w, "::notice::%s pending (no baseline): %s\n", r.Name, r.Error)
 	}
 	return nil
 }
@@ -109,11 +111,17 @@ func (f *GitHubActionsFormatter) Finish(s *TestSummary, w io.Writer) error {
 		if s.Skipped > 0 {
 			fmt.Fprintf(w, ", %d skipped", s.Skipped)
 		}
+		if s.Pending > 0 {
+			fmt.Fprintf(w, ", %d pending", s.Pending)
+		}
 		fmt.Fprintf(w, " (%.2fs)\n", s.Duration)
 	} else {
 		fmt.Fprintf(w, "::notice::All tests passed: %d passed", s.Passed)
 		if s.Skipped > 0 {
 			fmt.Fprintf(w, ", %d skipped", s.Skipped)
+		}
+		if s.Pending > 0 {
+			fmt.Fprintf(w, ", %d pending", s.Pending)
 		}
 		fmt.Fprintf(w, " (%.2fs)\n", s.Duration)
 	}

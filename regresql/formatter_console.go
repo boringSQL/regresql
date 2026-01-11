@@ -45,6 +45,13 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 		f.printWarnings(r.PlanWarnings, w)
 		fmt.Fprintln(w)
 
+	case "pending":
+		fmt.Fprintf(w, "? %s (%.2fs)\n", r.Name, r.Duration)
+		if r.Error != "" {
+			fmt.Fprintf(w, "  %s\n", r.Error)
+		}
+		fmt.Fprintln(w)
+
 	case "skipped":
 		return nil
 	}
@@ -224,10 +231,13 @@ func (f *ConsoleFormatter) printWarnings(warnings []PlanWarning, w io.Writer) {
 
 func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 	fmt.Fprintln(w)
-	if s.Failed > 0 || s.Skipped > 0 {
+	if s.Failed > 0 || s.Skipped > 0 || s.Pending > 0 {
 		fmt.Fprintf(w, "Results: %d passed, %d failed", s.Passed, s.Failed)
 		if s.Skipped > 0 {
 			fmt.Fprintf(w, ", %d skipped", s.Skipped)
+		}
+		if s.Pending > 0 {
+			fmt.Fprintf(w, ", %d pending", s.Pending)
 		}
 		fmt.Fprintf(w, " (%.2fs)\n", s.Duration)
 	} else {

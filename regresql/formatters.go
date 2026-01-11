@@ -11,7 +11,7 @@ type (
 	TestResult struct {
 		Name     string
 		Type     string // "output", "cost", or "plan_quality"
-		Status   string // "passed", "failed", "skipped", "warning"
+		Status   string // "passed", "failed", "skipped", "warning", "pending"
 		Duration float64
 		Error    string
 

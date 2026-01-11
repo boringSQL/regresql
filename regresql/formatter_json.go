@@ -29,6 +29,7 @@ func (f *JSONFormatter) Finish(s *TestSummary, w io.Writer) error {
 			"passed":   s.Passed,
 			"failed":   s.Failed,
 			"skipped":  s.Skipped,
+			"pending":  s.Pending,
 			"duration": s.Duration,
 		},
 		"tests": formatTests(f.results),
