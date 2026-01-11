@@ -3,11 +3,67 @@ package regresql
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
+
+	"golang.org/x/term"
 )
 
+type ConsoleOptions struct {
+	Color    bool
+	NoColor  bool
+	FullDiff bool
+	NoDiff   bool
+}
+
 type ConsoleFormatter struct {
-	results []TestResult
+	results  []TestResult
+	options  ConsoleOptions
+	useColor bool
+}
+
+func (f *ConsoleFormatter) SetOptions(opts ConsoleOptions) {
+	f.options = opts
+	f.useColor = f.shouldUseColor()
+}
+
+func (f *ConsoleFormatter) shouldUseColor() bool {
+	// Explicit flags take precedence
+	if f.options.NoColor {
+		return false
+	}
+	if f.options.Color {
+		return true
+	}
+
+	// Respect NO_COLOR environment variable (https://no-color.org/)
+	if _, exists := os.LookupEnv("NO_COLOR"); exists {
+		return false
+	}
+
+	// Check TERM for dumb terminals
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+
+	// Auto-detect: use color if stdout is a terminal
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+	colorDim    = "\033[2m"
+)
+
+func (f *ConsoleFormatter) colorize(text, color string) string {
+	if !f.useColor {
+		return text
+	}
+	return color + text + colorReset
 }
 
 func (f *ConsoleFormatter) Start(w io.Writer) error {
@@ -19,18 +75,18 @@ func (f *ConsoleFormatter) Start(w io.Writer) error {
 func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 	f.results = append(f.results, r)
 
-	// Show progress indicator
+	// Show progress indicator with color
 	switch r.Status {
 	case "passed":
-		fmt.Fprint(w, ".")
+		fmt.Fprint(w, f.colorize(".", colorGreen))
 	case "failed":
-		fmt.Fprint(w, "F")
+		fmt.Fprint(w, f.colorize("F", colorRed))
 	case "pending":
-		fmt.Fprint(w, "?")
+		fmt.Fprint(w, f.colorize("?", colorCyan))
 	case "warning":
-		fmt.Fprint(w, "W")
+		fmt.Fprint(w, f.colorize("W", colorYellow))
 	case "skipped":
-		fmt.Fprint(w, "S")
+		fmt.Fprint(w, f.colorize("S", colorDim))
 	}
 	return nil
 }
@@ -87,18 +143,31 @@ func (f *ConsoleFormatter) printOutputDiff(r TestResult, w io.Writer) {
 
 	lines := strings.Split(r.Diff, "\n")
 	shown := 0
+	maxLines := 5
+	if f.options.FullDiff {
+		maxLines = len(lines) // No limit
+	}
+
 	for _, line := range lines {
-		if shown >= 5 {
+		if shown >= maxLines {
 			break
 		}
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") ||
-			strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
-			fmt.Fprintf(w, "  %s\n", line)
+		// Show hunk headers to separate different change locations
+		if strings.HasPrefix(line, "@@") {
+			fmt.Fprintf(w, "  %s\n", f.colorize(line, colorCyan))
+			// Don't count headers toward the limit
+			continue
+		}
+		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			fmt.Fprintf(w, "  %s\n", f.colorize(line, colorGreen))
+			shown++
+		} else if strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") {
+			fmt.Fprintf(w, "  %s\n", f.colorize(line, colorRed))
 			shown++
 		}
 	}
-	if shown >= 5 {
-		fmt.Fprintln(w, "  ...")
+	if !f.options.FullDiff && shown >= maxLines {
+		fmt.Fprintln(w, f.colorize("  ... (use --diff to see full output)", colorDim))
 	}
 }
 
@@ -112,49 +181,49 @@ func (f *ConsoleFormatter) printStructuredDiff(diff *StructuredDiff, w io.Writer
 	case DiffTypeOrdering:
 		fmt.Fprintln(w, "  └─ Result:   Same data, different order")
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  ⚠️  Rows are identical but in different order.")
+		fmt.Fprintln(w, f.colorize("  ⚠️  Rows are identical but in different order.", colorYellow))
 		fmt.Fprintln(w, "  Consider adding ORDER BY clause to ensure deterministic results.")
 
 	case DiffTypeRowCount, DiffTypeMultiple:
 		if diff.RemovedRows > 0 && diff.AddedRows > 0 {
 			fmt.Fprintf(w, "  ├─ Matching: %d rows\n", diff.MatchingRows)
-			fmt.Fprintf(w, "  ├─ Added:    %d rows\n", diff.AddedRows)
-			fmt.Fprintf(w, "  └─ Removed:  %d rows\n", diff.RemovedRows)
+			fmt.Fprintf(w, "  ├─ %s\n", f.colorize(fmt.Sprintf("Added:    %d rows", diff.AddedRows), colorGreen))
+			fmt.Fprintf(w, "  └─ %s\n", f.colorize(fmt.Sprintf("Removed:  %d rows", diff.RemovedRows), colorRed))
 		} else if diff.RemovedRows > 0 {
-			fmt.Fprintf(w, "  └─ Result:   %d rows removed\n", diff.RemovedRows)
+			fmt.Fprintf(w, "  └─ Result:   %s\n", f.colorize(fmt.Sprintf("%d rows removed", diff.RemovedRows), colorRed))
 		} else if diff.AddedRows > 0 {
-			fmt.Fprintf(w, "  └─ Result:   %d rows added\n", diff.AddedRows)
+			fmt.Fprintf(w, "  └─ Result:   %s\n", f.colorize(fmt.Sprintf("%d rows added", diff.AddedRows), colorGreen))
 		}
 
 		fmt.Fprintln(w)
 
 		if len(diff.RemovedSamples) > 0 {
-			fmt.Fprintf(w, "  REMOVED ROWS (showing %d of %d):\n", len(diff.RemovedSamples), diff.RemovedRows)
+			fmt.Fprintf(w, "  %s\n", f.colorize(fmt.Sprintf("REMOVED ROWS (showing %d of %d):", len(diff.RemovedSamples), diff.RemovedRows), colorRed))
 			for _, row := range diff.RemovedSamples {
-				fmt.Fprintf(w, "  %s\n", f.formatRow(diff.Columns, row))
+				fmt.Fprintf(w, "  %s\n", f.colorize(f.formatRow(diff.Columns, row), colorRed))
 			}
 			fmt.Fprintln(w)
 		}
 
 		if len(diff.AddedSamples) > 0 {
-			fmt.Fprintf(w, "  ADDED ROWS (showing %d of %d):\n", len(diff.AddedSamples), diff.AddedRows)
+			fmt.Fprintf(w, "  %s\n", f.colorize(fmt.Sprintf("ADDED ROWS (showing %d of %d):", len(diff.AddedSamples), diff.AddedRows), colorGreen))
 			for _, row := range diff.AddedSamples {
-				fmt.Fprintf(w, "  %s\n", f.formatRow(diff.Columns, row))
+				fmt.Fprintf(w, "  %s\n", f.colorize(f.formatRow(diff.Columns, row), colorGreen))
 			}
 			fmt.Fprintln(w)
 		}
 
 	case DiffTypeValues:
 		fmt.Fprintf(w, "  ├─ Matching: %d rows\n", diff.MatchingRows)
-		fmt.Fprintf(w, "  └─ Modified: %d rows\n", diff.ModifiedRows)
+		fmt.Fprintf(w, "  └─ %s\n", f.colorize(fmt.Sprintf("Modified: %d rows", diff.ModifiedRows), colorYellow))
 		fmt.Fprintln(w)
 
 		if len(diff.ModifiedSamples) > 0 {
-			fmt.Fprintf(w, "  MODIFIED ROWS (showing %d of %d):\n", len(diff.ModifiedSamples), diff.ModifiedRows)
+			fmt.Fprintf(w, "  %s\n", f.colorize(fmt.Sprintf("MODIFIED ROWS (showing %d of %d):", len(diff.ModifiedSamples), diff.ModifiedRows), colorYellow))
 			for i, sample := range diff.ModifiedSamples {
 				fmt.Fprintf(w, "  Row #%d:\n", i+1)
-				fmt.Fprintf(w, "    Expected: %s\n", f.formatRow(diff.Columns, sample.ExpectedRow))
-				fmt.Fprintf(w, "    Actual:   %s\n", f.formatRow(diff.Columns, sample.ActualRow))
+				fmt.Fprintf(w, "    %s %s\n", f.colorize("Expected:", colorRed), f.formatRow(diff.Columns, sample.ExpectedRow))
+				fmt.Fprintf(w, "    %s %s\n", f.colorize("Actual:  ", colorGreen), f.formatRow(diff.Columns, sample.ActualRow))
 			}
 		}
 	}
@@ -190,9 +259,9 @@ func formatValue(v any) string {
 func (f *ConsoleFormatter) printWarnings(warnings []PlanWarning, w io.Writer) {
 	for _, warning := range warnings {
 		if warning.Severity == "warning" {
-			fmt.Fprintf(w, "  ⚠️  %s\n", warning.Message)
+			fmt.Fprintf(w, "  %s  %s\n", f.colorize("⚠️", colorYellow), warning.Message)
 			if warning.Suggestion != "" {
-				fmt.Fprintf(w, "    Suggestion: %s\n", warning.Suggestion)
+				fmt.Fprintf(w, "    %s %s\n", f.colorize("Suggestion:", colorDim), warning.Suggestion)
 			}
 		}
 	}
@@ -204,32 +273,34 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 
 	// Summary section
 	fmt.Fprintln(w, "RESULTS:")
-	fmt.Fprintf(w, "  ✓ %d passing\n", s.Passed)
+	fmt.Fprintf(w, "  %s %d passing\n", f.colorize("✓", colorGreen), s.Passed)
 	if s.Failed > 0 {
-		fmt.Fprintf(w, "  ✗ %d failing\n", s.Failed)
+		fmt.Fprintf(w, "  %s %d failing\n", f.colorize("✗", colorRed), s.Failed)
 	}
 	if s.Pending > 0 {
-		fmt.Fprintf(w, "  ? %d pending (no baseline)\n", s.Pending)
+		fmt.Fprintf(w, "  %s %d pending (no baseline)\n", f.colorize("?", colorCyan), s.Pending)
 	}
 	if s.Skipped > 0 {
-		fmt.Fprintf(w, "  - %d skipped\n", s.Skipped)
+		fmt.Fprintf(w, "  %s %d skipped\n", f.colorize("-", colorDim), s.Skipped)
 	}
 	fmt.Fprintf(w, "  %.2fs total\n", s.Duration)
 
 	// Failing tests details
 	if s.Failed > 0 {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, "FAILING:")
+		fmt.Fprintln(w, f.colorize("FAILING:", colorRed))
 		for _, r := range f.results {
 			if r.Status == "failed" {
 				fmt.Fprintf(w, "  %s\n", r.Name)
-				if r.Type == "cost" {
-					f.printCostFailure(r, w)
-				} else if r.Type == "output" {
-					f.printOutputDiff(r, w)
+				if !f.options.NoDiff {
+					if r.Type == "cost" {
+						f.printCostFailure(r, w)
+					} else if r.Type == "output" {
+						f.printOutputDiff(r, w)
+					}
 				}
 				if r.Error != "" {
-					fmt.Fprintf(w, "    Error: %s\n", r.Error)
+					fmt.Fprintf(w, "    %s %s\n", f.colorize("Error:", colorRed), r.Error)
 				}
 			}
 		}
@@ -244,7 +315,7 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 	}
 	if len(warnings) > 0 {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, "WARNINGS:")
+		fmt.Fprintln(w, f.colorize("WARNINGS:", colorYellow))
 		for _, r := range warnings {
 			fmt.Fprintf(w, "  %s\n", r.Name)
 			f.printWarnings(r.PlanWarnings, w)
@@ -254,7 +325,7 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 	// Pending tests
 	if s.Pending > 0 {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, "PENDING (no baseline):")
+		fmt.Fprintln(w, f.colorize("PENDING (no baseline):", colorCyan))
 		for _, r := range f.results {
 			if r.Status == "pending" {
 				fmt.Fprintf(w, "  %s\n", r.Name)

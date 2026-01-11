@@ -17,6 +17,10 @@ var (
 	testNoRestore     bool
 	testForceRestore  bool
 	testFailOnSkipped bool
+	testColor         bool
+	testNoColor       bool
+	testFullDiff      bool
+	testNoDiff        bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -26,7 +30,21 @@ var (
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath, testCommit, testNoRestore, testForceRestore, testFailOnSkipped)
+			opts := regresql.TestOptions{
+				Root:          testCwd,
+				RunFilter:     testRunFilter,
+				FormatName:    testFormat,
+				OutputPath:    testOutputPath,
+				Commit:        testCommit,
+				NoRestore:     testNoRestore,
+				ForceRestore:  testForceRestore,
+				FailOnSkipped: testFailOnSkipped,
+				Color:         testColor,
+				NoColor:       testNoColor,
+				FullDiff:      testFullDiff,
+				NoDiff:        testNoDiff,
+			}
+			regresql.Test(opts)
 		},
 	}
 )
@@ -42,4 +60,8 @@ func init() {
 	testCmd.Flags().BoolVar(&testNoRestore, "no-restore", false, "Skip snapshot restore before test")
 	testCmd.Flags().BoolVar(&testForceRestore, "force-restore", false, "Force snapshot restore even if unchanged")
 	testCmd.Flags().BoolVar(&testFailOnSkipped, "fail-on-skipped", false, "Exit with code 2 if skipped tests exist")
+	testCmd.Flags().BoolVar(&testColor, "color", false, "Force colored output")
+	testCmd.Flags().BoolVar(&testNoColor, "no-color", false, "Disable colored output")
+	testCmd.Flags().BoolVar(&testFullDiff, "diff", false, "Show full diff output (no truncation)")
+	testCmd.Flags().BoolVar(&testNoDiff, "no-diff", false, "Suppress diff output entirely")
 }

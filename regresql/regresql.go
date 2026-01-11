@@ -6,6 +6,21 @@ import (
 	"time"
 )
 
+type TestOptions struct {
+	Root          string
+	RunFilter     string
+	FormatName    string
+	OutputPath    string
+	Commit        bool
+	NoRestore     bool
+	ForceRestore  bool
+	FailOnSkipped bool
+	Color         bool
+	NoColor       bool
+	FullDiff      bool
+	NoDiff        bool
+}
+
 /*
 Init initializes a code repository for RegreSQL processing.
 
@@ -265,15 +280,15 @@ func validateServerSettings(cfg config, root string) error {
 //	3  - config error
 //	13 - query execution error
 //	14 - invalid formatter
-func Test(root, runFilter, formatName, outputPath string, commit, noRestore, forceRestore, failOnSkipped bool) {
-	config, err := ReadConfig(root)
+func Test(opts TestOptions) {
+	config, err := ReadConfig(opts.Root)
 	ignorePatterns := []string{}
 	if err == nil {
 		ignorePatterns = config.Ignore
 	}
 
-	suite := Walk(root, ignorePatterns)
-	suite.SetRunFilter(runFilter)
+	suite := Walk(opts.Root, ignorePatterns)
+	suite.SetRunFilter(opts.RunFilter)
 	config, err = suite.readConfig()
 	if err != nil {
 		fmt.Print(err.Error())
@@ -283,22 +298,22 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore, for
 	// Cache config for plan quality analysis
 	SetGlobalConfig(config)
 
-	autoRestore(config, root, noRestore, forceRestore)
+	autoRestore(config, opts.Root, opts.NoRestore, opts.ForceRestore)
 
 	// Validate schema hasn't changed since last snapshot build
-	if err := ValidateSchemaHash(root); err != nil {
+	if err := ValidateSchemaHash(opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	// migrations haven't changed since last snapshot build?:
-	if err := ValidateMigrationsHash(root); err != nil {
+	if err := ValidateMigrationsHash(opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	// Validate migration command hasn't changed since last snapshot build
-	if err := ValidateMigrationCommandHash(root); err != nil {
+	if err := ValidateMigrationCommandHash(opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -309,11 +324,12 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore, for
 	}
 
 	// Validate server settings match snapshot (warn, strict, or ignore)
-	if err := validateServerSettings(config, root); err != nil {
+	if err := validateServerSettings(config, opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 
+	formatName := opts.FormatName
 	if formatName == "" {
 		formatName = "console"
 	}
@@ -323,7 +339,17 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore, for
 		os.Exit(14)
 	}
 
-	summary, err := suite.testQueries(config.PgUri, formatter, outputPath, commit)
+	// Configure console formatter options
+	if cf, ok := formatter.(*ConsoleFormatter); ok {
+		cf.SetOptions(ConsoleOptions{
+			Color:    opts.Color,
+			NoColor:  opts.NoColor,
+			FullDiff: opts.FullDiff,
+			NoDiff:   opts.NoDiff,
+		})
+	}
+
+	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit)
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(13)
@@ -331,7 +357,7 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore, for
 	if summary.Failed > 0 {
 		os.Exit(1)
 	}
-	if failOnSkipped && summary.Skipped > 0 {
+	if opts.FailOnSkipped && summary.Skipped > 0 {
 		os.Exit(2)
 	}
 }
