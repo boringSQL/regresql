@@ -289,22 +289,23 @@ func (s *Suite) createExpectedResults(pguri string, commit bool) error {
 // necessary. It then compares the actual output to the expected output and
 // reports results using the specified formatter.
 // Each query runs in its own transaction that rolls back (unless commit is true).
-func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) error {
+// Returns the test summary for exit code determination.
+func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) (*TestSummary, error) {
 	db, err := sql.Open("pgx", pguri)
 	if err != nil {
-		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
+		return nil, fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
 
 	w, close, err := getWriter(outputPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer close()
 
 	summary := NewTestSummary()
 	if err := formatter.Start(w); err != nil {
-		return err
+		return nil, err
 	}
 
 	for _, folder := range s.Dirs {
@@ -319,7 +320,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 
 			queries, err := parseQueryFile(qfile)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			for _, q := range queries {
@@ -334,7 +335,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 
 				p, err := q.GetPlan(rdir)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
@@ -362,13 +363,16 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					}
 					return nil
 				}); err != nil {
-					return err
+					return nil, err
 				}
 			}
 		}
 	}
 
-	return formatter.Finish(summary, w)
+	if err := formatter.Finish(summary, w); err != nil {
+		return nil, err
+	}
+	return summary, nil
 }
 
 // runInTransaction executes fn within a transaction, rolling back on error or if commit is false

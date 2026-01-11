@@ -9,13 +9,14 @@ import (
 )
 
 var (
-	testCwd          string
-	testRunFilter    string
-	testFormat       string
-	testOutputPath   string
-	testCommit       bool
-	testNoRestore    bool
-	testForceRestore bool
+	testCwd           string
+	testRunFilter     string
+	testFormat        string
+	testOutputPath    string
+	testCommit        bool
+	testNoRestore     bool
+	testForceRestore  bool
+	testFailOnSkipped bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -25,7 +26,7 @@ var (
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath, testCommit, testNoRestore, testForceRestore)
+			regresql.Test(testCwd, testRunFilter, testFormat, testOutputPath, testCommit, testNoRestore, testForceRestore, testFailOnSkipped)
 		},
 	}
 )
@@ -40,4 +41,5 @@ func init() {
 	testCmd.Flags().BoolVar(&testCommit, "commit", false, "Commit transactions instead of rollback (use with caution)")
 	testCmd.Flags().BoolVar(&testNoRestore, "no-restore", false, "Skip snapshot restore before test")
 	testCmd.Flags().BoolVar(&testForceRestore, "force-restore", false, "Force snapshot restore even if unchanged")
+	testCmd.Flags().BoolVar(&testFailOnSkipped, "fail-on-skipped", false, "Exit with code 2 if skipped tests exist")
 }

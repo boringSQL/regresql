@@ -256,7 +256,16 @@ func validateServerSettings(cfg config, root string) error {
 
 // Test runs regression tests for all queries.
 // Each query runs in its own transaction that rolls back (unless commit is true).
-func Test(root, runFilter, formatName, outputPath string, commit, noRestore, forceRestore bool) {
+//
+// Exit codes:
+//
+//	0  - all tests passed
+//	1  - test failures
+//	2  - skipped tests (if failOnSkipped)
+//	3  - config error
+//	13 - query execution error
+//	14 - invalid formatter
+func Test(root, runFilter, formatName, outputPath string, commit, noRestore, forceRestore, failOnSkipped bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -314,9 +323,16 @@ func Test(root, runFilter, formatName, outputPath string, commit, noRestore, for
 		os.Exit(14)
 	}
 
-	if err := suite.testQueries(config.PgUri, formatter, outputPath, commit); err != nil {
+	summary, err := suite.testQueries(config.PgUri, formatter, outputPath, commit)
+	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(13)
+	}
+	if summary.Failed > 0 {
+		os.Exit(1)
+	}
+	if failOnSkipped && summary.Skipped > 0 {
+		os.Exit(2)
 	}
 }
 
