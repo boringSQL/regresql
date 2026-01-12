@@ -6,20 +6,34 @@ import (
 	"time"
 )
 
-type TestOptions struct {
-	Root          string
-	RunFilter     string
-	FormatName    string
-	OutputPath    string
-	Commit        bool
-	NoRestore     bool
-	ForceRestore  bool
-	FailOnSkipped bool
-	Color         bool
-	NoColor       bool
-	FullDiff      bool
-	NoDiff        bool
-}
+type (
+	TestOptions struct {
+		Root          string
+		RunFilter     string
+		FormatName    string
+		OutputPath    string
+		Commit        bool
+		NoRestore     bool
+		ForceRestore  bool
+		FailOnSkipped bool
+		Color         bool
+		NoColor       bool
+		FullDiff      bool
+		NoDiff        bool
+	}
+
+	UpdateOptions struct {
+		Root         string
+		RunFilter    string
+		Paths        []string
+		Commit       bool
+		NoRestore    bool
+		ForceRestore bool
+		Pending      bool
+		Interactive  bool
+		DryRun       bool
+	}
+)
 
 /*
 Init initializes a code repository for RegreSQL processing.
@@ -108,37 +122,38 @@ case and add a value for each parameter. `)
 Update updates the expected files from the queries and their parameters.
 Each query runs in its own transaction that rolls back (unless commit is true).
 */
-func Update(root string, runFilter string, commit, noRestore, forceRestore bool) {
-	config, err := ReadConfig(root)
+func Update(opts UpdateOptions) {
+	config, err := ReadConfig(opts.Root)
 	ignorePatterns := []string{}
 	if err == nil {
 		ignorePatterns = config.Ignore
 	}
 
-	suite := Walk(root, ignorePatterns)
-	suite.SetRunFilter(runFilter)
+	suite := Walk(opts.Root, ignorePatterns)
+	suite.SetRunFilter(opts.RunFilter)
+	suite.SetPathFilters(opts.Paths)
 	config, err = suite.readConfig()
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(3)
 	}
 
-	autoRestore(config, root, noRestore, forceRestore)
+	autoRestore(config, opts.Root, opts.NoRestore, opts.ForceRestore)
 
 	// Validate schema hasn't changed since last snapshot build
-	if err := ValidateSchemaHash(root); err != nil {
+	if err := ValidateSchemaHash(opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	// Validate migrations haven't changed since last snapshot build
-	if err := ValidateMigrationsHash(root); err != nil {
+	if err := ValidateMigrationsHash(opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	// Validate migration command hasn't changed since last snapshot build
-	if err := ValidateMigrationCommandHash(root); err != nil {
+	if err := ValidateMigrationCommandHash(opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -149,14 +164,24 @@ func Update(root string, runFilter string, commit, noRestore, forceRestore bool)
 	}
 
 	// Validate server settings match snapshot (warn, strict, or ignore)
-	if err := validateServerSettings(config, root); err != nil {
+	if err := validateServerSettings(config, opts.Root); err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
 
-	if err := suite.createExpectedResults(config.PgUri, commit); err != nil {
+	updateOpts := createExpectedOptions{
+		Commit:      opts.Commit,
+		Pending:     opts.Pending,
+		Interactive: opts.Interactive,
+		DryRun:      opts.DryRun,
+	}
+	if err := suite.createExpectedResults(config.PgUri, updateOpts); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(12)
+	}
+
+	if opts.DryRun {
+		return // Don't print success message for dry-run
 	}
 
 	fmt.Println("")

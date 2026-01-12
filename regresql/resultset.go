@@ -168,6 +168,31 @@ func (r *ResultSet) Write(filename string, overwrite bool) error {
 	return nil
 }
 
+// LoadResultSet loads a ResultSet from a JSON file
+func LoadResultSet(filename string) (*ResultSet, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file '%s': %w", filename, err)
+	}
+
+	var rs ResultSet
+	if err := json.Unmarshal(data, &rs); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON from '%s': %w", filename, err)
+	}
+
+	rs.Filename = filename
+	return &rs, nil
+}
+
+// ToJSON returns the JSON representation of the ResultSet as a string
+func (r *ResultSet) ToJSON() string {
+	jsonBytes, err := json.Marshal(r)
+	if err != nil {
+		return ""
+	}
+	return string(jsonBytes)
+}
+
 // valueToString is an helper function for the Pretty Printer
 func valueToString(value any) string {
 	switch v := value.(type) {

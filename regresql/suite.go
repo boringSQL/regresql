@@ -43,7 +43,16 @@ type (
 		OutDir        string
 		BaselineDir   string
 		runFilter     string
+		pathFilters   []string
 		ignoreMatcher *IgnoreMatcher
+	}
+
+	// createExpectedOptions controls behavior of createExpectedResults
+	createExpectedOptions struct {
+		Commit      bool
+		Pending     bool
+		Interactive bool
+		DryRun      bool
 	}
 
 	/*
@@ -155,6 +164,42 @@ func (s *Suite) SetRunFilter(pattern string) {
 	s.runFilter = pattern
 }
 
+// SetPathFilters sets the path filters for the suite
+func (s *Suite) SetPathFilters(paths []string) {
+	s.pathFilters = paths
+}
+
+// matchesPathFilter checks if a file path matches any of the path filters
+// Returns true if there's no filter set, or if the path matches any filter
+func (s *Suite) matchesPathFilter(filePath string) bool {
+	if len(s.pathFilters) == 0 {
+		return true
+	}
+
+	cleanPath := filepath.Clean(filePath)
+
+	for _, pattern := range s.pathFilters {
+		cleanPattern := filepath.Clean(pattern)
+
+		// Exact match
+		if cleanPath == cleanPattern {
+			return true
+		}
+
+		// Directory prefix match - ensure we match on path boundaries
+		// e.g., "orders" should match "orders/get.sql" but not "orders_old/get.sql"
+		if strings.HasPrefix(cleanPath, cleanPattern+string(filepath.Separator)) {
+			return true
+		}
+
+		// Glob pattern match
+		if matched, _ := filepath.Match(cleanPattern, cleanPath); matched {
+			return true
+		}
+	}
+	return false
+}
+
 // matchesRunFilter checks if a file name or query name matches the run filter
 // Returns true if there's no filter set, or if either the file name or query name matches
 func (s *Suite) matchesRunFilter(fileName, queryName string) bool {
@@ -229,24 +274,48 @@ func (s *Suite) initRegressHierarchy() error {
 // createExpectedResults walks the s Suite instance and runs its queries,
 // storing the results in the expected files.
 // Each query runs in its own transaction that rolls back (unless commit is true).
-func (s *Suite) createExpectedResults(pguri string, commit bool) error {
+func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) error {
 	db, err := sql.Open("pgx", pguri)
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
 
-	fmt.Println("Writing expected Result Sets:")
+	var dryRunSummary []string
+	var prompter *InteractivePrompter
+	if opts.Interactive {
+		prompter = NewInteractivePrompter()
+	}
+
+	if !opts.DryRun {
+		fmt.Println("Writing expected Result Sets:")
+	}
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
 		edir := filepath.Join(s.ExpectedDir, folder.Dir)
-		maybeMkdirAll(edir)
 
-		fmt.Printf("  %s\n", edir)
+		// Build relative path for filtering
+		relPath := folder.Dir
+
+		// Check path filter at folder level
+		if !s.matchesPathFilter(relPath) && !s.matchesPathFilter(relPath+"/") {
+			continue
+		}
+
+		if !opts.DryRun {
+			maybeMkdirAll(edir)
+			fmt.Printf("  %s\n", edir)
+		}
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
+			queryPath := filepath.Join(relPath, name)
+
+			// Check path filter at file level
+			if !s.matchesPathFilter(queryPath) {
+				continue
+			}
 
 			queries, err := parseQueryFile(qfile)
 			if err != nil {
@@ -257,8 +326,16 @@ func (s *Suite) createExpectedResults(pguri string, commit bool) error {
 				if !s.matchesRunFilter(name, q.Name) {
 					continue
 				}
-				if opts := q.GetRegressQLOptions(); opts.NoTest {
+				if qopts := q.GetRegressQLOptions(); qopts.NoTest {
 					continue
+				}
+
+				// Check for pending-only mode
+				if opts.Pending {
+					expectedPath := filepath.Join(edir, q.Name+".json")
+					if fileExists(expectedPath) {
+						continue // Skip - already has baseline
+					}
 				}
 
 				p, err := q.GetPlan(rdir)
@@ -266,22 +343,69 @@ func (s *Suite) createExpectedResults(pguri string, commit bool) error {
 					return err
 				}
 
-				if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
+				// Execute query and handle results
+				if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
 					if err := p.Execute(tx); err != nil {
 						return err
 					}
+
+					// Dry-run: just record what would be updated
+					if opts.DryRun {
+						for _, rs := range p.ResultSets {
+							dryRunSummary = append(dryRunSummary, fmt.Sprintf("  Would update: %s", filepath.Base(rs.Filename)))
+						}
+						return nil
+					}
+
+					// Interactive mode: compute diff and prompt for each change
+					if opts.Interactive {
+						diff := p.ComputeDiffForInteractive(edir)
+						action := prompter.PromptAccept(q.Name, diff)
+						switch action {
+						case "skip":
+							return nil
+						case "quit":
+							return ErrUserQuit
+						}
+					}
+
 					return p.WriteResultSets(edir)
 				}); err != nil {
+					if err == ErrUserQuit {
+						fmt.Println("\nUpdate cancelled by user")
+						return nil
+					}
 					return err
 				}
 
-				for _, rs := range p.ResultSets {
-					fmt.Printf("    %s\n", filepath.Base(rs.Filename))
+				if !opts.DryRun {
+					for _, rs := range p.ResultSets {
+						fmt.Printf("    %s\n", filepath.Base(rs.Filename))
+					}
 				}
 			}
 		}
 	}
+
+	// Print dry-run summary
+	if opts.DryRun {
+		if len(dryRunSummary) == 0 {
+			fmt.Println("Dry run: no changes to make")
+		} else {
+			fmt.Println("Dry run - no files modified:")
+			for _, line := range dryRunSummary {
+				fmt.Println(line)
+			}
+		}
+	}
+
 	return nil
+}
+
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // testQueries walks the s Suite instance and runs queries against the plans

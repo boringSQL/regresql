@@ -260,3 +260,45 @@ func getResultSetPath(p *Plan, targetdir string, index int) string {
 	}
 	return filepath.Join(targetdir, rsFileName)
 }
+
+// ComputeDiffForInteractive computes a diff between current results and existing expected files
+// Returns a human-readable diff string for interactive review
+func (p *Plan) ComputeDiffForInteractive(expectedDir string) string {
+	var diffs []string
+
+	for i, rs := range p.ResultSets {
+		expectedPath := getResultSetPath(p, expectedDir, i)
+
+		// Check if expected file exists
+		if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+			diffs = append(diffs, fmt.Sprintf("  [NEW] %s (%d rows)", filepath.Base(expectedPath), len(rs.Rows)))
+			continue
+		}
+
+		// Load existing expected result
+		expected, err := LoadResultSet(expectedPath)
+		if err != nil {
+			diffs = append(diffs, fmt.Sprintf("  [ERROR] %s: %v", filepath.Base(expectedPath), err))
+			continue
+		}
+
+		// Compare row counts
+		if len(expected.Rows) != len(rs.Rows) {
+			diffs = append(diffs, fmt.Sprintf("  [CHANGED] %s: %d rows → %d rows",
+				filepath.Base(expectedPath), len(expected.Rows), len(rs.Rows)))
+			continue
+		}
+
+		// Quick check if content differs (compare JSON representations)
+		expectedJSON := expected.ToJSON()
+		actualJSON := rs.ToJSON()
+		if expectedJSON != actualJSON {
+			diffs = append(diffs, fmt.Sprintf("  [CHANGED] %s: content differs", filepath.Base(expectedPath)))
+		}
+	}
+
+	if len(diffs) == 0 {
+		return "  (no changes)"
+	}
+	return strings.Join(diffs, "\n")
+}
