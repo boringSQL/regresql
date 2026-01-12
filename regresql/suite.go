@@ -517,6 +517,77 @@ func (s *Suite) runInTransaction(db *sql.DB, commit bool, fn func(tx *sql.Tx) er
 	return tx.Rollback()
 }
 
+// executeAllQueries executes all queries and saves results to outputDir.
+// Used by migrate command to capture before/after states.
+// Queries with parameters but no plan files are skipped with a warning.
+func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, error) {
+	db, err := sql.Open("pgx", pguri)
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to '%s': %w", pguri, err)
+	}
+	defer db.Close()
+
+	count := 0
+	skipped := 0
+
+	for _, folder := range s.Dirs {
+		rdir := filepath.Join(s.PlanDir, folder.Dir)
+		odir := filepath.Join(outputDir, folder.Dir)
+
+		for _, name := range folder.Files {
+			qfile := filepath.Join(s.Root, folder.Dir, name)
+
+			queries, err := parseQueryFile(qfile)
+			if err != nil {
+				return count, err
+			}
+
+			for _, q := range queries {
+				opts := q.GetRegressQLOptions()
+				if opts.NoTest {
+					continue
+				}
+
+				p, err := q.GetPlan(rdir)
+				if err != nil {
+					// Skip queries that require plans but don't have them
+					if verbose {
+						fmt.Printf("  [skip] %s/%s: %v\n", folder.Dir, name, err)
+					}
+					skipped++
+					continue
+				}
+
+				// Only create output directory if we have queries to run
+				maybeMkdirAll(odir)
+
+				if err := s.runInTransaction(db, false, func(tx *sql.Tx) error {
+					if err := p.Execute(tx); err != nil {
+						return err
+					}
+					if err := p.WriteResultSets(odir); err != nil {
+						return err
+					}
+					return nil
+				}); err != nil {
+					return count, err
+				}
+
+				count += len(p.ResultSets)
+				if verbose {
+					fmt.Printf("  %s/%s (%d bindings)\n", folder.Dir, name, len(p.ResultSets))
+				}
+			}
+		}
+	}
+
+	if skipped > 0 && !verbose {
+		fmt.Printf("  (skipped %d queries without plans - use --verbose to see details)\n", skipped)
+	}
+
+	return count, nil
+}
+
 // Only create dir(s) when it doesn't exists already
 func maybeMkdirAll(dir string) error {
 	stat, err := os.Stat(dir)
