@@ -19,23 +19,26 @@ import (
 
 type (
 	SnapshotMetadata struct {
-		Current *SnapshotInfo `yaml:"current"`
+		Current *SnapshotInfo   `yaml:"current"`
+		History []*SnapshotInfo `yaml:"history,omitempty"`
 	}
 
 	SnapshotInfo struct {
-		Path                 string    `yaml:"path"`
-		Hash                 string    `yaml:"hash"`
-		Created              time.Time `yaml:"created"`
-		SizeBytes            int64     `yaml:"size_bytes"`
-		Format               string    `yaml:"format"`
-		SchemaPath           string    `yaml:"schema_path,omitempty"`
-		SchemaHash           string    `yaml:"schema_hash,omitempty"`
-		MigrationsDir        string    `yaml:"migrations_dir,omitempty"`
-		MigrationsHash       string    `yaml:"migrations_hash,omitempty"`
-		MigrationsApplied    []string  `yaml:"migrations_applied,omitempty"`
-		MigrationCommand     string    `yaml:"migration_command,omitempty"`
-		MigrationCommandHash string    `yaml:"migration_command_hash,omitempty"`
-		FixturesUsed         []string  `yaml:"fixtures_used,omitempty"`
+		Path                 string         `yaml:"path"`
+		Hash                 string         `yaml:"hash"`
+		Created              time.Time      `yaml:"created"`
+		SizeBytes            int64          `yaml:"size_bytes"`
+		Format               string         `yaml:"format"`
+		Tag                  string         `yaml:"tag,omitempty"`
+		Note                 string         `yaml:"note,omitempty"`
+		SchemaPath           string         `yaml:"schema_path,omitempty"`
+		SchemaHash           string         `yaml:"schema_hash,omitempty"`
+		MigrationsDir        string         `yaml:"migrations_dir,omitempty"`
+		MigrationsHash       string         `yaml:"migrations_hash,omitempty"`
+		MigrationsApplied    []string       `yaml:"migrations_applied,omitempty"`
+		MigrationCommand     string         `yaml:"migration_command,omitempty"`
+		MigrationCommandHash string         `yaml:"migration_command_hash,omitempty"`
+		FixturesUsed         []string       `yaml:"fixtures_used,omitempty"`
 		Server               *ServerContext `yaml:"server,omitempty"`
 	}
 
@@ -394,9 +397,30 @@ func computeDirectoryHash(dirPath string) (string, error) {
 func WriteSnapshotMetadata(snapshotsDir string, info *SnapshotInfo) error {
 	metadataPath := filepath.Join(snapshotsDir, SnapshotMetadataFile)
 
-	metadata := SnapshotMetadata{Current: info}
+	// Load existing metadata to preserve history
+	var metadata SnapshotMetadata
+	if existing, err := ReadSnapshotMetadata(snapshotsDir); err == nil {
+		metadata.History = existing.History
+	}
+	metadata.Current = info
 
 	data, err := yaml.Marshal(&metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal snapshot metadata: %w", err)
+	}
+
+	if err := os.WriteFile(metadataPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write snapshot metadata: %w", err)
+	}
+
+	return nil
+}
+
+// WriteSnapshotMetadataFull writes the complete metadata including history
+func WriteSnapshotMetadataFull(snapshotsDir string, metadata *SnapshotMetadata) error {
+	metadataPath := filepath.Join(snapshotsDir, SnapshotMetadataFile)
+
+	data, err := yaml.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal snapshot metadata: %w", err)
 	}

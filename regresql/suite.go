@@ -53,6 +53,7 @@ type (
 		Pending     bool
 		Interactive bool
 		DryRun      bool
+		Snapshot    *SnapshotInfo // Current snapshot for baseline metadata tracking
 	}
 
 	/*
@@ -88,6 +89,11 @@ func newSuite(root string) *Suite {
 // newFolder created a new Folder instance
 func newFolder(path string) *Folder {
 	return &Folder{path, []string{}}
+}
+
+// GetExpectedDir returns the path to the expected directory for a given root
+func GetExpectedDir(root string) string {
+	return filepath.Join(root, "regresql", "expected")
 }
 
 // appendPath appends a path to our Suite instance.
@@ -344,6 +350,7 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 				}
 
 				// Execute query and handle results
+				var writtenFiles []string
 				if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
 					if err := p.Execute(tx); err != nil {
 						return err
@@ -369,13 +376,30 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 						}
 					}
 
-					return p.WriteResultSets(edir)
+					if err := p.WriteResultSets(edir); err != nil {
+						return err
+					}
+
+					// Track written files for metadata recording
+					for _, rs := range p.ResultSets {
+						writtenFiles = append(writtenFiles, filepath.Join(edir, filepath.Base(rs.Filename)))
+					}
+					return nil
 				}); err != nil {
 					if err == ErrUserQuit {
 						fmt.Println("\nUpdate cancelled by user")
 						return nil
 					}
 					return err
+				}
+
+				// Record baseline metadata for written files
+				if !opts.DryRun && opts.Snapshot != nil {
+					for _, baselinePath := range writtenFiles {
+						if err := RecordBaselineUpdate(s.ExpectedDir, baselinePath, opts.Snapshot, ""); err != nil {
+							fmt.Printf("Warning: failed to record baseline metadata: %s\n", err)
+						}
+					}
 				}
 
 				if !opts.DryRun {

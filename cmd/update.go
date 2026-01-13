@@ -17,6 +17,7 @@ var (
 	updatePending      bool
 	updateInteractive  bool
 	updateDryRun       bool
+	updateSnapshot     string
 
 	// updateCmd represents the update command
 	updateCmd = &cobra.Command{
@@ -50,6 +51,7 @@ Examples:
 				Pending:      updatePending,
 				Interactive:  updateInteractive,
 				DryRun:       updateDryRun,
+				Snapshot:     updateSnapshot,
 			})
 		},
 	}
@@ -66,4 +68,5 @@ func init() {
 	updateCmd.Flags().BoolVar(&updatePending, "pending", false, "Only create baselines for queries without expected files")
 	updateCmd.Flags().BoolVar(&updateInteractive, "interactive", false, "Review and confirm each update")
 	updateCmd.Flags().BoolVar(&updateDryRun, "dry-run", false, "Show what would be updated without writing files")
+	updateCmd.Flags().StringVar(&updateSnapshot, "snapshot", "", "Update baselines against specific snapshot (tag or hash prefix)")
 }

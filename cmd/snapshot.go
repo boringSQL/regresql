@@ -25,6 +25,8 @@ var (
 	snapshotBuildMigrations string
 	snapshotBuildVerbose    bool
 	snapshotInfoCompare     bool
+	snapshotTagNote         string
+	snapshotTagArchive      string
 
 	snapshotCmd = &cobra.Command{
 		Use:   "snapshot",
@@ -128,6 +130,53 @@ Examples:
 			}
 		},
 	}
+
+	snapshotTagCmd = &cobra.Command{
+		Use:   "tag <name>",
+		Short: "Tag the current snapshot with a version name",
+		Long: `Tag the current snapshot with a human-readable version name.
+
+Tags make it easy to reference specific snapshot versions by name instead of hash.
+Use --archive to copy the snapshot file to a separate location for preservation.
+
+Examples:
+  regresql snapshot tag v1 --note "Initial schema"
+  regresql snapshot tag post-migration --note "After migration 002"
+  regresql snapshot tag v2 --archive snapshots/v2.dump --note "Release candidate"`,
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(snapshotCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			if err := runSnapshotTag(args[0]); err != nil {
+				fmt.Printf("Error: %s\n", err.Error())
+				os.Exit(1)
+			}
+		},
+	}
+
+	snapshotListCmd = &cobra.Command{
+		Use:   "list",
+		Short: "List all snapshot versions",
+		Long: `List all snapshot versions (current and history).
+
+Shows tag, hash, creation time, size, and notes for each snapshot.
+The current snapshot is marked with an asterisk (*).
+
+Examples:
+  regresql snapshot list`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := checkDirectory(snapshotCwd); err != nil {
+				fmt.Print(err.Error())
+				os.Exit(1)
+			}
+			if err := runSnapshotList(); err != nil {
+				fmt.Printf("Error: %s\n", err.Error())
+				os.Exit(1)
+			}
+		},
+	}
 )
 
 func init() {
@@ -136,6 +185,8 @@ func init() {
 	snapshotCmd.AddCommand(snapshotRestoreCmd)
 	snapshotCmd.AddCommand(snapshotBuildCmd)
 	snapshotCmd.AddCommand(snapshotInfoCmd)
+	snapshotCmd.AddCommand(snapshotTagCmd)
+	snapshotCmd.AddCommand(snapshotListCmd)
 
 	snapshotCmd.PersistentFlags().StringVarP(&snapshotCwd, "cwd", "C", ".", "Change to directory")
 
@@ -158,6 +209,9 @@ func init() {
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
 
 	snapshotInfoCmd.Flags().BoolVar(&snapshotInfoCompare, "compare", false, "Compare stored settings with current database")
+
+	snapshotTagCmd.Flags().StringVar(&snapshotTagNote, "note", "", "Note describing this snapshot version")
+	snapshotTagCmd.Flags().StringVar(&snapshotTagArchive, "archive", "", "Path to archive the snapshot file")
 }
 
 func validateSnapshotPrereqs(pguri string) error {
@@ -631,6 +685,78 @@ func runSnapshotInfoCompare(info *regresql.SnapshotInfo) error {
 	for _, d := range validation.SettingsDiffs {
 		fmt.Printf("  [!] %s: %s -> %s\n", d.Name, d.Expected, d.Actual)
 	}
+
+	return nil
+}
+
+func runSnapshotTag(tag string) error {
+	snapshotsDir := regresql.GetSnapshotsDir(snapshotCwd)
+
+	// Resolve archive path if provided
+	archivePath := snapshotTagArchive
+	if archivePath != "" && !filepath.IsAbs(archivePath) {
+		archivePath = filepath.Join(snapshotCwd, archivePath)
+	}
+
+	if err := regresql.TagSnapshot(snapshotsDir, tag, snapshotTagNote, archivePath); err != nil {
+		return err
+	}
+
+	fmt.Printf("Tagged current snapshot as %q\n", tag)
+	if snapshotTagNote != "" {
+		fmt.Printf("  Note: %s\n", snapshotTagNote)
+	}
+	if archivePath != "" {
+		fmt.Printf("  Archived to: %s\n", archivePath)
+	}
+
+	return nil
+}
+
+func runSnapshotList() error {
+	snapshotsDir := regresql.GetSnapshotsDir(snapshotCwd)
+
+	metadata, err := regresql.ReadSnapshotMetadata(snapshotsDir)
+	if err != nil {
+		return fmt.Errorf("no snapshot metadata found. Run 'regresql snapshot build' or 'regresql snapshot capture' first")
+	}
+
+	snapshots := regresql.ListSnapshots(metadata)
+	if len(snapshots) == 0 {
+		fmt.Println("No snapshots found.")
+		return nil
+	}
+
+	// Print header
+	fmt.Printf("%-12s %-20s %-20s %-10s %s\n", "TAG", "HASH", "CREATED", "SIZE", "NOTE")
+	fmt.Println("─────────────────────────────────────────────────────────────────────────────────────")
+
+	for _, info := range snapshots {
+		tag := info.Tag
+		if tag == "" {
+			tag = "(untagged)"
+		}
+		if regresql.IsCurrent(metadata, info) {
+			tag = tag + "*"
+		}
+
+		hash := info.Hash
+		if len(hash) > 20 {
+			hash = hash[:20] + "..."
+		}
+
+		created := info.Created.Format("2006-01-02 15:04:05")
+		size := regresql.FormatBytes(info.SizeBytes)
+		note := info.Note
+		if len(note) > 30 {
+			note = note[:27] + "..."
+		}
+
+		fmt.Printf("%-12s %-20s %-20s %-10s %s\n", tag, hash, created, size, note)
+	}
+
+	fmt.Println()
+	fmt.Println("* = current snapshot")
 
 	return nil
 }
