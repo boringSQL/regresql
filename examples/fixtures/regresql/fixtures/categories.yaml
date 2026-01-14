@@ -1,5 +1,4 @@
 fixture: categories
 description: Product categories with standard codes (idempotent reference data)
-cleanup: none
 sql:
   - file: sql/insert_categories.sql

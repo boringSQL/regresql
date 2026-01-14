@@ -1,6 +1,5 @@
 fixture: products_advanced
 description: Advanced product catalog using pattern and template generators
-cleanup: rollback
 depends_on:
   - categories
 generate:

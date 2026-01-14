@@ -1,6 +1,5 @@
 fixture: users_advanced
 description: Advanced user accounts with pattern and template generators
-cleanup: rollback
 generate:
   - table: users
     count: 25

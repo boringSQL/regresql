@@ -1,6 +1,5 @@
 fixture: products
 description: Product catalog with generated data
-cleanup: rollback
 depends_on:
   - categories
 generate:

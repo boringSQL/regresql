@@ -1,6 +1,5 @@
 fixture: users
 description: Test user accounts for authentication tests
-cleanup: rollback
 data:
   - table: users
     rows:

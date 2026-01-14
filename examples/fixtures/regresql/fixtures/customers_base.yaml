@@ -1,6 +1,5 @@
 fixture: customers_base
 description: Base customer data for FK references
-cleanup: rollback
 generate:
   - table: customers
     count: 20
