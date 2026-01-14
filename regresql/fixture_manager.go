@@ -402,7 +402,7 @@ func (fm *FixtureManager) generateTableData(genSpec GenerateSpec) error {
 			count = genSpec.Count - i
 		}
 
-		if err := fm.generateAndInsertBatch(genSpec, tableInfo, count); err != nil {
+		if err := fm.generateAndInsertBatch(genSpec, tableInfo, count, i); err != nil {
 			return fmt.Errorf("failed to generate batch at row %d: %w", i, err)
 		}
 	}
@@ -410,18 +410,14 @@ func (fm *FixtureManager) generateTableData(genSpec GenerateSpec) error {
 	return nil
 }
 
-// generateAndInsertBatch generates and inserts a batch of rows
-func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo *TableInfo, count int) error {
-	// Collect column names
+func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo *TableInfo, count, startIndex int) error {
 	columns := make([]string, 0, len(genSpec.Columns))
 	for colName := range genSpec.Columns {
 		columns = append(columns, colName)
 	}
 
-	// Build INSERT statement
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES ", genSpec.Table, joinColumns(columns))
 
-	// Generate rows
 	var values []any
 	valuePlaceholders := make([]string, 0, count)
 
@@ -438,11 +434,11 @@ func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo
 			}
 
 			params := copyParams(genSpecCol.Params)
-			params["_index"] = i
+			params["_index"] = startIndex + i
 
 			value, err := gen.Generate(params, colInfo)
 			if err != nil {
-				return fmt.Errorf("failed to generate value for column '%s' (row %d): %w", colName, i, err)
+				return fmt.Errorf("failed to generate value for column '%s' (row %d): %w", colName, startIndex+i, err)
 			}
 
 			values = append(values, value)
@@ -452,8 +448,11 @@ func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo
 		valuePlaceholders = append(valuePlaceholders, fmt.Sprintf("(%s)", joinStrings(rowValues, ", ")))
 	}
 
-	// Execute insert
 	finalQuery := query + joinStrings(valuePlaceholders, ", ")
+	if genSpec.OnConflict == "skip" {
+		finalQuery += " ON CONFLICT DO NOTHING"
+	}
+
 	if _, err := fm.tx.Exec(finalQuery, values...); err != nil {
 		return err
 	}

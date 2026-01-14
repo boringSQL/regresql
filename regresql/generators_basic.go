@@ -161,21 +161,37 @@ func NewStringGenerator() *StringGenerator {
 func (g *StringGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	length := getParam(params, "length", 10)
 	charset := getParam(params, "charset", defaultCharset)
+	unique := getParam(params, "unique", false)
+	index := getParam(params, "_index", -1)
 
 	if length <= 0 {
 		return nil, fmt.Errorf("length must be positive")
 	}
 
-	// Apply column max length constraint if available
 	if column.MaxLength != nil && length > *column.MaxLength {
 		length = *column.MaxLength
+	}
+
+	// Deterministic unique string based on index
+	if unique && index >= 0 {
+		base := fmt.Sprintf("%d", index)
+		if len(base) > length {
+			return nil, fmt.Errorf("unique string generator: index %d requires %d chars but length is %d", index, len(base), length)
+		}
+		if len(base) == length {
+			return base, nil
+		}
+		padding := make([]byte, length-len(base))
+		for i := range padding {
+			padding[i] = charset[(index+i)%len(charset)]
+		}
+		return string(padding) + base, nil
 	}
 
 	result := make([]byte, length)
 	for i := range result {
 		result[i] = charset[rand.Intn(len(charset))]
 	}
-
 	return string(result), nil
 }
 
@@ -227,16 +243,20 @@ func NewEmailGenerator() *EmailGenerator {
 
 func (g *EmailGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	domain := getParam(params, "domain", "")
-
-	prefix := emailPrefixes[rand.Intn(len(emailPrefixes))]
-	suffix := rand.Intn(10000)
+	index := getParam(params, "_index", -1)
 
 	if domain == "" {
 		domain = emailDomains[rand.Intn(len(emailDomains))]
 	}
 
-	email := fmt.Sprintf("%s%d@%s", prefix, suffix, domain)
-	return email, nil
+	// Use index for guaranteed uniqueness when available
+	if index >= 0 {
+		return fmt.Sprintf("user%d@%s", index, domain), nil
+	}
+
+	prefix := emailPrefixes[rand.Intn(len(emailPrefixes))]
+	suffix := rand.Intn(10000)
+	return fmt.Sprintf("%s%d@%s", prefix, suffix, domain), nil
 }
 
 func (g *EmailGenerator) Validate(params map[string]any, column *ColumnInfo) error {
@@ -251,20 +271,42 @@ func NewNameGenerator() *NameGenerator {
 
 func (g *NameGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	nameType := getParam(params, "type", "full")
+	unique := getParam(params, "unique", false)
+	index := getParam(params, "_index", -1)
 
-	firstName := firstNames[rand.Intn(len(firstNames))]
-	lastName := lastNames[rand.Intn(len(lastNames))]
+	var firstName, lastName string
+	if unique && index >= 0 {
+		firstName = firstNames[index%len(firstNames)]
+		lastName = lastNames[index%len(lastNames)]
+		// Add suffix when names would cycle
+		cycle := index / (len(firstNames) * len(lastNames))
+		if cycle > 0 {
+			lastName = fmt.Sprintf("%s%d", lastName, cycle)
+		}
+	} else {
+		firstName = firstNames[rand.Intn(len(firstNames))]
+		lastName = lastNames[rand.Intn(len(lastNames))]
+	}
 
+	var result string
 	switch nameType {
 	case "first":
-		return firstName, nil
+		result = firstName
 	case "last":
-		return lastName, nil
+		result = lastName
 	case "full":
-		return fmt.Sprintf("%s %s", firstName, lastName), nil
+		result = fmt.Sprintf("%s %s", firstName, lastName)
 	default:
 		return nil, fmt.Errorf("unsupported name type: %s", nameType)
 	}
+
+	if column.MaxLength != nil && len(result) > *column.MaxLength {
+		if unique {
+			return nil, fmt.Errorf("unique name generator: result %q (%d chars) exceeds column max length %d", result, len(result), *column.MaxLength)
+		}
+		result = result[:*column.MaxLength]
+	}
+	return result, nil
 }
 
 func (g *NameGenerator) Validate(params map[string]any, column *ColumnInfo) error {

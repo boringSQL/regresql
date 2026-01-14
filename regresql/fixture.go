@@ -16,9 +16,10 @@ type (
 	}
 
 	GenerateSpec struct {
-		Table   string                   `yaml:"table" json:"table"`
-		Count   int                      `yaml:"count" json:"count"`
-		Columns map[string]GeneratorSpec `yaml:"columns" json:"columns"`
+		Table      string                   `yaml:"table" json:"table"`
+		Count      int                      `yaml:"count" json:"count"`
+		Columns    map[string]GeneratorSpec `yaml:"columns" json:"columns"`
+		OnConflict string                   `yaml:"on_conflict,omitempty" json:"on_conflict,omitempty"`
 	}
 
 	GeneratorSpec struct {

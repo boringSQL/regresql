@@ -26,6 +26,7 @@ type (
 		IsNullable   bool
 		IsPrimaryKey bool
 		IsForeignKey bool
+		IsUnique     bool
 		ForeignKey   *ForeignKeyInfo
 		Default      *string
 		MaxLength    *int
@@ -92,6 +93,17 @@ func IntrospectSchema(db *sql.DB) (*DatabaseSchema, error) {
 			if col, exists := tableInfo.Columns[fk.ColumnName]; exists {
 				col.IsForeignKey = true
 				col.ForeignKey = fk
+			}
+		}
+
+		// Get unique constraints
+		uniqueCols, err := getUniqueColumns(db, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get unique constraints for table '%s': %w", tableName, err)
+		}
+		for colName := range uniqueCols {
+			if col, exists := tableInfo.Columns[colName]; exists {
+				col.IsUnique = true
 			}
 		}
 
@@ -250,6 +262,34 @@ func getForeignKeys(db *sql.DB, tableName string) ([]*ForeignKeyInfo, error) {
 	}
 
 	return foreignKeys, rows.Err()
+}
+
+func getUniqueColumns(db *sql.DB, tableName string) (map[string]bool, error) {
+	query := `
+		SELECT a.attname
+		FROM pg_index i
+		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+		WHERE i.indrelid = $1::regclass
+		  AND i.indisunique
+		  AND NOT i.indisprimary
+		  AND array_length(i.indkey, 1) = 1
+	`
+
+	rows, err := db.Query(query, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	uniqueCols := make(map[string]bool)
+	for rows.Next() {
+		var colName string
+		if err := rows.Scan(&colName); err != nil {
+			return nil, err
+		}
+		uniqueCols[colName] = true
+	}
+	return uniqueCols, rows.Err()
 }
 
 // GetTable retrieves table metadata
