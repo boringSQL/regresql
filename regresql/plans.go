@@ -118,14 +118,18 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	// Extract known top-level fields
 	var planQuality *PlanQualityConfig
 
-	// Skip fixtures and cleanup fields (deprecated - emit warning for backwards compatibility)
+	// Reject deprecated fixtures and cleanup fields with clear error messages
 	if _, hasFixtures := raw["fixtures"]; hasFixtures {
-		fmt.Fprintf(os.Stderr, "Warning: 'fixtures:' in plan file '%s' is deprecated and ignored\n", pfile)
-		delete(raw, "fixtures")
+		return nil, fmt.Errorf("'fixtures:' in plan file '%s' is no longer supported.\n"+
+			"Per-test fixtures have been removed. Use snapshots instead:\n"+
+			"  1. Move fixture data to regresql/fixtures/\n"+
+			"  2. Run 'regresql snapshot build'\n"+
+			"  3. Remove 'fixtures:' from this plan file", pfile)
 	}
 	if _, hasCleanup := raw["cleanup"]; hasCleanup {
-		fmt.Fprintf(os.Stderr, "Warning: 'cleanup:' in plan file '%s' is deprecated and ignored\n", pfile)
-		delete(raw, "cleanup")
+		return nil, fmt.Errorf("'cleanup:' in plan file '%s' is no longer supported.\n"+
+			"Cleanup strategies have been removed. Tests now always run in transactions that rollback.\n"+
+			"Remove 'cleanup:' from this plan file.", pfile)
 	}
 
 	if planQualityRaw, ok := raw["plan_quality"]; ok {
