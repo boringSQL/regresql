@@ -116,13 +116,56 @@ func (bg *BaseGenerator) Name() string {
 	return bg.name
 }
 
-// getParam retrieves a parameter value with type assertion
+// getParam retrieves a parameter value with type assertion and numeric conversion
 func getParam[T any](params map[string]any, key string, defaultValue T) T {
-	if val, exists := params[key]; exists {
-		if typed, ok := val.(T); ok {
+	val, exists := params[key]
+	if !exists {
+		return defaultValue
+	}
+
+	// Direct type assertion
+	if typed, ok := val.(T); ok {
+		return typed
+	}
+
+	// Handle numeric type conversions (YAML parses numbers as int, but we often want int64)
+	var result any
+	switch any(defaultValue).(type) {
+	case int64:
+		switch v := val.(type) {
+		case int:
+			result = int64(v)
+		case int64:
+			result = v
+		case float64:
+			result = int64(v)
+		}
+	case int:
+		switch v := val.(type) {
+		case int:
+			result = v
+		case int64:
+			result = int(v)
+		case float64:
+			result = int(v)
+		}
+	case float64:
+		switch v := val.(type) {
+		case int:
+			result = float64(v)
+		case int64:
+			result = float64(v)
+		case float64:
+			result = v
+		}
+	}
+
+	if result != nil {
+		if typed, ok := result.(T); ok {
 			return typed
 		}
 	}
+
 	return defaultValue
 }
 

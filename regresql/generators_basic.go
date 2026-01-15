@@ -45,7 +45,6 @@ type (
 	// SequenceGenerator generates sequential integers
 	SequenceGenerator struct {
 		BaseGenerator
-		counter int64
 	}
 
 	// IntGenerator generates random integers
@@ -102,21 +101,15 @@ type (
 func NewSequenceGenerator() *SequenceGenerator {
 	return &SequenceGenerator{
 		BaseGenerator: BaseGenerator{name: "sequence"},
-		counter:       0,
 	}
 }
 
 func (g *SequenceGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
 	start := getParam(params, "start", int64(1))
+	index := getParam(params, "_index", int64(0))
 
-	if g.counter == 0 {
-		g.counter = start
-	}
-
-	value := g.counter
-	g.counter++
-
-	return value, nil
+	// Stateless: value is simply start + index
+	return start + index, nil
 }
 
 func (g *SequenceGenerator) Validate(params map[string]any, column *ColumnInfo) error {

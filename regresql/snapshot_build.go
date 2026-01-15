@@ -185,7 +185,9 @@ func applyFixtures(db *sql.DB, root string, fixtures []string, verbose bool) ([]
 	}
 
 	var applied []string
+	var yamlFixtures []string
 
+	// First pass: execute SQL fixtures immediately, collect YAML fixtures
 	for _, f := range fixtures {
 		if isSQLFixture(f) {
 			if verbose {
@@ -197,27 +199,35 @@ func applyFixtures(db *sql.DB, root string, fixtures []string, verbose bool) ([]
 			applied = append(applied, f)
 		} else {
 			name := trimYAMLExt(f)
-			if verbose {
+			yamlFixtures = append(yamlFixtures, name)
+		}
+	}
+
+	// Second pass: apply all YAML fixtures in a single transaction
+	// This ensures dependencies are resolved correctly and not re-applied
+	if len(yamlFixtures) > 0 {
+		if verbose {
+			for _, name := range yamlFixtures {
 				fmt.Printf("  Applying fixture: %s\n", name)
 			}
-			if err := applyYAMLFixture(fm, name); err != nil {
-				return nil, fmt.Errorf("fixture %q: %w", name, err)
-			}
-			applied = append(applied, name)
 		}
+		if err := applyYAMLFixtures(fm, yamlFixtures); err != nil {
+			return nil, err
+		}
+		applied = append(applied, yamlFixtures...)
 	}
 
 	return applied, nil
 }
 
-func applyYAMLFixture(fm *FixtureManager, name string) error {
+func applyYAMLFixtures(fm *FixtureManager, names []string) error {
 	if err := fm.BeginTransaction(); err != nil {
 		return err
 	}
 
 	_ = fm.IntrospectSchema()
 
-	if err := fm.ApplyFixtures([]string{name}); err != nil {
+	if err := fm.ApplyFixtures(names); err != nil {
 		fm.Rollback()
 		return err
 	}
