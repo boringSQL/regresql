@@ -389,6 +389,19 @@ func runSnapshotRestore() error {
 		return fmt.Errorf("database connection failed: %w", err)
 	}
 
+	// Check if database has existing tables and warn if --clean not specified
+	if !snapshotClean {
+		db, err := regresql.OpenDB(cfg.PgUri)
+		if err == nil {
+			defer db.Close()
+			var tableCount int
+			db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'").Scan(&tableCount)
+			if tableCount > 0 {
+				return fmt.Errorf("database has %d existing table(s). Use --clean to drop them before restore, or manually clear the database", tableCount)
+			}
+		}
+	}
+
 	inputPath := snapshotInput
 	if inputPath == "" {
 		inputPath = regresql.GetSnapshotPath(cfg.Snapshot, snapshotCwd)
