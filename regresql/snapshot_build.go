@@ -147,13 +147,22 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		return nil, fmt.Errorf("failed to capture server context: %w", err)
 	}
 
+	// Run ANALYZE to ensure statistics are up to date before pg_dump
+	if opts.Verbose {
+		fmt.Printf("Running ANALYZE...\n")
+	}
+	if _, err := db.Exec("ANALYZE"); err != nil {
+		return nil, fmt.Errorf("failed to analyze database: %w", err)
+	}
+
 	if opts.Verbose {
 		fmt.Printf("Capturing snapshot with pg_dump...\n")
 	}
 
 	info, err := CaptureSnapshot(tempDB.PgUri, SnapshotOptions{
-		OutputPath: opts.OutputPath,
-		Format:     opts.Format,
+		OutputPath:     opts.OutputPath,
+		Format:         opts.Format,
+		WithStatistics: serverCtx.MajorVersion() >= 18,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture snapshot: %w", err)

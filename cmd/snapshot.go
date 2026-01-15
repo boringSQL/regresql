@@ -389,18 +389,24 @@ func runSnapshotRestore() error {
 		return fmt.Errorf("database connection failed: %w", err)
 	}
 
+	// Connect to check database state and version
+	db, err := regresql.OpenDB(cfg.PgUri)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer db.Close()
+
 	// Check if database has existing tables and warn if --clean not specified
 	if !snapshotClean {
-		db, err := regresql.OpenDB(cfg.PgUri)
-		if err == nil {
-			defer db.Close()
-			var tableCount int
-			db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'").Scan(&tableCount)
-			if tableCount > 0 {
-				return fmt.Errorf("database has %d existing table(s). Use --clean to drop them before restore, or manually clear the database", tableCount)
-			}
+		var tableCount int
+		db.QueryRow("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'").Scan(&tableCount)
+		if tableCount > 0 {
+			return fmt.Errorf("database has %d existing table(s). Use --clean to drop them before restore, or manually clear the database", tableCount)
 		}
 	}
+
+	// Detect PostgreSQL version for statistics support
+	serverCtx, _ := regresql.CaptureServerContext(db)
 
 	inputPath := snapshotInput
 	if inputPath == "" {
@@ -422,10 +428,12 @@ func runSnapshotRestore() error {
 		return err
 	}
 
+	withStats := serverCtx != nil && serverCtx.MajorVersion() >= 18
 	opts := regresql.RestoreOptions{
-		InputPath: inputPath,
-		Format:    format,
-		Clean:     snapshotClean,
+		InputPath:      inputPath,
+		Format:         format,
+		Clean:          snapshotClean,
+		WithStatistics: withStats,
 	}
 
 	fmt.Printf("Restoring database snapshot...\n")
@@ -433,6 +441,9 @@ func runSnapshotRestore() error {
 	fmt.Printf("  Input:    %s\n", inputPath)
 	if snapshotClean {
 		fmt.Printf("  Mode:     clean (drop existing objects)\n")
+	}
+	if withStats {
+		fmt.Printf("  Stats:    restoring optimizer statistics (PG18+)\n")
 	}
 	fmt.Println()
 

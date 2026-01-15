@@ -75,10 +75,11 @@ type (
 	SnapshotFormat string
 
 	SnapshotOptions struct {
-		OutputPath string
-		Format     SnapshotFormat
-		SchemaOnly bool
-		Section    string
+		OutputPath     string
+		Format         SnapshotFormat
+		SchemaOnly     bool
+		Section        string
+		WithStatistics bool // PostgreSQL 18+: include optimizer statistics
 	}
 
 	SectionsOptions struct {
@@ -102,6 +103,7 @@ type (
 		Format         SnapshotFormat
 		Clean          bool   // drop existing objects before restore
 		TargetDatabase string // override database name from connection string
+		WithStatistics bool   // PostgreSQL 18+: restore optimizer statistics
 	}
 )
 
@@ -317,6 +319,11 @@ func buildPgDumpArgs(pguri string, opts SnapshotOptions) []string {
 
 	if opts.Section != "" {
 		args = append(args, "--section", opts.Section)
+	}
+
+	// PostgreSQL 18+: include optimizer statistics in dump (requires pg_dump 18+)
+	if opts.WithStatistics && parseToolMajorVersion("pg_dump") >= 18 {
+		args = append(args, "--statistics")
 	}
 
 	return args
@@ -586,6 +593,11 @@ func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotForm
 
 	if opts.Clean {
 		args = append(args, "--clean", "--if-exists")
+	}
+
+	// PostgreSQL 18+: restore optimizer statistics (requires pg_restore 18+)
+	if opts.WithStatistics && parseToolMajorVersion("pg_restore") >= 18 {
+		args = append(args, "--statistics")
 	}
 
 	switch format {
