@@ -24,9 +24,15 @@ type (
 		ActualCost      float64
 		PercentIncrease float64
 		Threshold       float64
-		PlanChanged      bool
-		PlanRegressions  []PlanRegression
-		PlanWarnings     []PlanWarning
+		PlanChanged     bool
+		PlanRegressions []PlanRegression
+		PlanWarnings    []PlanWarning
+
+		// Buffer comparisons (when analyze_mode baseline)
+		AnalyzeMode     bool
+		ActualBuffers   int64
+		BaselineBuffers int64
+		BufferIncrease  float64
 
 		// Diagnostics
 		QueryFile    string

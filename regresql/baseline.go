@@ -16,13 +16,29 @@ import (
 // for query costs compared to baseline (10% = queries can cost up to 110% of baseline)
 const DefaultCostThresholdPercent = 10.0
 
-// Baseline stores the EXPLAIN analysis results for a query
-type Baseline struct {
-	Query         string          `json:"query"`
-	Timestamp     string          `json:"timestamp"`
-	Plan          map[string]any  `json:"plan"`
-	PlanSignature *PlanSignature  `json:"plan_signature,omitempty"` // Optional for backwards compatibility
-}
+type (
+	Baseline struct {
+		Query         string          `json:"query"`
+		Timestamp     string          `json:"timestamp"`
+		Plan          map[string]any  `json:"plan"`
+		PlanSignature *PlanSignature  `json:"plan_signature,omitempty"`
+		AnalyzeMode   bool            `json:"analyze_mode,omitempty"`
+		Buffers       *BufferBaseline `json:"buffers,omitempty"`
+		Actuals       *ActualBaseline `json:"actuals,omitempty"`
+	}
+
+	BufferBaseline struct {
+		SharedHitBlocks  int64 `json:"shared_hit_blocks"`
+		SharedReadBlocks int64 `json:"shared_read_blocks"`
+		TotalBuffers     int64 `json:"total_buffers"`
+	}
+
+	ActualBaseline struct {
+		ActualRows      float64 `json:"actual_rows"`
+		PlanRows        float64 `json:"plan_rows"`
+		ExecutionTimeMs float64 `json:"execution_time_ms"`
+	}
+)
 
 // GetBaselinePath returns the path where baseline JSON file should be stored
 func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
@@ -91,7 +107,7 @@ func ExecuteExplainWithOptions(q Querier, query string, opts ExplainOptions, arg
 	return &plans[0], nil
 }
 
-func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) error {
+func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, useAnalyze bool) error {
 	var plan *Plan
 	var err error
 
@@ -108,7 +124,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) e
 		}
 	}
 
-	baselines, fullPlans, err := plan.CreateBaselines(db)
+	baselines, fullPlans, err := plan.CreateBaselines(db, useAnalyze)
 	if err != nil {
 		return err
 	}
@@ -119,7 +135,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) e
 		if i < len(fullPlans) {
 			fullPlan = fullPlans[i]
 		}
-		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan, fullPlan); err != nil {
+		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan, fullPlan, useAnalyze); err != nil {
 			return err
 		}
 	}
@@ -127,7 +143,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB) e
 	return nil
 }
 
-func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any, fullExplainPlan *ExplainOutput) error {
+func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any, fullExplainPlan *ExplainOutput, useAnalyze bool) error {
 	var planSignature *PlanSignature
 	if fullExplainPlan != nil {
 		planSignature = ExtractPlanSignatureFromNode(&fullExplainPlan.Plan)
@@ -140,6 +156,20 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 		PlanSignature: planSignature,
 	}
 
+	if useAnalyze && fullExplainPlan != nil {
+		baseline.AnalyzeMode = true
+		baseline.Buffers = &BufferBaseline{
+			SharedHitBlocks:  fullExplainPlan.Plan.SharedHitBlocks,
+			SharedReadBlocks: fullExplainPlan.Plan.SharedReadBlocks,
+			TotalBuffers:     fullExplainPlan.Plan.SharedHitBlocks + fullExplainPlan.Plan.SharedReadBlocks,
+		}
+		baseline.Actuals = &ActualBaseline{
+			ActualRows:      fullExplainPlan.Plan.ActualRows,
+			PlanRows:        fullExplainPlan.Plan.PlanRows,
+			ExecutionTimeMs: fullExplainPlan.ExecutionTime,
+		}
+	}
+
 	jsonBytes, err := json.MarshalIndent(baseline, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal baseline to JSON: %w", err)
@@ -149,12 +179,15 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 		return fmt.Errorf("failed to write baseline JSON: %w", err)
 	}
 
-	fmt.Printf("  Created baseline: %s\n", filepath.Base(baselinePath))
+	mode := ""
+	if useAnalyze {
+		mode = " [analyze]"
+	}
+	fmt.Printf("  Created baseline: %s%s\n", filepath.Base(baselinePath), mode)
 	return nil
 }
 
-// BaselineQueries creates baselines for all queries in the suite
-func BaselineQueries(root string, runFilter string) {
+func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	config, err := ReadConfig(root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -168,6 +201,8 @@ func BaselineQueries(root string, runFilter string) {
 		fmt.Printf("Error reading config: %s\n", err.Error())
 		os.Exit(3)
 	}
+	SetGlobalConfig(config)
+	useAnalyze := analyzeOverride || IsAnalyzeEnabled()
 
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Printf("Error connecting to database: %s\n", err.Error())
@@ -189,7 +224,11 @@ func BaselineQueries(root string, runFilter string) {
 		os.Exit(11)
 	}
 
-	fmt.Println("\nCreating baselines for queries:")
+	mode := "cost-based"
+	if useAnalyze {
+		mode = "analyze (buffers)"
+	}
+	fmt.Printf("\nCreating baselines for queries (%s):\n", mode)
 
 	for _, folder := range suite.Dirs {
 		folderBaselineDir := filepath.Join(baselineDir, folder.Dir)
@@ -227,7 +266,7 @@ func BaselineQueries(root string, runFilter string) {
 					continue
 				}
 
-				if err := q.CreateBaseline(folderBaselineDir, folderPlanDir, db); err != nil {
+				if err := q.CreateBaseline(folderBaselineDir, folderPlanDir, db, useAnalyze); err != nil {
 					fmt.Printf("  Error creating baseline for %s: %s\n", q.Name, err.Error())
 				}
 			}
@@ -261,6 +300,17 @@ func CompareCost(actualCost, baselineCost, thresholdPercent float64) (bool, floa
 	}
 
 	percentageIncrease := ((actualCost - baselineCost) / baselineCost) * 100
+	isOk := percentageIncrease <= thresholdPercent
+
+	return isOk, percentageIncrease
+}
+
+func CompareBuffers(actualBuffers, baselineBuffers int64, thresholdPercent float64) (bool, float64) {
+	if baselineBuffers == 0 {
+		return actualBuffers == 0, 0
+	}
+
+	percentageIncrease := (float64(actualBuffers-baselineBuffers) / float64(baselineBuffers)) * 100
 	isOk := percentageIncrease <= thresholdPercent
 
 	return isOk, percentageIncrease

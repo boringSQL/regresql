@@ -30,8 +30,12 @@ type (
 		PlanRegressions []PlanRegression
 		PlanWarnings    []PlanWarning
 
-		// Metrics from EXPLAIN ANALYZE (nil if ANALYZE not used or on error)
-		Metrics *PlanMetrics
+		Metrics *PlanMetrics // from EXPLAIN ANALYZE
+
+		AnalyzeMode     bool
+		ActualBuffers   int64
+		BaselineBuffers int64
+		BufferIncrease  float64
 	}
 )
 
@@ -156,12 +160,12 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 	return results
 }
 
-func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, []*ExplainOutput, error) {
+func (p *Plan) CreateBaselines(db *sql.DB, useAnalyze bool) ([]Baseline, []*ExplainOutput, error) {
 	baselines := make([]Baseline, len(p.Names))
 	fullPlans := make([]*ExplainOutput, len(p.Names))
 
 	for i := range p.Names {
-		baseline, fullPlan, err := p.createSingleBaseline(db, i)
+		baseline, fullPlan, err := p.createSingleBaseline(db, i, useAnalyze)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -172,15 +176,21 @@ func (p *Plan) CreateBaselines(db *sql.DB) ([]Baseline, []*ExplainOutput, error)
 	return baselines, fullPlans, nil
 }
 
-func (p *Plan) createSingleBaseline(db *sql.DB, index int) (Baseline, *ExplainOutput, error) {
+func (p *Plan) createSingleBaseline(db *sql.DB, index int, useAnalyze bool) (Baseline, *ExplainOutput, error) {
 	var explainPlan *ExplainOutput
 	var err error
 
+	opts := DefaultExplainOptions()
+	if useAnalyze {
+		opts.Analyze = true
+		opts.Buffers = true
+	}
+
 	if len(p.Query.Args) == 0 {
-		explainPlan, err = ExecuteExplain(db, p.Query.OrdinalQuery)
+		explainPlan, err = ExecuteExplainWithOptions(db, p.Query.OrdinalQuery, opts)
 	} else {
 		sql, args := p.Query.Prepare(p.Bindings[index])
-		explainPlan, err = ExecuteExplain(db, sql, args...)
+		explainPlan, err = ExecuteExplainWithOptions(db, sql, opts, args...)
 	}
 	if err != nil {
 		return Baseline{}, nil, fmt.Errorf("failed to create baseline for %s: %w", p.Names[index], err)

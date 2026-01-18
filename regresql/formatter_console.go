@@ -92,9 +92,17 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 }
 
 func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
-	fmt.Fprintf(w, "  Expected cost: %.2f\n", r.ExpectedCost)
-	fmt.Fprintf(w, "  Actual cost:   %.2f (+%.1f%%)\n", r.ActualCost, r.PercentIncrease)
-	fmt.Fprintln(w)
+	if r.AnalyzeMode {
+		fmt.Fprintf(w, "  Expected buffers: %d\n", r.BaselineBuffers)
+		fmt.Fprintf(w, "  Actual buffers:   %d (+%.1f%%)\n", r.ActualBuffers, r.BufferIncrease)
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  Cost (info):      %.2f (baseline: %.2f)\n", r.ActualCost, r.ExpectedCost)
+		fmt.Fprintln(w)
+	} else {
+		fmt.Fprintf(w, "  Expected cost: %.2f\n", r.ExpectedCost)
+		fmt.Fprintf(w, "  Actual cost:   %.2f (+%.1f%%)\n", r.ActualCost, r.PercentIncrease)
+		fmt.Fprintln(w)
+	}
 
 	if len(r.PlanRegressions) > 0 {
 		f.printPlanRegressions(r.PlanRegressions, w)

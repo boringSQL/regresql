@@ -16,6 +16,13 @@ type (
 		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
 		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
 		Snapshot       *SnapshotConfig       `yaml:"snapshot,omitempty"`
+		Analyze        *AnalyzeConfig        `yaml:"analyze,omitempty"`
+	}
+
+	AnalyzeConfig struct {
+		Enabled         bool    `yaml:"enabled"`
+		BufferThreshold float64 `yaml:"buffer_threshold,omitempty"` // default: 2.0
+		CostThreshold   float64 `yaml:"cost_threshold,omitempty"`   // default: 10.0
 	}
 
 	PlanQualityGlobal struct {
@@ -168,4 +175,39 @@ func GetDiffConfig() *DiffConfig {
 		}
 	}
 	return cfg
+}
+
+func GetAnalyzeConfig() *AnalyzeConfig {
+	if cachedConfig == nil || cachedConfig.Analyze == nil {
+		return &AnalyzeConfig{
+			Enabled:         false,
+			BufferThreshold: 2.0,
+			CostThreshold:   10.0,
+		}
+	}
+	cfg := cachedConfig.Analyze
+	result := &AnalyzeConfig{
+		Enabled:         cfg.Enabled,
+		BufferThreshold: cfg.BufferThreshold,
+		CostThreshold:   cfg.CostThreshold,
+	}
+	if result.BufferThreshold == 0 {
+		result.BufferThreshold = 2.0
+	}
+	if result.CostThreshold == 0 {
+		result.CostThreshold = 10.0
+	}
+	return result
+}
+
+func IsAnalyzeEnabled() bool {
+	return GetAnalyzeConfig().Enabled
+}
+
+func GetBufferThreshold() float64 {
+	return GetAnalyzeConfig().BufferThreshold
+}
+
+func GetCostThreshold() float64 {
+	return GetAnalyzeConfig().CostThreshold
 }

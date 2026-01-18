@@ -45,8 +45,8 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		}
 	}
 
-	if len(opts.Fixtures) == 0 && opts.SchemaPath == "" {
-		return nil, fmt.Errorf("no schema or fixtures specified for snapshot build")
+	if len(opts.Fixtures) == 0 && opts.SchemaPath == "" && opts.MigrationsDir == "" && opts.MigrationCommand == "" {
+		return nil, fmt.Errorf("no schema, migrations, or fixtures specified for snapshot build")
 	}
 
 	if opts.Verbose {

@@ -208,7 +208,8 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		return result
 	}
 
-	explainPlan, err := p.runExplain(q, bindings)
+	useBufferComparison := baseline.AnalyzeMode && baseline.Buffers != nil
+	explainPlan, err := p.runExplainWithMode(q, bindings, useBufferComparison)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("Failed to execute EXPLAIN: %s", err.Error())
@@ -216,13 +217,39 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		return result
 	}
 
-	actualCost := explainPlan.Plan.TotalCost
-	baselineCost := toFloat64(baseline.Plan["total_cost"])
-	isOk, percentageIncrease := CompareCost(actualCost, baselineCost, thresholdPercent)
+	var isOk bool
+	var percentageIncrease float64
 
-	result.ActualCost = actualCost
-	result.ExpectedCost = baselineCost
-	result.PercentIncrease = percentageIncrease
+	if useBufferComparison {
+		actualBuffers := explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks
+		baselineBuffers := baseline.Buffers.TotalBuffers
+		bufferThreshold := GetBufferThreshold()
+
+		isOk, percentageIncrease = CompareBuffers(actualBuffers, baselineBuffers, bufferThreshold)
+
+		result.AnalyzeMode = true
+		result.ActualBuffers = actualBuffers
+		result.BaselineBuffers = baselineBuffers
+		result.BufferIncrease = percentageIncrease
+		result.Threshold = bufferThreshold
+		result.ActualCost = explainPlan.Plan.TotalCost
+		result.ExpectedCost = toFloat64(baseline.Plan["total_cost"])
+		result.PercentIncrease = percentageIncrease
+
+		testName = strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".buffers"
+	} else {
+		actualCost := explainPlan.Plan.TotalCost
+		baselineCost := toFloat64(baseline.Plan["total_cost"])
+		costThreshold := GetCostThreshold()
+
+		isOk, percentageIncrease = CompareCost(actualCost, baselineCost, costThreshold)
+
+		result.ActualCost = actualCost
+		result.ExpectedCost = baselineCost
+		result.PercentIncrease = percentageIncrease
+		result.Threshold = costThreshold
+	}
+
 	result.Duration = time.Since(start).Seconds()
 
 	currentSig := ExtractPlanSignatureFromNode(&explainPlan.Plan)
@@ -239,12 +266,22 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	opts := p.Query.GetRegressQLOptions()
 	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables())
 
-	if isOk {
-		result.Status = "passed"
-		result.Name = fmt.Sprintf("%s (%.2f <= %.2f * %.0f%%)", testName, actualCost, baselineCost, 100+thresholdPercent)
+	if useBufferComparison {
+		if isOk {
+			result.Status = "passed"
+			result.Name = fmt.Sprintf("%s (%d <= %d * %.0f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold)
+		} else {
+			result.Status = "failed"
+			result.Name = fmt.Sprintf("%s (%d > %d * %.0f%%, +%.1f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold, percentageIncrease)
+		}
 	} else {
-		result.Status = "failed"
-		result.Name = fmt.Sprintf("%s (%.2f > %.2f * %.0f%%, +%.1f%%)", testName, actualCost, baselineCost, 100+thresholdPercent, percentageIncrease)
+		if isOk {
+			result.Status = "passed"
+			result.Name = fmt.Sprintf("%s (%.2f <= %.2f * %.0f%%)", testName, result.ActualCost, result.ExpectedCost, 100+result.Threshold)
+		} else {
+			result.Status = "failed"
+			result.Name = fmt.Sprintf("%s (%.2f > %.2f * %.0f%%, +%.1f%%)", testName, result.ActualCost, result.ExpectedCost, 100+result.Threshold, percentageIncrease)
+		}
 	}
 
 	return result
@@ -256,6 +293,20 @@ func (p *Plan) runExplain(q Querier, bindings map[string]any) (*ExplainOutput, e
 	}
 	sql, args := p.Query.Prepare(bindings)
 	return ExecuteExplain(q, sql, args...)
+}
+
+func (p *Plan) runExplainWithMode(q Querier, bindings map[string]any, useAnalyze bool) (*ExplainOutput, error) {
+	opts := DefaultExplainOptions()
+	if useAnalyze {
+		opts.Analyze = true
+		opts.Buffers = true
+	}
+
+	if bindings == nil {
+		return ExecuteExplainWithOptions(q, p.Query.OrdinalQuery, opts)
+	}
+	sql, args := p.Query.Prepare(bindings)
+	return ExecuteExplainWithOptions(q, sql, opts, args...)
 }
 
 func hasCriticalRegression(regressions []PlanRegression) bool {
