@@ -21,6 +21,7 @@ type (
 
 	AnalyzeConfig struct {
 		Enabled         bool    `yaml:"enabled"`
+		Comparison      string  `yaml:"comparison,omitempty"`       // "auto" | "cost" | "buffers"
 		BufferThreshold float64 `yaml:"buffer_threshold,omitempty"` // default: 2.0
 		CostThreshold   float64 `yaml:"cost_threshold,omitempty"`   // default: 10.0
 	}
@@ -181,6 +182,7 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 	if cachedConfig == nil || cachedConfig.Analyze == nil {
 		return &AnalyzeConfig{
 			Enabled:         false,
+			Comparison:      "auto",
 			BufferThreshold: 2.0,
 			CostThreshold:   10.0,
 		}
@@ -188,8 +190,12 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 	cfg := cachedConfig.Analyze
 	result := &AnalyzeConfig{
 		Enabled:         cfg.Enabled,
+		Comparison:      cfg.Comparison,
 		BufferThreshold: cfg.BufferThreshold,
 		CostThreshold:   cfg.CostThreshold,
+	}
+	if result.Comparison == "" {
+		result.Comparison = "auto"
 	}
 	if result.BufferThreshold == 0 {
 		result.BufferThreshold = 2.0
@@ -210,4 +216,8 @@ func GetBufferThreshold() float64 {
 
 func GetCostThreshold() float64 {
 	return GetAnalyzeConfig().CostThreshold
+}
+
+func GetComparisonMode() string {
+	return GetAnalyzeConfig().Comparison
 }

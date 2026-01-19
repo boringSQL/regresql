@@ -208,7 +208,19 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		return result
 	}
 
-	useBufferComparison := baseline.AnalyzeMode && baseline.Buffers != nil
+	// Warn if analyze.enabled but baseline lacks buffer data
+	if IsAnalyzeEnabled() && !baseline.AnalyzeMode {
+		fmt.Fprintf(os.Stderr, "Warning: analyze.enabled=true but baseline '%s' lacks buffer data\n", baselinePath)
+	}
+
+	useBufferComparison, err := getComparisonMode(baseline, baselinePath)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = err.Error()
+		result.Duration = time.Since(start).Seconds()
+		return result
+	}
+
 	explainPlan, err := p.runExplainWithMode(q, bindings, useBufferComparison)
 	if err != nil {
 		result.Status = "failed"
@@ -316,4 +328,21 @@ func hasCriticalRegression(regressions []PlanRegression) bool {
 		}
 	}
 	return false
+}
+
+func getComparisonMode(baseline *Baseline, baselinePath string) (bool, error) {
+	mode := GetComparisonMode()
+	hasBuffers := baseline.AnalyzeMode && baseline.Buffers != nil
+
+	switch mode {
+	case "buffers":
+		if !hasBuffers {
+			return false, fmt.Errorf("comparison: buffers requires baseline with buffer data - regenerate '%s' with --analyze", baselinePath)
+		}
+		return true, nil
+	case "cost":
+		return false, nil
+	default: // "auto"
+		return hasBuffers, nil
+	}
 }
