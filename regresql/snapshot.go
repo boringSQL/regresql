@@ -647,7 +647,7 @@ func DetectSnapshotFormat(path string) SnapshotFormat {
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
-	if ext == ".sql" {
+	if ext == ".sql" || ext == ".psql" {
 		return FormatPlain
 	}
 

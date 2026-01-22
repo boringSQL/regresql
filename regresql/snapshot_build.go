@@ -15,13 +15,14 @@ import (
 
 type (
 	SnapshotBuildOptions struct {
-		OutputPath       string
-		Format           SnapshotFormat
-		SchemaPath       string
-		MigrationsDir    string
-		MigrationCommand string
-		Fixtures         []string
-		Verbose          bool
+		OutputPath         string
+		Format             SnapshotFormat
+		SchemaPath         string
+		MigrationsDir      string
+		MigrationCommand   string
+		Fixtures           []string
+		Verbose            bool
+		IgnoreSchemaErrors bool
 	}
 
 	snapshotBuildResult struct {
@@ -38,10 +39,17 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		return nil, err
 	}
 
-	// Check pg_restore is available for non-plain schema files
-	if opts.SchemaPath != "" && DetectSnapshotFormat(opts.SchemaPath) != FormatPlain {
-		if err := CheckPgTool("pg_restore", root); err != nil {
-			return nil, err
+	// Check required tools based on schema format
+	if opts.SchemaPath != "" {
+		format := DetectSnapshotFormat(opts.SchemaPath)
+		if format == FormatPlain {
+			if err := CheckPgTool("psql", root); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := CheckPgTool("pg_restore", root); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -83,7 +91,7 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 			format := DetectSnapshotFormat(opts.SchemaPath)
 			fmt.Printf("Applying schema: %s (format: %s)\n", opts.SchemaPath, format)
 		}
-		if err := applySchemaFile(tempDB.PgUri, opts.SchemaPath); err != nil {
+		if err := applySchemaFile(tempDB.PgUri, opts.SchemaPath, opts.IgnoreSchemaErrors); err != nil {
 			return nil, fmt.Errorf("schema %q: %w", opts.SchemaPath, err)
 		}
 		schemaHash, err = computeSchemaHash(opts.SchemaPath)
@@ -255,16 +263,22 @@ func execSQLFile(db *sql.DB, path string) error {
 	return nil
 }
 
-func applySchemaFile(pguri, schemaPath string) error {
+func applySchemaFile(pguri, schemaPath string, ignoreErrors bool) error {
 	format := DetectSnapshotFormat(schemaPath)
 
 	if format == FormatPlain {
-		db, err := OpenDB(pguri)
-		if err != nil {
-			return err
+		// Use psql to handle psql meta-commands (\restrict, \set, etc.)
+		args := []string{pguri, "-f", schemaPath}
+		if !ignoreErrors {
+			args = append(args, "-v", "ON_ERROR_STOP=1")
 		}
-		defer db.Close()
-		return execSQLFile(db, schemaPath)
+		cmd := exec.Command("psql", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("psql failed: %w", err)
+		}
+		return nil
 	}
 
 	// Custom or Directory format - use pg_restore --schema-only

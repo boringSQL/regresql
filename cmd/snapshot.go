@@ -20,10 +20,11 @@ var (
 	snapshotSections        bool
 	snapshotInput           string
 	snapshotClean           bool
-	snapshotBuildFixtures   []string
-	snapshotBuildSchema     string
-	snapshotBuildMigrations string
-	snapshotBuildVerbose    bool
+	snapshotBuildFixtures          []string
+	snapshotBuildSchema            string
+	snapshotBuildMigrations        string
+	snapshotBuildVerbose           bool
+	snapshotBuildIgnoreSchemaErrs  bool
 	snapshotInfoCompare     bool
 	snapshotTagNote         string
 	snapshotTagArchive      string
@@ -207,6 +208,7 @@ func init() {
 	snapshotBuildCmd.Flags().StringVar(&snapshotBuildMigrations, "migrations", "", "Directory of SQL migrations to apply")
 	snapshotBuildCmd.Flags().StringSliceVar(&snapshotBuildFixtures, "fixtures", nil, "Fixture names to apply")
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
+	snapshotBuildCmd.Flags().BoolVar(&snapshotBuildIgnoreSchemaErrs, "ignore-schema-errors", false, "Continue on schema errors (e.g., missing roles)")
 
 	snapshotInfoCmd.Flags().BoolVar(&snapshotInfoCompare, "compare", false, "Compare stored settings with current database")
 
@@ -548,13 +550,14 @@ func runSnapshotBuild() error {
 	fmt.Println()
 
 	result, err := regresql.BuildSnapshot(cfg.PgUri, snapshotCwd, regresql.SnapshotBuildOptions{
-		OutputPath:       outputPath,
-		Format:           format,
-		SchemaPath:       schemaPath,
-		MigrationsDir:    migrationsDir,
-		MigrationCommand: migrationCommand,
-		Fixtures:         fixtures,
-		Verbose:          snapshotBuildVerbose,
+		OutputPath:         outputPath,
+		Format:             format,
+		SchemaPath:         schemaPath,
+		MigrationsDir:      migrationsDir,
+		MigrationCommand:   migrationCommand,
+		Fixtures:           fixtures,
+		Verbose:            snapshotBuildVerbose,
+		IgnoreSchemaErrors: snapshotBuildIgnoreSchemaErrs,
 	})
 	if err != nil {
 		return err
