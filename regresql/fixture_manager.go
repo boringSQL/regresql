@@ -50,6 +50,7 @@ func (fm *FixtureManager) registerBuiltinGenerators() error {
 		NewDecimalGenerator(),
 		NewBoolGenerator(),
 		NewRangeGenerator(),
+		NewBcryptHashGenerator(),
 	}
 
 	for _, gen := range basicGens {
@@ -62,6 +63,7 @@ func (fm *FixtureManager) registerBuiltinGenerators() error {
 		NewForeignKeyGenerator(fm.db),
 		NewPatternGenerator(fm.generators),
 		NewTemplateGenerator(fm.generators),
+		NewJSONGenerator(fm.generators),
 	}
 
 	for _, gen := range advancedGens {
@@ -549,7 +551,11 @@ func (fm *FixtureManager) autoDetectForeignKeys(genSpec *GenerateSpec, tableInfo
 // Helper functions
 
 func joinColumns(columns []string) string {
-	return joinStrings(columns, ", ")
+	quoted := make([]string, len(columns))
+	for i, col := range columns {
+		quoted[i] = `"` + col + `"`
+	}
+	return joinStrings(quoted, ", ")
 }
 
 func joinStrings(strs []string, sep string) string {

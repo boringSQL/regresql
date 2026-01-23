@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const defaultCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -94,6 +95,11 @@ type (
 
 	// BoolGenerator generates random boolean values
 	BoolGenerator struct {
+		BaseGenerator
+	}
+
+	// BcryptHashGenerator generates bcrypt password hashes
+	BcryptHashGenerator struct {
 		BaseGenerator
 	}
 )
@@ -514,6 +520,38 @@ func (g *BoolGenerator) Validate(params map[string]any, column *ColumnInfo) erro
 	probability := getParam(params, "probability", 0.5)
 	if probability < 0.0 || probability > 1.0 {
 		return fmt.Errorf("probability must be between 0.0 and 1.0, got %f", probability)
+	}
+	return nil
+}
+
+func NewBcryptHashGenerator() *BcryptHashGenerator {
+	return &BcryptHashGenerator{
+		BaseGenerator: BaseGenerator{name: "bcrypt_hash"},
+	}
+}
+
+func (g *BcryptHashGenerator) Generate(params map[string]any, column *ColumnInfo) (any, error) {
+	password, err := getRequiredParam[string](params, "password")
+	if err != nil {
+		return nil, err
+	}
+	cost := getParam(params, "cost", 10)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), cost)
+	if err != nil {
+		return nil, fmt.Errorf("bcrypt hash generation failed: %w", err)
+	}
+	return string(hash), nil
+}
+
+func (g *BcryptHashGenerator) Validate(params map[string]any, column *ColumnInfo) error {
+	if _, err := getRequiredParam[string](params, "password"); err != nil {
+		return fmt.Errorf("bcrypt_hash requires 'password' parameter")
+	}
+
+	cost := getParam(params, "cost", 10)
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		return fmt.Errorf("bcrypt cost must be between %d and %d, got %d", bcrypt.MinCost, bcrypt.MaxCost, cost)
 	}
 	return nil
 }
