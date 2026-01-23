@@ -267,6 +267,18 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 		fmt.Printf("Error: failed to restore snapshot: %s\n", err)
 		os.Exit(1)
 	}
+
+	// Run ANALYZE to update statistics after restore
+	db, err := OpenDB(cfg.PgUri)
+	if err != nil {
+		fmt.Printf("Warning: failed to connect for ANALYZE: %s\n", err)
+	} else {
+		if _, err := db.Exec("ANALYZE"); err != nil {
+			fmt.Printf("Warning: ANALYZE failed: %s\n", err)
+		}
+		db.Close()
+	}
+
 	fmt.Printf("Restored in %.1fs\n\n", time.Since(start).Seconds())
 }
 
