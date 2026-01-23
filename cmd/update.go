@@ -9,15 +9,14 @@ import (
 )
 
 var (
-	updateCwd          string
-	updateRunFilter    string
-	updateCommit       bool
-	updateNoRestore    bool
-	updateForceRestore bool
-	updatePending      bool
-	updateInteractive  bool
-	updateDryRun       bool
-	updateSnapshot     string
+	updateCwd         string
+	updateRunFilter   string
+	updateCommit      bool
+	updateNoRestore   bool
+	updatePending     bool
+	updateInteractive bool
+	updateDryRun      bool
+	updateSnapshot    string
 
 	// updateCmd represents the update command
 	updateCmd = &cobra.Command{
@@ -42,16 +41,15 @@ Examples:
 				os.Exit(1)
 			}
 			regresql.Update(regresql.UpdateOptions{
-				Root:         updateCwd,
-				RunFilter:    updateRunFilter,
-				Paths:        args,
-				Commit:       updateCommit,
-				NoRestore:    updateNoRestore,
-				ForceRestore: updateForceRestore,
-				Pending:      updatePending,
-				Interactive:  updateInteractive,
-				DryRun:       updateDryRun,
-				Snapshot:     updateSnapshot,
+				Root:        updateCwd,
+				RunFilter:   updateRunFilter,
+				Paths:       args,
+				Commit:      updateCommit,
+				NoRestore:   updateNoRestore,
+				Pending:     updatePending,
+				Interactive: updateInteractive,
+				DryRun:      updateDryRun,
+				Snapshot:    updateSnapshot,
 			})
 		},
 	}
@@ -64,7 +62,6 @@ func init() {
 	updateCmd.Flags().StringVar(&updateRunFilter, "run", "", "Run only queries matching regexp (matches file names and query names)")
 	updateCmd.Flags().BoolVar(&updateCommit, "commit", false, "Commit transactions instead of rollback (use with caution)")
 	updateCmd.Flags().BoolVar(&updateNoRestore, "no-restore", false, "Skip snapshot restore before update")
-	updateCmd.Flags().BoolVar(&updateForceRestore, "force-restore", false, "Force snapshot restore even if unchanged")
 	updateCmd.Flags().BoolVar(&updatePending, "pending", false, "Only create baselines for queries without expected files")
 	updateCmd.Flags().BoolVar(&updateInteractive, "interactive", false, "Review and confirm each update")
 	updateCmd.Flags().BoolVar(&updateDryRun, "dry-run", false, "Show what would be updated without writing files")

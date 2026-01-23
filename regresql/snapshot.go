@@ -489,16 +489,6 @@ func GetSnapshotsDir(root string) string {
 	return filepath.Join(root, "snapshots")
 }
 
-func ShouldAutoRestore(cfg *SnapshotConfig) bool {
-	if cfg == nil || cfg.Path == "" {
-		return false
-	}
-	if cfg.AutoRestore == nil {
-		return true
-	}
-	return *cfg.AutoRestore
-}
-
 func ReadRestoreState(snapshotsDir string) (*RestoreState, error) {
 	statePath := filepath.Join(snapshotsDir, RestoreStateFile)
 	data, err := os.ReadFile(statePath)

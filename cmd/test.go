@@ -15,7 +15,6 @@ var (
 	testOutputPath    string
 	testCommit        bool
 	testNoRestore     bool
-	testForceRestore  bool
 	testFailOnSkipped bool
 	testColor         bool
 	testNoColor       bool
@@ -38,7 +37,6 @@ var (
 				OutputPath:    testOutputPath,
 				Commit:        testCommit,
 				NoRestore:     testNoRestore,
-				ForceRestore:  testForceRestore,
 				FailOnSkipped: testFailOnSkipped,
 				Color:         testColor,
 				NoColor:       testNoColor,
@@ -60,7 +58,6 @@ func init() {
 	testCmd.Flags().StringVarP(&testOutputPath, "output", "o", "", "Output file path (default: stdout)")
 	testCmd.Flags().BoolVar(&testCommit, "commit", false, "Commit transactions instead of rollback (use with caution)")
 	testCmd.Flags().BoolVar(&testNoRestore, "no-restore", false, "Skip snapshot restore before test")
-	testCmd.Flags().BoolVar(&testForceRestore, "force-restore", false, "Force snapshot restore even if unchanged")
 	testCmd.Flags().BoolVar(&testFailOnSkipped, "fail-on-skipped", false, "Exit with code 2 if skipped tests exist")
 	testCmd.Flags().BoolVar(&testColor, "color", false, "Force colored output")
 	testCmd.Flags().BoolVar(&testNoColor, "no-color", false, "Disable colored output")

@@ -14,26 +14,24 @@ type (
 		OutputPath    string
 		Commit        bool
 		NoRestore     bool
-		ForceRestore  bool
 		FailOnSkipped bool
 		Color         bool
 		NoColor       bool
 		FullDiff      bool
 		NoDiff        bool
-		Snapshot      string // Tag or hash prefix to test against specific snapshot
+		Snapshot      string
 	}
 
 	UpdateOptions struct {
-		Root         string
-		RunFilter    string
-		Paths        []string
-		Commit       bool
-		NoRestore    bool
-		ForceRestore bool
-		Pending      bool
-		Interactive  bool
-		DryRun       bool
-		Snapshot     string // Tag or hash prefix to update against specific snapshot
+		Root        string
+		RunFilter   string
+		Paths       []string
+		Commit      bool
+		NoRestore   bool
+		Pending     bool
+		Interactive bool
+		DryRun      bool
+		Snapshot    string
 	}
 )
 
@@ -168,7 +166,7 @@ func Update(opts UpdateOptions) {
 		currentSnapshot = snapshotMeta.Current
 	}
 
-	autoRestoreWithOverride(config, opts.Root, opts.NoRestore, opts.ForceRestore, snapshotOverride)
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
@@ -231,73 +229,19 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
-func autoRestore(cfg config, root string, noRestore, forceRestore bool) {
-	if noRestore || !ShouldAutoRestore(cfg.Snapshot) {
-		return
-	}
-	snapshotPath := GetSnapshotPath(cfg.Snapshot, root)
-	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-		fmt.Printf("Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
-		os.Exit(1)
-	}
-
-	snapshotsDir := GetSnapshotsDir(root)
-	targetDB := cfg.Snapshot.RestoreDatabase
-
-	if !forceRestore {
-		needsRestore, reason := NeedsRestore(snapshotsDir, snapshotPath, targetDB)
-		if !needsRestore {
-			state, _ := ReadRestoreState(snapshotsDir)
-			fmt.Printf("Skipping restore: snapshot unchanged since %s (restored in %.1fs)\n\n",
-				state.RestoredAt.Local().Format("2006-01-02 15:04:05"),
-				float64(state.DurationMillis)/1000)
-			return
-		}
-		fmt.Printf("Restoring snapshot: %s (%s)\n", snapshotPath, reason)
-	} else {
-		fmt.Printf("Restoring snapshot: %s (forced)\n", snapshotPath)
-	}
-
-	start := time.Now()
-	opts := RestoreOptions{
-		InputPath:      snapshotPath,
-		Clean:          true,
-		TargetDatabase: targetDB,
-	}
-	if err := RestoreSnapshot(cfg.PgUri, opts); err != nil {
-		fmt.Printf("Error: failed to restore snapshot: %s\n", err)
-		os.Exit(1)
-	}
-	duration := time.Since(start)
-
-	stat, _ := os.Stat(snapshotPath)
-	state := &RestoreState{
-		SnapshotPath:   snapshotPath,
-		SnapshotMtime:  stat.ModTime(),
-		SnapshotSize:   stat.Size(),
-		Database:       targetDB,
-		RestoredAt:     time.Now().UTC(),
-		DurationMillis: duration.Milliseconds(),
-	}
-	WriteRestoreState(snapshotsDir, state)
-
-	fmt.Printf("Restored in %.1fs\n\n", duration.Seconds())
-}
-
-// autoRestoreWithOverride is like autoRestore but allows overriding the snapshot path
-func autoRestoreWithOverride(cfg config, root string, noRestore, forceRestore bool, snapshotOverride string) {
+// maybeRestore restores the snapshot if configured and not skipped.
+// snapshotOverride allows using a specific snapshot instead of the configured one.
+func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string) {
 	if noRestore {
 		return
 	}
 
-	// If no override and auto-restore not configured, skip
-	if snapshotOverride == "" && !ShouldAutoRestore(cfg.Snapshot) {
-		return
-	}
-
-	// Determine snapshot path
+	// Determine snapshot path - use override or configured path
 	snapshotPath := snapshotOverride
 	if snapshotPath == "" {
+		if cfg.Snapshot == nil || cfg.Snapshot.Path == "" {
+			return // no snapshot configured
+		}
 		snapshotPath = GetSnapshotPath(cfg.Snapshot, root)
 	}
 
@@ -306,30 +250,12 @@ func autoRestoreWithOverride(cfg config, root string, noRestore, forceRestore bo
 		os.Exit(1)
 	}
 
-	snapshotsDir := GetSnapshotsDir(root)
 	targetDB := ""
 	if cfg.Snapshot != nil {
 		targetDB = cfg.Snapshot.RestoreDatabase
 	}
 
-	// Always force restore when using a specific snapshot override
-	if snapshotOverride != "" {
-		forceRestore = true
-	}
-
-	if !forceRestore {
-		needsRestore, reason := NeedsRestore(snapshotsDir, snapshotPath, targetDB)
-		if !needsRestore {
-			state, _ := ReadRestoreState(snapshotsDir)
-			fmt.Printf("Skipping restore: snapshot unchanged since %s (restored in %.1fs)\n\n",
-				state.RestoredAt.Local().Format("2006-01-02 15:04:05"),
-				float64(state.DurationMillis)/1000)
-			return
-		}
-		fmt.Printf("Restoring snapshot: %s (%s)\n", snapshotPath, reason)
-	} else {
-		fmt.Printf("Restoring snapshot: %s (forced)\n", snapshotPath)
-	}
+	fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
 
 	start := time.Now()
 	opts := RestoreOptions{
@@ -341,20 +267,7 @@ func autoRestoreWithOverride(cfg config, root string, noRestore, forceRestore bo
 		fmt.Printf("Error: failed to restore snapshot: %s\n", err)
 		os.Exit(1)
 	}
-	duration := time.Since(start)
-
-	stat, _ := os.Stat(snapshotPath)
-	state := &RestoreState{
-		SnapshotPath:   snapshotPath,
-		SnapshotMtime:  stat.ModTime(),
-		SnapshotSize:   stat.Size(),
-		Database:       targetDB,
-		RestoredAt:     time.Now().UTC(),
-		DurationMillis: duration.Milliseconds(),
-	}
-	WriteRestoreState(snapshotsDir, state)
-
-	fmt.Printf("Restored in %.1fs\n\n", duration.Seconds())
+	fmt.Printf("Restored in %.1fs\n\n", time.Since(start).Seconds())
 }
 
 func validateServerSettings(cfg config, root string) error {
@@ -449,7 +362,7 @@ func Test(opts TestOptions) {
 		fmt.Printf("Using snapshot: %s (%s)\n", FormatSnapshotRef(info), info.Path)
 	}
 
-	autoRestoreWithOverride(config, opts.Root, opts.NoRestore, opts.ForceRestore, snapshotOverride)
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
