@@ -219,7 +219,7 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	baselineDir := filepath.Join(suite.RegressDir, "baselines")
 
 	fmt.Printf("Creating baselines directory: %s\n", baselineDir)
-	if err := maybeMkdirAll(baselineDir); err != nil {
+	if err := ensureDir(baselineDir); err != nil {
 		fmt.Printf("Failed to create baselines directory: %s\n", err.Error())
 		os.Exit(11)
 	}
@@ -231,15 +231,11 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	fmt.Printf("\nCreating baselines for queries (%s):\n", mode)
 
 	for _, folder := range suite.Dirs {
-		folderBaselineDir := filepath.Join(baselineDir, folder.Dir)
 		folderPlanDir := filepath.Join(suite.PlanDir, folder.Dir)
-
-		if err := maybeMkdirAll(folderBaselineDir); err != nil {
-			fmt.Printf("Failed to create folder baseline directory: %s\n", err.Error())
-			os.Exit(11)
+		dir := &lazyDir{
+			path:   filepath.Join(baselineDir, folder.Dir),
+			header: fmt.Sprintf("\n  %s/", folder.Dir),
 		}
-
-		fmt.Printf("\n  %s/\n", folder.Dir)
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(suite.Root, folder.Dir, name)
@@ -266,7 +262,12 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 					continue
 				}
 
-				if err := q.CreateBaseline(folderBaselineDir, folderPlanDir, db, useAnalyze); err != nil {
+				if err := dir.Ensure(); err != nil {
+					fmt.Printf("Failed to create folder baseline directory: %s\n", err.Error())
+					os.Exit(11)
+				}
+
+				if err := q.CreateBaseline(dir.path, folderPlanDir, db, useAnalyze); err != nil {
 					fmt.Printf("  Error creating baseline for %s: %s\n", q.Name, err.Error())
 				}
 			}

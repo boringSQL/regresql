@@ -47,22 +47,24 @@ type (
 		ignoreMatcher *IgnoreMatcher
 	}
 
-	// createExpectedOptions controls behavior of createExpectedResults
+	Folder struct {
+		Dir   string
+		Files []string
+	}
+
+	// lazyDir defers directory creation until Ensure() is called
+	lazyDir struct {
+		path    string
+		header  string
+		created bool
+	}
+
 	createExpectedOptions struct {
 		Commit      bool
 		Pending     bool
 		Interactive bool
 		DryRun      bool
-		Snapshot    *SnapshotInfo // Current snapshot for baseline metadata tracking
-	}
-
-	/*
-		Folder implements a directory from the source repository wherein we found
-		some SQL files. Folder are only implemented as part of a Suite instance.
-	*/
-	Folder struct {
-		Dir   string
-		Files []string
+		Snapshot    *SnapshotInfo
 	}
 )
 
@@ -225,13 +227,30 @@ func (s *Suite) matchesRunFilter(fileName, queryName string) bool {
 	return re.MatchString(fileName) || re.MatchString(queryName)
 }
 
-// Println(Suite) pretty prints the Suite instance to standard out.
+// Println pretty prints the Suite, respecting the run filter if set.
 func (s *Suite) Println() {
 	fmt.Printf("%s\n", s.Root)
 	for _, folder := range s.Dirs {
-		fmt.Printf("  %s/\n", folder.Dir)
+		var matching []string
 		for _, name := range folder.Files {
-			fmt.Printf("    %s\n", name)
+			if s.runFilter == "" {
+				matching = append(matching, name)
+				continue
+			}
+			qfile := filepath.Join(s.Root, folder.Dir, name)
+			queries, _ := parseQueryFile(qfile)
+			for _, q := range queries {
+				if s.matchesRunFilter(name, q.Name) {
+					matching = append(matching, name)
+					break
+				}
+			}
+		}
+		if len(matching) > 0 {
+			fmt.Printf("  %s/\n", folder.Dir)
+			for _, name := range matching {
+				fmt.Printf("    %s\n", name)
+			}
 		}
 	}
 }
@@ -241,11 +260,7 @@ func (s *Suite) Println() {
 // structure in its own space.
 func (s *Suite) initRegressHierarchy() error {
 	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.PlanDir, folder.Dir)
-
-		if err := maybeMkdirAll(rdir); err != nil {
-			return fmt.Errorf("Failed to create test plans directory: %s", err)
-		}
+		rdir := &lazyDir{path: filepath.Join(s.PlanDir, folder.Dir)}
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
@@ -268,7 +283,11 @@ func (s *Suite) initRegressHierarchy() error {
 					continue
 				}
 
-				if _, err := q.CreateEmptyPlan(rdir); err != nil {
+				if err := rdir.Ensure(); err != nil {
+					return fmt.Errorf("Failed to create test plans directory: %s", err)
+				}
+
+				if _, err := q.CreateEmptyPlan(rdir.path); err != nil {
 					fmt.Println("Skipping:", err)
 				}
 			}
@@ -299,26 +318,19 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
-		edir := filepath.Join(s.ExpectedDir, folder.Dir)
-
-		// Build relative path for filtering
-		relPath := folder.Dir
-
-		// Check path filter at folder level
-		if !s.matchesPathFilter(relPath) && !s.matchesPathFilter(relPath+"/") {
-			continue
+		edir := &lazyDir{
+			path:   filepath.Join(s.ExpectedDir, folder.Dir),
+			header: fmt.Sprintf("  %s", filepath.Join(s.ExpectedDir, folder.Dir)),
 		}
 
-		if !opts.DryRun {
-			maybeMkdirAll(edir)
-			fmt.Printf("  %s\n", edir)
+		relPath := folder.Dir
+		if !s.matchesPathFilter(relPath) && !s.matchesPathFilter(relPath+"/") {
+			continue
 		}
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
 			queryPath := filepath.Join(relPath, name)
-
-			// Check path filter at file level
 			if !s.matchesPathFilter(queryPath) {
 				continue
 			}
@@ -336,17 +348,21 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 					continue
 				}
 
-				// Check for pending-only mode
 				if opts.Pending {
-					expectedPath := filepath.Join(edir, q.Name+".json")
-					if fileExists(expectedPath) {
-						continue // Skip - already has baseline
+					if fileExists(filepath.Join(edir.path, q.Name+".json")) {
+						continue
 					}
 				}
 
 				p, err := q.GetPlan(rdir)
 				if err != nil {
 					return err
+				}
+
+				if !opts.DryRun {
+					if err := edir.Ensure(); err != nil {
+						return err
+					}
 				}
 
 				// Execute query and handle results
@@ -366,7 +382,7 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 
 					// Interactive mode: compute diff and prompt for each change
 					if opts.Interactive {
-						diff := p.ComputeDiffForInteractive(edir)
+						diff := p.ComputeDiffForInteractive(edir.path)
 						action := prompter.PromptAccept(q.Name, diff)
 						switch action {
 						case "skip":
@@ -376,13 +392,13 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 						}
 					}
 
-					if err := p.WriteResultSets(edir); err != nil {
+					if err := p.WriteResultSets(edir.path); err != nil {
 						return err
 					}
 
 					// Track written files for metadata recording
 					for _, rs := range p.ResultSets {
-						writtenFiles = append(writtenFiles, filepath.Join(edir, filepath.Base(rs.Filename)))
+						writtenFiles = append(writtenFiles, filepath.Join(edir.path, filepath.Base(rs.Filename)))
 					}
 					return nil
 				}); err != nil {
@@ -459,9 +475,8 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
 		edir := filepath.Join(s.ExpectedDir, folder.Dir)
-		odir := filepath.Join(s.OutDir, folder.Dir)
+		odir := &lazyDir{path: filepath.Join(s.OutDir, folder.Dir)}
 		bdir := filepath.Join(s.BaselineDir, folder.Dir)
-		maybeMkdirAll(odir)
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
@@ -486,11 +501,15 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 					return nil, err
 				}
 
+				if err := odir.Ensure(); err != nil {
+					return nil, err
+				}
+
 				if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
 					if err := p.Execute(tx); err != nil {
 						return err
 					}
-					if err := p.WriteResultSets(odir); err != nil {
+					if err := p.WriteResultSets(odir.path); err != nil {
 						return err
 					}
 
@@ -556,7 +575,7 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 
 	for _, folder := range s.Dirs {
 		rdir := filepath.Join(s.PlanDir, folder.Dir)
-		odir := filepath.Join(outputDir, folder.Dir)
+		odir := &lazyDir{path: filepath.Join(outputDir, folder.Dir)}
 
 		for _, name := range folder.Files {
 			qfile := filepath.Join(s.Root, folder.Dir, name)
@@ -582,14 +601,15 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 					continue
 				}
 
-				// Only create output directory if we have queries to run
-				maybeMkdirAll(odir)
+				if err := odir.Ensure(); err != nil {
+					return count, err
+				}
 
 				if err := s.runInTransaction(db, false, func(tx *sql.Tx) error {
 					if err := p.Execute(tx); err != nil {
 						return err
 					}
-					if err := p.WriteResultSets(odir); err != nil {
+					if err := p.WriteResultSets(odir.path); err != nil {
 						return err
 					}
 					return nil
@@ -612,8 +632,8 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 	return count, nil
 }
 
-// Only create dir(s) when it doesn't exists already
-func maybeMkdirAll(dir string) error {
+// ensureDir creates directory if it doesn't exist
+func ensureDir(dir string) error {
 	stat, err := os.Stat(dir)
 	if err != nil || !stat.IsDir() {
 		fmt.Printf("Creating directory '%s'\n", dir)
@@ -624,6 +644,20 @@ func maybeMkdirAll(dir string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (d *lazyDir) Ensure() error {
+	if d.created {
+		return nil
+	}
+	if err := ensureDir(d.path); err != nil {
+		return err
+	}
+	if d.header != "" {
+		fmt.Println(d.header)
+	}
+	d.created = true
 	return nil
 }
 
