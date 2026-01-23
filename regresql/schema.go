@@ -3,6 +3,7 @@ package regresql
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 type (
@@ -13,6 +14,7 @@ type (
 
 	// TableInfo contains metadata about table
 	TableInfo struct {
+		Schema      string
 		Name        string
 		Columns     map[string]*ColumnInfo
 		PrimaryKey  []string
@@ -43,34 +45,37 @@ type (
 
 // IntrospectSchema queries the database to build schema metadata
 func IntrospectSchema(db *sql.DB) (*DatabaseSchema, error) {
-	schema := &DatabaseSchema{
+	dbSchema := &DatabaseSchema{
 		tables: make(map[string]*TableInfo),
 	}
 
-	// Get all tables
+	// Get all tables (schema-qualified names like "auth.users")
 	tables, err := getTables(db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tables: %w", err)
 	}
 
 	// For each table, get columns, primary keys, and foreign keys
-	for _, tableName := range tables {
+	for _, qualifiedName := range tables {
+		schemaName, tableName := parseTableName(qualifiedName)
+
 		tableInfo := &TableInfo{
+			Schema:  schemaName,
 			Name:    tableName,
 			Columns: make(map[string]*ColumnInfo),
 		}
 
 		// Get columns
-		columns, err := getColumns(db, tableName)
+		columns, err := getColumns(db, schemaName, tableName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get columns for table '%s': %w", tableName, err)
+			return nil, fmt.Errorf("failed to get columns for table '%s': %w", qualifiedName, err)
 		}
 		tableInfo.Columns = columns
 
 		// Get primary keys
-		primaryKeys, err := getPrimaryKeys(db, tableName)
+		primaryKeys, err := getPrimaryKeys(db, schemaName, tableName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get primary keys for table '%s': %w", tableName, err)
+			return nil, fmt.Errorf("failed to get primary keys for table '%s': %w", qualifiedName, err)
 		}
 		tableInfo.PrimaryKey = primaryKeys
 
@@ -82,9 +87,9 @@ func IntrospectSchema(db *sql.DB) (*DatabaseSchema, error) {
 		}
 
 		// Get foreign keys
-		foreignKeys, err := getForeignKeys(db, tableName)
+		foreignKeys, err := getForeignKeys(db, schemaName, tableName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get foreign keys for table '%s': %w", tableName, err)
+			return nil, fmt.Errorf("failed to get foreign keys for table '%s': %w", qualifiedName, err)
 		}
 		tableInfo.ForeignKeys = foreignKeys
 
@@ -97,9 +102,9 @@ func IntrospectSchema(db *sql.DB) (*DatabaseSchema, error) {
 		}
 
 		// Get unique constraints
-		uniqueCols, err := getUniqueColumns(db, tableName)
+		uniqueCols, err := getUniqueColumns(db, schemaName, tableName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get unique constraints for table '%s': %w", tableName, err)
+			return nil, fmt.Errorf("failed to get unique constraints for table '%s': %w", qualifiedName, err)
 		}
 		for colName := range uniqueCols {
 			if col, exists := tableInfo.Columns[colName]; exists {
@@ -107,20 +112,20 @@ func IntrospectSchema(db *sql.DB) (*DatabaseSchema, error) {
 			}
 		}
 
-		schema.tables[tableName] = tableInfo
+		dbSchema.tables[qualifiedName] = tableInfo
 	}
 
-	return schema, nil
+	return dbSchema, nil
 }
 
-// getTables retrieves all table names from the database
+// getTables retrieves all table names from the database (all user schemas)
 func getTables(db *sql.DB) ([]string, error) {
 	query := `
-		SELECT table_name
+		SELECT table_schema, table_name
 		FROM information_schema.tables
-		WHERE table_schema = 'public'
+		WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
 		  AND table_type = 'BASE TABLE'
-		ORDER BY table_name
+		ORDER BY table_schema, table_name
 	`
 
 	rows, err := db.Query(query)
@@ -131,18 +136,27 @@ func getTables(db *sql.DB) ([]string, error) {
 
 	var tables []string
 	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
+		var schemaName, tableName string
+		if err := rows.Scan(&schemaName, &tableName); err != nil {
 			return nil, err
 		}
-		tables = append(tables, tableName)
+		tables = append(tables, schemaName+"."+tableName)
 	}
 
 	return tables, rows.Err()
 }
 
+// parseTableName splits a schema-qualified table name into schema and table parts
+func parseTableName(name string) (schema, table string) {
+	parts := strings.SplitN(name, ".", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "public", name
+}
+
 // getColumns retrieves column metadata for a table
-func getColumns(db *sql.DB, tableName string) (map[string]*ColumnInfo, error) {
+func getColumns(db *sql.DB, schemaName, tableName string) (map[string]*ColumnInfo, error) {
 	query := `
 		SELECT
 			column_name,
@@ -151,12 +165,12 @@ func getColumns(db *sql.DB, tableName string) (map[string]*ColumnInfo, error) {
 			column_default,
 			character_maximum_length
 		FROM information_schema.columns
-		WHERE table_schema = 'public'
-		  AND table_name = $1
+		WHERE table_schema = $1
+		  AND table_name = $2
 		ORDER BY ordinal_position
 	`
 
-	rows, err := db.Query(query, tableName)
+	rows, err := db.Query(query, schemaName, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -165,11 +179,11 @@ func getColumns(db *sql.DB, tableName string) (map[string]*ColumnInfo, error) {
 	columns := make(map[string]*ColumnInfo)
 	for rows.Next() {
 		var (
-			columnName  string
-			dataType    string
-			isNullable  string
-			columnDefault sql.NullString
-			maxLength   sql.NullInt64
+			columnName    string
+			dataType      string
+			isNullable    string
+			columnDefault *string
+			maxLength     *int64
 		)
 
 		if err := rows.Scan(&columnName, &dataType, &isNullable, &columnDefault, &maxLength); err != nil {
@@ -180,14 +194,11 @@ func getColumns(db *sql.DB, tableName string) (map[string]*ColumnInfo, error) {
 			Name:       columnName,
 			Type:       dataType,
 			IsNullable: isNullable == "YES",
+			Default:    columnDefault,
 		}
 
-		if columnDefault.Valid {
-			col.Default = &columnDefault.String
-		}
-
-		if maxLength.Valid {
-			length := int(maxLength.Int64)
+		if maxLength != nil {
+			length := int(*maxLength)
 			col.MaxLength = &length
 		}
 
@@ -198,7 +209,9 @@ func getColumns(db *sql.DB, tableName string) (map[string]*ColumnInfo, error) {
 }
 
 // getPrimaryKeys retrieves primary key column names for a table
-func getPrimaryKeys(db *sql.DB, tableName string) ([]string, error) {
+func getPrimaryKeys(db *sql.DB, schemaName, tableName string) ([]string, error) {
+	// Use schema-qualified name for regclass cast
+	qualifiedName := schemaName + "." + tableName
 	query := `
 		SELECT a.attname
 		FROM pg_index i
@@ -208,7 +221,7 @@ func getPrimaryKeys(db *sql.DB, tableName string) ([]string, error) {
 		ORDER BY array_position(i.indkey, a.attnum)
 	`
 
-	rows, err := db.Query(query, tableName)
+	rows, err := db.Query(query, qualifiedName)
 	if err != nil {
 		return nil, err
 	}
@@ -227,11 +240,12 @@ func getPrimaryKeys(db *sql.DB, tableName string) ([]string, error) {
 }
 
 // getForeignKeys retrieves foreign key constraints for a table
-func getForeignKeys(db *sql.DB, tableName string) ([]*ForeignKeyInfo, error) {
+func getForeignKeys(db *sql.DB, schemaName, tableName string) ([]*ForeignKeyInfo, error) {
 	query := `
 		SELECT
 			tc.constraint_name,
 			kcu.column_name,
+			ccu.table_schema AS referenced_schema,
 			ccu.table_name AS referenced_table,
 			ccu.column_name AS referenced_column
 		FROM information_schema.table_constraints AS tc
@@ -240,13 +254,12 @@ func getForeignKeys(db *sql.DB, tableName string) ([]*ForeignKeyInfo, error) {
 		  AND tc.table_schema = kcu.table_schema
 		JOIN information_schema.constraint_column_usage AS ccu
 		  ON ccu.constraint_name = tc.constraint_name
-		  AND ccu.table_schema = tc.table_schema
 		WHERE tc.constraint_type = 'FOREIGN KEY'
 		  AND tc.table_name = $1
-		  AND tc.table_schema = 'public'
+		  AND tc.table_schema = $2
 	`
 
-	rows, err := db.Query(query, tableName)
+	rows, err := db.Query(query, tableName, schemaName)
 	if err != nil {
 		return nil, err
 	}
@@ -255,16 +268,21 @@ func getForeignKeys(db *sql.DB, tableName string) ([]*ForeignKeyInfo, error) {
 	var foreignKeys []*ForeignKeyInfo
 	for rows.Next() {
 		var fk ForeignKeyInfo
-		if err := rows.Scan(&fk.ConstraintName, &fk.ColumnName, &fk.ReferencedTable, &fk.ReferencedColumn); err != nil {
+		var refSchema string
+		if err := rows.Scan(&fk.ConstraintName, &fk.ColumnName, &refSchema, &fk.ReferencedTable, &fk.ReferencedColumn); err != nil {
 			return nil, err
 		}
+		// Store schema-qualified referenced table name
+		fk.ReferencedTable = refSchema + "." + fk.ReferencedTable
 		foreignKeys = append(foreignKeys, &fk)
 	}
 
 	return foreignKeys, rows.Err()
 }
 
-func getUniqueColumns(db *sql.DB, tableName string) (map[string]bool, error) {
+func getUniqueColumns(db *sql.DB, schemaName, tableName string) (map[string]bool, error) {
+	// Use schema-qualified name for regclass cast
+	qualifiedName := schemaName + "." + tableName
 	query := `
 		SELECT a.attname
 		FROM pg_index i
@@ -275,7 +293,7 @@ func getUniqueColumns(db *sql.DB, tableName string) (map[string]bool, error) {
 		  AND array_length(i.indkey, 1) = 1
 	`
 
-	rows, err := db.Query(query, tableName)
+	rows, err := db.Query(query, qualifiedName)
 	if err != nil {
 		return nil, err
 	}
@@ -292,13 +310,19 @@ func getUniqueColumns(db *sql.DB, tableName string) (map[string]bool, error) {
 	return uniqueCols, rows.Err()
 }
 
-// GetTable retrieves table metadata
+// GetTable retrieves table metadata by name (schema-qualified or unqualified)
 func (ds *DatabaseSchema) GetTable(name string) (*TableInfo, error) {
-	table, exists := ds.tables[name]
-	if !exists {
-		return nil, fmt.Errorf("table not found: %s", name)
+	// Try exact match first (for schema-qualified names)
+	if table, exists := ds.tables[name]; exists {
+		return table, nil
 	}
-	return table, nil
+	// If no dot in name, try public schema
+	if !strings.Contains(name, ".") {
+		if table, exists := ds.tables["public."+name]; exists {
+			return table, nil
+		}
+	}
+	return nil, fmt.Errorf("table not found: %s", name)
 }
 
 // GetTables returns all table names
@@ -317,11 +341,14 @@ func (ds *DatabaseSchema) GetForeignKeyDependencies(tableName string) ([]string,
 		return nil, err
 	}
 
+	// Build the qualified name for self-reference comparison
+	qualifiedName := table.Schema + "." + table.Name
+
 	// Collect unique referenced tables
 	deps := make(map[string]bool)
 	for _, fk := range table.ForeignKeys {
 		// Don't include self-references as dependencies
-		if fk.ReferencedTable != tableName {
+		if fk.ReferencedTable != qualifiedName {
 			deps[fk.ReferencedTable] = true
 		}
 	}
@@ -337,6 +364,13 @@ func (ds *DatabaseSchema) GetForeignKeyDependencies(tableName string) ([]string,
 
 // HasTable checks if a table exists in the schema
 func (ds *DatabaseSchema) HasTable(name string) bool {
-	_, exists := ds.tables[name]
-	return exists
+	if _, exists := ds.tables[name]; exists {
+		return true
+	}
+	// If no dot in name, try public schema
+	if !strings.Contains(name, ".") {
+		_, exists := ds.tables["public."+name]
+		return exists
+	}
+	return false
 }
