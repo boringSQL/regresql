@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"gopkg.in/yaml.v3"
 )
 
@@ -48,8 +47,7 @@ func NewPlan(query *Query, testCases []TestCase) *Plan {
 	}
 }
 
-// CreateEmptyPlan creates a YAML file where to store the set of parameters
-// associated with a query.
+// CreateEmptyPlan creates a plan YAML file for the query
 func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	var names []string
 	var bindings []map[string]any
@@ -92,21 +90,27 @@ func (q *Query) GetPlan(planDir string) (*Plan, error) {
 	pfile := getPlanPath(q, planDir)
 
 	if _, err := os.Stat(pfile); os.IsNotExist(err) {
-		if len(q.Args) == 0 {
-			return &Plan{
-				Query:      q,
-				Path:       pfile,
-				Names:      []string{},
-				Bindings:   []map[string]any{},
-				ResultSets: []ResultSet{},
-			}, nil
-		}
-		return nil, fmt.Errorf("Failed to get plan '%s': %s\n", pfile, err)
+		return nil, fmt.Errorf("query '%s' not added (no plan file at %s)", q.Name, pfile)
 	}
 
 	data, err := os.ReadFile(pfile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file '%s': %w", pfile, err)
+	}
+
+	return parseYAMLPlan(data, pfile, q)
+}
+
+func parseYAMLPlan(data []byte, pfile string, q *Query) (*Plan, error) {
+	trimmed := strings.TrimSpace(string(data))
+	if len(trimmed) == 0 || trimmed == "{}" {
+		return &Plan{
+			Query:      q,
+			Path:       pfile,
+			Names:      []string{},
+			Bindings:   []map[string]any{},
+			ResultSets: []ResultSet{},
+		}, nil
 	}
 
 	// Unmarshal into generic map to extract all fields
@@ -209,14 +213,8 @@ func (p *Plan) WriteResultSets(dir string) error {
 	return nil
 }
 
-// Write a plan to disk in YAML format.
 func (p *Plan) Write() {
-	if len(p.Bindings) == 0 {
-		fmt.Printf("Skipping Plan '%s': query uses no variable\n", p.Path)
-		return
-	}
-
-	fmt.Printf("Creating Empty Plan '%s'\n", p.Path)
+	fmt.Printf("Creating Plan '%s'\n", p.Path)
 
 	// Build the YAML structure
 	planData := make(map[string]any)
@@ -231,11 +229,17 @@ func (p *Plan) Write() {
 		planData["plan_quality"] = p.PlanQuality
 	}
 
-	// Marshal to YAML
-	data, err := yaml.Marshal(planData)
-	if err != nil {
-		fmt.Printf("Error marshaling plan to YAML: %s\n", err)
-		return
+	// Marshal to YAML (empty map becomes {})
+	var data []byte
+	var err error
+	if len(planData) == 0 {
+		data = []byte("{}\n")
+	} else {
+		data, err = yaml.Marshal(planData)
+		if err != nil {
+			fmt.Printf("Error marshaling plan to YAML: %s\n", err)
+			return
+		}
 	}
 
 	// Write to file

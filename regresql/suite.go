@@ -296,7 +296,7 @@ func (s *Suite) initRegressHierarchy() error {
 	return nil
 }
 
-// createExpectedResults walks the s Suite instance and runs its queries,
+// createExpectedResults walks plan files and runs their queries,
 // storing the results in the expected files.
 // Each query runs in its own transaction that rolls back (unless commit is true).
 func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) error {
@@ -316,113 +316,105 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 		fmt.Println("Writing expected Result Sets:")
 	}
 
-	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.PlanDir, folder.Dir)
-		edir := &lazyDir{
-			path:   filepath.Join(s.ExpectedDir, folder.Dir),
-			header: fmt.Sprintf("  %s", filepath.Join(s.ExpectedDir, folder.Dir)),
-		}
+	plannedQueries, err := WalkPlans(s.Root)
+	if err != nil {
+		return fmt.Errorf("failed to walk plans: %w", err)
+	}
 
-		relPath := folder.Dir
-		if !s.matchesPathFilter(relPath) && !s.matchesPathFilter(relPath+"/") {
+	expectedDirs := make(map[string]*lazyDir)
+
+	for _, pq := range plannedQueries {
+		fileName := filepath.Base(pq.SQLPath)
+		if !s.matchesRunFilter(fileName, pq.Query.Name) {
+			continue
+		}
+		if !s.matchesPathFilter(pq.RelPath) {
 			continue
 		}
 
-		for _, name := range folder.Files {
-			qfile := filepath.Join(s.Root, folder.Dir, name)
-			queryPath := filepath.Join(relPath, name)
-			if !s.matchesPathFilter(queryPath) {
+		qopts := pq.Query.GetRegressQLOptions()
+		if qopts.NoTest {
+			continue
+		}
+
+		folderDir := filepath.Dir(pq.RelPath)
+		edir, ok := expectedDirs[folderDir]
+		if !ok {
+			edir = &lazyDir{
+				path:   filepath.Join(s.ExpectedDir, folderDir),
+				header: fmt.Sprintf("  %s", filepath.Join(s.ExpectedDir, folderDir)),
+			}
+			expectedDirs[folderDir] = edir
+		}
+
+		if opts.Pending {
+			if fileExists(filepath.Join(edir.path, pq.Query.Name+".json")) {
 				continue
 			}
+		}
 
-			queries, err := parseQueryFile(qfile)
-			if err != nil {
+		if !opts.DryRun {
+			if err := edir.Ensure(); err != nil {
+				return err
+			}
+		}
+
+		// Execute query and handle results
+		var writtenFiles []string
+		if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
+			if err := pq.Plan.Execute(tx); err != nil {
 				return err
 			}
 
-			for _, q := range queries {
-				if !s.matchesRunFilter(name, q.Name) {
-					continue
+			// Dry-run: just record what would be updated
+			if opts.DryRun {
+				for _, rs := range pq.Plan.ResultSets {
+					dryRunSummary = append(dryRunSummary, fmt.Sprintf("  Would update: %s", filepath.Base(rs.Filename)))
 				}
-				if qopts := q.GetRegressQLOptions(); qopts.NoTest {
-					continue
-				}
+				return nil
+			}
 
-				if opts.Pending {
-					if fileExists(filepath.Join(edir.path, q.Name+".json")) {
-						continue
-					}
-				}
-
-				p, err := q.GetPlan(rdir)
-				if err != nil {
-					return err
-				}
-
-				if !opts.DryRun {
-					if err := edir.Ensure(); err != nil {
-						return err
-					}
-				}
-
-				// Execute query and handle results
-				var writtenFiles []string
-				if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
-					if err := p.Execute(tx); err != nil {
-						return err
-					}
-
-					// Dry-run: just record what would be updated
-					if opts.DryRun {
-						for _, rs := range p.ResultSets {
-							dryRunSummary = append(dryRunSummary, fmt.Sprintf("  Would update: %s", filepath.Base(rs.Filename)))
-						}
-						return nil
-					}
-
-					// Interactive mode: compute diff and prompt for each change
-					if opts.Interactive {
-						diff := p.ComputeDiffForInteractive(edir.path)
-						action := prompter.PromptAccept(q.Name, diff)
-						switch action {
-						case "skip":
-							return nil
-						case "quit":
-							return ErrUserQuit
-						}
-					}
-
-					if err := p.WriteResultSets(edir.path); err != nil {
-						return err
-					}
-
-					// Track written files for metadata recording
-					for _, rs := range p.ResultSets {
-						writtenFiles = append(writtenFiles, filepath.Join(edir.path, filepath.Base(rs.Filename)))
-					}
+			// Interactive mode: compute diff and prompt for each change
+			if opts.Interactive {
+				diff := pq.Plan.ComputeDiffForInteractive(edir.path)
+				action := prompter.PromptAccept(pq.Query.Name, diff)
+				switch action {
+				case "skip":
 					return nil
-				}); err != nil {
-					if err == ErrUserQuit {
-						fmt.Println("\nUpdate cancelled by user")
-						return nil
-					}
-					return err
+				case "quit":
+					return ErrUserQuit
 				}
+			}
 
-				// Record baseline metadata for written files
-				if !opts.DryRun && opts.Snapshot != nil {
-					for _, baselinePath := range writtenFiles {
-						if err := RecordBaselineUpdate(s.ExpectedDir, baselinePath, opts.Snapshot, ""); err != nil {
-							fmt.Printf("Warning: failed to record baseline metadata: %s\n", err)
-						}
-					}
-				}
+			if err := pq.Plan.WriteResultSets(edir.path); err != nil {
+				return err
+			}
 
-				if !opts.DryRun {
-					for _, rs := range p.ResultSets {
-						fmt.Printf("    %s\n", filepath.Base(rs.Filename))
-					}
+			// Track written files for metadata recording
+			for _, rs := range pq.Plan.ResultSets {
+				writtenFiles = append(writtenFiles, filepath.Join(edir.path, filepath.Base(rs.Filename)))
+			}
+			return nil
+		}); err != nil {
+			if err == ErrUserQuit {
+				fmt.Println("\nUpdate cancelled by user")
+				return nil
+			}
+			return err
+		}
+
+		// Record baseline metadata for written files
+		if !opts.DryRun && opts.Snapshot != nil {
+			for _, baselinePath := range writtenFiles {
+				if err := RecordBaselineUpdate(s.ExpectedDir, baselinePath, opts.Snapshot, ""); err != nil {
+					fmt.Printf("Warning: failed to record baseline metadata: %s\n", err)
 				}
+			}
+		}
+
+		if !opts.DryRun {
+			for _, rs := range pq.Plan.ResultSets {
+				fmt.Printf("    %s\n", filepath.Base(rs.Filename))
 			}
 		}
 	}
@@ -448,10 +440,9 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// testQueries walks the s Suite instance and runs queries against the plans
-// and stores results in the out directory for manual inspection if
-// necessary. It then compares the actual output to the expected output and
-// reports results using the specified formatter.
+// testQueries walks plan files and runs queries against them.
+// Stores results in the out directory for manual inspection if necessary.
+// Compares actual output to expected output and reports via the specified formatter.
 // Each query runs in its own transaction that rolls back (unless commit is true).
 // Returns the test summary for exit code determination.
 func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) (*TestSummary, error) {
@@ -472,67 +463,67 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 		return nil, err
 	}
 
-	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.PlanDir, folder.Dir)
-		edir := filepath.Join(s.ExpectedDir, folder.Dir)
-		odir := &lazyDir{path: filepath.Join(s.OutDir, folder.Dir)}
-		bdir := filepath.Join(s.BaselineDir, folder.Dir)
+	plannedQueries, err := WalkPlans(s.Root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk plans: %w", err)
+	}
 
-		for _, name := range folder.Files {
-			qfile := filepath.Join(s.Root, folder.Dir, name)
+	outDirs := make(map[string]*lazyDir)
 
-			queries, err := parseQueryFile(qfile)
-			if err != nil {
-				return nil, err
+	for _, pq := range plannedQueries {
+		fileName := filepath.Base(pq.SQLPath)
+		if !s.matchesRunFilter(fileName, pq.Query.Name) {
+			continue
+		}
+		if !s.matchesPathFilter(pq.RelPath) {
+			continue
+		}
+
+		opts := pq.Query.GetRegressQLOptions()
+		if opts.NoTest {
+			continue
+		}
+
+		folderDir := filepath.Dir(pq.RelPath)
+		odir, ok := outDirs[folderDir]
+		if !ok {
+			odir = &lazyDir{path: filepath.Join(s.OutDir, folderDir)}
+			outDirs[folderDir] = odir
+		}
+
+		edir := filepath.Join(s.ExpectedDir, folderDir)
+		bdir := filepath.Join(s.BaselineDir, folderDir)
+
+		if err := odir.Ensure(); err != nil {
+			return nil, err
+		}
+
+		if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
+			if err := pq.Plan.Execute(tx); err != nil {
+				return err
+			}
+			if err := pq.Plan.WriteResultSets(odir.path); err != nil {
+				return err
 			}
 
-			for _, q := range queries {
-				if !s.matchesRunFilter(name, q.Name) {
-					continue
-				}
-
-				opts := q.GetRegressQLOptions()
-				if opts.NoTest {
-					continue
-				}
-
-				p, err := q.GetPlan(rdir)
-				if err != nil {
-					return nil, err
-				}
-
-				if err := odir.Ensure(); err != nil {
-					return nil, err
-				}
-
-				if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
-					if err := p.Execute(tx); err != nil {
-						return err
-					}
-					if err := p.WriteResultSets(odir.path); err != nil {
-						return err
-					}
-
-					for _, r := range p.CompareResultSetsToResults(s.RegressDir, edir) {
-						summary.AddResult(r)
-						if err := formatter.AddResult(r, w); err != nil {
-							return err
-						}
-					}
-
-					if !opts.NoBaseline && hasBaselines(p.Query, bdir, p.Names) {
-						for _, r := range p.CompareBaselinesToResults(bdir, tx, DefaultCostThresholdPercent) {
-							summary.AddResult(r)
-							if err := formatter.AddResult(r, w); err != nil {
-								return err
-							}
-						}
-					}
-					return nil
-				}); err != nil {
-					return nil, err
+			for _, r := range pq.Plan.CompareResultSetsToResults(s.RegressDir, edir) {
+				summary.AddResult(r)
+				if err := formatter.AddResult(r, w); err != nil {
+					return err
 				}
 			}
+
+			if !opts.NoBaseline && hasBaselines(pq.Query, bdir, pq.Plan.Names) {
+				for _, r := range pq.Plan.CompareBaselinesToResults(bdir, tx, DefaultCostThresholdPercent) {
+					summary.AddResult(r)
+					if err := formatter.AddResult(r, w); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, err
 		}
 	}
 
@@ -560,9 +551,8 @@ func (s *Suite) runInTransaction(db *sql.DB, commit bool, fn func(tx *sql.Tx) er
 	return tx.Rollback()
 }
 
-// executeAllQueries executes all queries and saves results to outputDir.
+// executeAllQueries executes all queries with plan files and saves results to outputDir.
 // Used by migrate command to capture before/after states.
-// Queries with parameters but no plan files are skipped with a warning.
 func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, error) {
 	db, err := sql.Open("pgx", pguri)
 	if err != nil {
@@ -570,63 +560,47 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 	}
 	defer db.Close()
 
-	count := 0
-	skipped := 0
-
-	for _, folder := range s.Dirs {
-		rdir := filepath.Join(s.PlanDir, folder.Dir)
-		odir := &lazyDir{path: filepath.Join(outputDir, folder.Dir)}
-
-		for _, name := range folder.Files {
-			qfile := filepath.Join(s.Root, folder.Dir, name)
-
-			queries, err := parseQueryFile(qfile)
-			if err != nil {
-				return count, err
-			}
-
-			for _, q := range queries {
-				opts := q.GetRegressQLOptions()
-				if opts.NoTest {
-					continue
-				}
-
-				p, err := q.GetPlan(rdir)
-				if err != nil {
-					// Skip queries that require plans but don't have them
-					if verbose {
-						fmt.Printf("  [skip] %s/%s: %v\n", folder.Dir, name, err)
-					}
-					skipped++
-					continue
-				}
-
-				if err := odir.Ensure(); err != nil {
-					return count, err
-				}
-
-				if err := s.runInTransaction(db, false, func(tx *sql.Tx) error {
-					if err := p.Execute(tx); err != nil {
-						return err
-					}
-					if err := p.WriteResultSets(odir.path); err != nil {
-						return err
-					}
-					return nil
-				}); err != nil {
-					return count, err
-				}
-
-				count += len(p.ResultSets)
-				if verbose {
-					fmt.Printf("  %s/%s (%d bindings)\n", folder.Dir, name, len(p.ResultSets))
-				}
-			}
-		}
+	plannedQueries, err := WalkPlans(s.Root)
+	if err != nil {
+		return 0, fmt.Errorf("failed to walk plans: %w", err)
 	}
 
-	if skipped > 0 && !verbose {
-		fmt.Printf("  (skipped %d queries without plans - use --verbose to see details)\n", skipped)
+	count := 0
+	outDirs := make(map[string]*lazyDir)
+
+	for _, pq := range plannedQueries {
+		opts := pq.Query.GetRegressQLOptions()
+		if opts.NoTest {
+			continue
+		}
+
+		folderDir := filepath.Dir(pq.RelPath)
+		odir, ok := outDirs[folderDir]
+		if !ok {
+			odir = &lazyDir{path: filepath.Join(outputDir, folderDir)}
+			outDirs[folderDir] = odir
+		}
+
+		if err := odir.Ensure(); err != nil {
+			return count, err
+		}
+
+		if err := s.runInTransaction(db, false, func(tx *sql.Tx) error {
+			if err := pq.Plan.Execute(tx); err != nil {
+				return err
+			}
+			if err := pq.Plan.WriteResultSets(odir.path); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			return count, err
+		}
+
+		count += len(pq.Plan.ResultSets)
+		if verbose {
+			fmt.Printf("  %s (%d bindings)\n", pq.RelPath, len(pq.Plan.ResultSets))
+		}
 	}
 
 	return count, nil

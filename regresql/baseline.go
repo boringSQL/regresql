@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // DefaultCostThresholdPercent is the default maximum allowed percentage increase
@@ -189,14 +187,6 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 
 func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	config, err := ReadConfig(root)
-	ignorePatterns := []string{}
-	if err == nil {
-		ignorePatterns = config.Ignore
-	}
-
-	suite := Walk(root, ignorePatterns)
-	suite.SetRunFilter(runFilter)
-	config, err = suite.readConfig()
 	if err != nil {
 		fmt.Printf("Error reading config: %s\n", err.Error())
 		os.Exit(3)
@@ -216,7 +206,7 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	}
 	defer db.Close()
 
-	baselineDir := filepath.Join(suite.RegressDir, "baselines")
+	baselineDir := filepath.Join(root, "regresql", "baselines")
 
 	fmt.Printf("Creating baselines directory: %s\n", baselineDir)
 	if err := ensureDir(baselineDir); err != nil {
@@ -230,52 +220,93 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	}
 	fmt.Printf("\nCreating baselines for queries (%s):\n", mode)
 
-	for _, folder := range suite.Dirs {
-		folderPlanDir := filepath.Join(suite.PlanDir, folder.Dir)
-		dir := &lazyDir{
-			path:   filepath.Join(baselineDir, folder.Dir),
-			header: fmt.Sprintf("\n  %s/", folder.Dir),
+	plannedQueries, err := WalkPlans(root)
+	if err != nil {
+		fmt.Printf("Error walking plans: %s\n", err.Error())
+		os.Exit(11)
+	}
+
+	var runFilterMatch func(fileName, queryName string) bool
+	if runFilter == "" {
+		runFilterMatch = func(_, _ string) bool { return true }
+	} else {
+		runFilterMatch = func(fileName, queryName string) bool {
+			return strings.Contains(fileName, runFilter) || strings.Contains(queryName, runFilter)
+		}
+	}
+
+	baselineDirs := make(map[string]*lazyDir)
+
+	for _, pq := range plannedQueries {
+		fileName := filepath.Base(pq.SQLPath)
+		if !runFilterMatch(fileName, pq.Query.Name) {
+			continue
 		}
 
-		for _, name := range folder.Files {
-			qfile := filepath.Join(suite.Root, folder.Dir, name)
+		opts := pq.Query.GetRegressQLOptions()
+		if opts.NoTest {
+			fmt.Printf("  Skipping query '%s' (notest)\n", pq.Query.Name)
+			continue
+		}
+		if opts.NoBaseline {
+			fmt.Printf("  Skipping query '%s' (nobaseline)\n", pq.Query.Name)
+			continue
+		}
 
-			queries, err := parseQueryFile(qfile)
-			if err != nil {
-				fmt.Printf("Error parsing query file %s: %s\n", qfile, err.Error())
-				continue
+		folderDir := filepath.Dir(pq.RelPath)
+		dir, ok := baselineDirs[folderDir]
+		if !ok {
+			dir = &lazyDir{
+				path:   filepath.Join(baselineDir, folderDir),
+				header: fmt.Sprintf("\n  %s/", folderDir),
 			}
+			baselineDirs[folderDir] = dir
+		}
 
-			for _, q := range queries {
-				if !suite.matchesRunFilter(name, q.Name) {
-					continue
-				}
+		if err := dir.Ensure(); err != nil {
+			fmt.Printf("Failed to create folder baseline directory: %s\n", err.Error())
+			os.Exit(11)
+		}
 
-				// Skip queries with notest or nobaseline options
-				opts := q.GetRegressQLOptions()
-				if opts.NoTest {
-					fmt.Printf("  Skipping query '%s' (notest)\n", q.Name)
-					continue
-				}
-				if opts.NoBaseline {
-					fmt.Printf("  Skipping query '%s' (nobaseline)\n", q.Name)
-					continue
-				}
-
-				if err := dir.Ensure(); err != nil {
-					fmt.Printf("Failed to create folder baseline directory: %s\n", err.Error())
-					os.Exit(11)
-				}
-
-				if err := q.CreateBaseline(dir.path, folderPlanDir, db, useAnalyze); err != nil {
-					fmt.Printf("  Error creating baseline for %s: %s\n", q.Name, err.Error())
-				}
-			}
+		if err := createBaselineFromPlan(pq, dir.path, db, useAnalyze); err != nil {
+			fmt.Printf("  Error creating baseline for %s: %s\n", pq.Query.Name, err.Error())
 		}
 	}
 
 	fmt.Println("\nBaselines have been created successfully!")
 	fmt.Printf("Baseline files are stored in: %s\n", baselineDir)
+}
+
+func createBaselineFromPlan(pq *PlannedQuery, baselineDir string, db *sql.DB, useAnalyze bool) error {
+	q := pq.Query
+	plan := pq.Plan
+
+	if len(plan.Bindings) == 0 && len(q.Args) > 0 {
+		fmt.Printf("  Skipping '%s': no bindings in plan\n", q.Name)
+		return nil
+	}
+
+	if len(q.Args) == 0 {
+		plan = NewPlan(q, []TestCase{{Name: ""}})
+	}
+
+	baselines, fullPlans, err := plan.CreateBaselines(db, useAnalyze)
+	if err != nil {
+		return err
+	}
+
+	for i, baseline := range baselines {
+		baselinePath := getBaselinePath(q, baselineDir, plan.Names[i])
+		var fullPlan *ExplainOutput
+		if i < len(fullPlans) {
+			fullPlan = fullPlans[i]
+		}
+		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan, fullPlan, useAnalyze); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // LoadBaseline loads a baseline JSON file
