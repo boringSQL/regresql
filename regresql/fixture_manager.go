@@ -232,6 +232,12 @@ func (fm *FixtureManager) BeginTransaction() error {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
+	// Disable waiting for disk sync - significant speedup for bulk inserts
+	if _, err := tx.Exec("SET synchronous_commit = off"); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to set synchronous_commit: %w", err)
+	}
+
 	fm.tx = tx
 	return nil
 }

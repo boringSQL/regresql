@@ -20,10 +20,11 @@ type (
 	}
 
 	AnalyzeConfig struct {
-		Enabled         bool    `yaml:"enabled"`
-		Comparison      string  `yaml:"comparison,omitempty"`       // "auto" | "cost" | "buffers"
-		BufferThreshold float64 `yaml:"buffer_threshold,omitempty"` // default: 2.0
-		CostThreshold   float64 `yaml:"cost_threshold,omitempty"`   // default: 10.0
+		Enabled              bool    `yaml:"enabled"`
+		Comparison           string  `yaml:"comparison,omitempty"`            // "auto" | "cost" | "buffers"
+		BufferThreshold      float64 `yaml:"buffer_threshold,omitempty"`      // default: 2.0
+		CostThreshold        float64 `yaml:"cost_threshold,omitempty"`        // default: 10.0
+		ImprovementThreshold float64 `yaml:"improvement_threshold,omitempty"` // default: 20.0
 	}
 
 	PlanQualityGlobal struct {
@@ -180,18 +181,20 @@ func GetDiffConfig() *DiffConfig {
 func GetAnalyzeConfig() *AnalyzeConfig {
 	if cachedConfig == nil || cachedConfig.Analyze == nil {
 		return &AnalyzeConfig{
-			Enabled:         false,
-			Comparison:      "auto",
-			BufferThreshold: 2.0,
-			CostThreshold:   10.0,
+			Enabled:              false,
+			Comparison:           "auto",
+			BufferThreshold:      2.0,
+			CostThreshold:        10.0,
+			ImprovementThreshold: 20.0,
 		}
 	}
 	cfg := cachedConfig.Analyze
 	result := &AnalyzeConfig{
-		Enabled:         cfg.Enabled,
-		Comparison:      cfg.Comparison,
-		BufferThreshold: cfg.BufferThreshold,
-		CostThreshold:   cfg.CostThreshold,
+		Enabled:              cfg.Enabled,
+		Comparison:           cfg.Comparison,
+		BufferThreshold:      cfg.BufferThreshold,
+		CostThreshold:        cfg.CostThreshold,
+		ImprovementThreshold: cfg.ImprovementThreshold,
 	}
 	if result.Comparison == "" {
 		result.Comparison = "auto"
@@ -201,6 +204,9 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 	}
 	if result.CostThreshold == 0 {
 		result.CostThreshold = 10.0
+	}
+	if result.ImprovementThreshold == 0 {
+		result.ImprovementThreshold = 20.0
 	}
 	return result
 }
@@ -219,4 +225,8 @@ func GetCostThreshold() float64 {
 
 func GetComparisonMode() string {
 	return GetAnalyzeConfig().Comparison
+}
+
+func GetImprovementThreshold() float64 {
+	return GetAnalyzeConfig().ImprovementThreshold
 }

@@ -231,6 +231,7 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 
 	var isOk bool
 	var percentageIncrease float64
+	improvementThreshold := GetImprovementThreshold()
 
 	if useBufferComparison {
 		actualBuffers := explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks
@@ -248,6 +249,15 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		result.ExpectedCost = toFloat64(baseline.Plan["total_cost"])
 		result.PercentIncrease = percentageIncrease
 
+		// Detect significant improvement
+		if baselineBuffers > 0 {
+			improvementPercent := (float64(baselineBuffers) - float64(actualBuffers)) / float64(baselineBuffers) * 100
+			if improvementPercent >= improvementThreshold {
+				result.Improved = true
+				result.ImprovementPercent = improvementPercent
+			}
+		}
+
 		testName = strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".buffers"
 	} else {
 		actualCost := explainPlan.Plan.TotalCost
@@ -260,6 +270,15 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		result.ExpectedCost = baselineCost
 		result.PercentIncrease = percentageIncrease
 		result.Threshold = costThreshold
+
+		// Detect significant improvement
+		if baselineCost > 0 {
+			improvementPercent := (baselineCost - actualCost) / baselineCost * 100
+			if improvementPercent >= improvementThreshold {
+				result.Improved = true
+				result.ImprovementPercent = improvementPercent
+			}
+		}
 	}
 
 	result.Duration = time.Since(start).Seconds()

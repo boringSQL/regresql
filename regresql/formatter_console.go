@@ -78,7 +78,11 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 	// Show progress indicator with color
 	switch r.Status {
 	case "passed":
-		fmt.Fprint(w, f.colorize(".", colorGreen))
+		if r.Improved {
+			fmt.Fprint(w, f.colorize("↑", colorGreen))
+		} else {
+			fmt.Fprint(w, f.colorize(".", colorGreen))
+		}
 	case "failed":
 		fmt.Fprint(w, f.colorize("F", colorRed))
 	case "pending":
@@ -285,6 +289,9 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 	if s.Failed > 0 {
 		fmt.Fprintf(w, "  %s %d failing\n", f.colorize("✗", colorRed), s.Failed)
 	}
+	if s.Improved > 0 {
+		fmt.Fprintf(w, "  %s %d improved (consider updating baselines)\n", f.colorize("↑", colorGreen), s.Improved)
+	}
 	if s.Pending > 0 {
 		fmt.Fprintf(w, "  %s %d pending (no baseline)\n", f.colorize("?", colorCyan), s.Pending)
 	}
@@ -312,6 +319,31 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 				}
 			}
 		}
+	}
+
+	// Improvements (tests that improved significantly)
+	var improved []TestResult
+	for _, r := range f.results {
+		if r.Improved {
+			improved = append(improved, r)
+		}
+	}
+	if len(improved) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, f.colorize("IMPROVED:", colorGreen))
+		for _, r := range improved {
+			if r.AnalyzeMode {
+				fmt.Fprintf(w, "  %s (buffers: %d < %d, -%.1f%%)\n",
+					strings.TrimSuffix(r.Name, fmt.Sprintf(" (%d <= %d * %.0f%%)", r.ActualBuffers, r.BaselineBuffers, 100+r.Threshold)),
+					r.ActualBuffers, r.BaselineBuffers, r.ImprovementPercent)
+			} else {
+				fmt.Fprintf(w, "  %s (cost: %.2f < %.2f, -%.1f%%)\n",
+					strings.TrimSuffix(r.Name, fmt.Sprintf(" (%.2f <= %.2f * %.0f%%)", r.ActualCost, r.ExpectedCost, 100+r.Threshold)),
+					r.ActualCost, r.ExpectedCost, r.ImprovementPercent)
+			}
+		}
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "  Consider updating baselines: regresql baseline")
 	}
 
 	// Warnings (passed tests with plan warnings)

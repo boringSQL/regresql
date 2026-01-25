@@ -34,6 +34,10 @@ type (
 		BaselineBuffers int64
 		BufferIncrease  float64
 
+		// Improvement detection
+		Improved            bool
+		ImprovementPercent  float64
+
 		// Diagnostics
 		QueryFile    string
 		BindingsFile string
@@ -47,6 +51,7 @@ type (
 		Failed    int
 		Skipped   int
 		Pending   int // queries without expected file
+		Improved  int // queries with significant improvement
 		Duration  float64
 		Results   []TestResult
 		StartTime time.Time
@@ -93,6 +98,10 @@ func (s *TestSummary) AddResult(r TestResult) {
 		s.Skipped++
 	case "pending":
 		s.Pending++
+	}
+
+	if r.Improved {
+		s.Improved++
 	}
 }
 
