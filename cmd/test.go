@@ -20,7 +20,8 @@ var (
 	testNoColor       bool
 	testFullDiff      bool
 	testNoDiff        bool
-	testSnapshot      string
+	testSnapshot  string
+	testStatsFile string
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -43,6 +44,7 @@ var (
 				FullDiff:      testFullDiff,
 				NoDiff:        testNoDiff,
 				Snapshot:      testSnapshot,
+				StatsFile:     testStatsFile,
 			}
 			regresql.Test(opts)
 		},
@@ -64,4 +66,5 @@ func init() {
 	testCmd.Flags().BoolVar(&testFullDiff, "diff", false, "Show full diff output (no truncation)")
 	testCmd.Flags().BoolVar(&testNoDiff, "no-diff", false, "Suppress diff output entirely")
 	testCmd.Flags().StringVar(&testSnapshot, "snapshot", "", "Run tests against specific snapshot (tag or hash prefix)")
+	testCmd.Flags().StringVar(&testStatsFile, "stats", "", "Statistics file to apply instead of ANALYZE (requires PG18+)")
 }

@@ -296,9 +296,7 @@ func (s *Suite) initRegressHierarchy() error {
 	return nil
 }
 
-// createExpectedResults walks plan files and runs their queries,
-// storing the results in the expected files.
-// Each query runs in its own transaction that rolls back (unless commit is true).
+// createExpectedResults walks plan files and runs their queries, storing results in expected files
 func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) error {
 	db, err := sql.Open("pgx", pguri)
 	if err != nil {
@@ -440,11 +438,7 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// testQueries walks plan files and runs queries against them.
-// Stores results in the out directory for manual inspection if necessary.
-// Compares actual output to expected output and reports via the specified formatter.
-// Each query runs in its own transaction that rolls back (unless commit is true).
-// Returns the test summary for exit code determination.
+// testQueries walks plan files, executes queries, and compares results to expected output
 func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) (*TestSummary, error) {
 	db, err := sql.Open("pgx", pguri)
 	if err != nil {

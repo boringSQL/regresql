@@ -20,6 +20,7 @@ type (
 		FullDiff      bool
 		NoDiff        bool
 		Snapshot      string
+		StatsFile     string // External statistics file to apply instead of ANALYZE (PG18+)
 	}
 
 	UpdateOptions struct {
@@ -166,7 +167,7 @@ func Update(opts UpdateOptions) {
 		currentSnapshot = snapshotMeta.Current
 	}
 
-	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride)
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, "")
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
@@ -231,7 +232,8 @@ the regresql update command again to reset the expected output files.
 
 // maybeRestore restores the snapshot if configured and not skipped.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
-func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string) {
+// statsFiles, if provided, are applied instead of running ANALYZE (requires PG18+).
+func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, statsFile string) {
 	if noRestore {
 		return
 	}
@@ -268,15 +270,24 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 		os.Exit(1)
 	}
 
-	// Run ANALYZE to update statistics after restore
+	// Run ANALYZE or apply external stats after restore
 	db, err := OpenDB(cfg.PgUri)
 	if err != nil {
-		fmt.Printf("Warning: failed to connect for ANALYZE: %s\n", err)
+		fmt.Printf("Warning: failed to connect: %s\n", err)
 	} else {
-		if _, err := db.Exec("ANALYZE"); err != nil {
-			fmt.Printf("Warning: ANALYZE failed: %s\n", err)
+		defer db.Close()
+
+		if statsFile != "" {
+			if err := ApplyStatistics(db, statsFile); err != nil {
+				fmt.Printf("Error: %s\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Applied statistics: %s\n", statsFile)
+		} else {
+			if _, err := db.Exec("ANALYZE"); err != nil {
+				fmt.Printf("Warning: ANALYZE failed: %s\n", err)
+			}
 		}
-		db.Close()
 	}
 
 	fmt.Printf("Restored in %.1fs\n\n", time.Since(start).Seconds())
@@ -374,7 +385,7 @@ func Test(opts TestOptions) {
 		fmt.Printf("Using snapshot: %s (%s)\n", FormatSnapshotRef(info), info.Path)
 	}
 
-	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride)
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, opts.StatsFile)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
