@@ -249,12 +249,15 @@ func (p *Plan) Write() {
 }
 
 func getPlanPath(q *Query, targetdir string) string {
-	planPath := filepath.Join(targetdir, filepath.Base(q.Path))
-	planPath = strings.TrimSuffix(planPath, path.Ext(planPath))
-	planPath = planPath + "_" + q.Name
-	planPath = planPath + ".yaml"
+	basename := strings.TrimSuffix(filepath.Base(q.Path), path.Ext(q.Path))
 
-	return planPath
+	// If query name matches the file basename, don't duplicate it in the plan filename
+	if q.Name == basename {
+		return filepath.Join(targetdir, basename+".yaml")
+	}
+
+	// Otherwise, append the query name (for multi-query files)
+	return filepath.Join(targetdir, basename+"_"+q.Name+".yaml")
 }
 
 func getResultSetPath(p *Plan, targetdir string, index int) string {

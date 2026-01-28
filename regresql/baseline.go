@@ -40,9 +40,15 @@ type (
 
 // GetBaselinePath returns the path where baseline JSON file should be stored
 func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
-	baselinePath := filepath.Join(baselineDir, filepath.Base(q.Path))
-	baselinePath = strings.TrimSuffix(baselinePath, filepath.Ext(baselinePath))
-	baselinePath = baselinePath + "_" + q.Name
+	basename := strings.TrimSuffix(filepath.Base(q.Path), filepath.Ext(q.Path))
+
+	// If query name matches file basename, don't duplicate it
+	var baselinePath string
+	if q.Name == basename {
+		baselinePath = filepath.Join(baselineDir, basename)
+	} else {
+		baselinePath = filepath.Join(baselineDir, basename+"_"+q.Name)
+	}
 
 	if bindingName != "" {
 		baselinePath = baselinePath + "." + bindingName

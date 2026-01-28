@@ -92,7 +92,9 @@ func loadPlannedQuery(root, planPath string) (*PlannedQuery, error) {
 }
 
 // Reverse-engineer SQL file and query name from plan filename
-// Plan format: <sqlbase>_<queryname>.yaml -> ("sqlbase.sql", "queryname")
+// Plan formats:
+//   - <sqlbase>_<queryname>.yaml -> ("sqlbase.sql", "queryname") for multi-query files
+//   - <sqlbase>.yaml -> ("sqlbase.sql", "sqlbase") when query name matches file basename
 func findSQLFileAndQuery(sqlDir, planBase string) (string, string, error) {
 	entries, err := os.ReadDir(sqlDir)
 	if err != nil {
@@ -105,8 +107,14 @@ func findSQLFileAndQuery(sqlDir, planBase string) (string, string, error) {
 		}
 
 		sqlBase := strings.TrimSuffix(entry.Name(), ".sql")
-		prefix := sqlBase + "_"
 
+		// Check for exact match (query name == file basename)
+		if planBase == sqlBase {
+			return entry.Name(), sqlBase, nil
+		}
+
+		// Check for prefix match (multi-query files: sqlbase_queryname)
+		prefix := sqlBase + "_"
 		if strings.HasPrefix(planBase, prefix) {
 			queryName := strings.TrimPrefix(planBase, prefix)
 			if queryName != "" {

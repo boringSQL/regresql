@@ -192,10 +192,16 @@ func AddQueries(opts AddOptions) error {
 		return fmt.Errorf("no SQL files found matching the specified paths")
 	}
 
+	// Make root absolute for filepath.Rel to work with absolute sqlFile paths
+	absRoot, err := filepath.Abs(opts.Root)
+	if err != nil {
+		return fmt.Errorf("failed to resolve root path: %w", err)
+	}
+
 	var addedCount, skippedCount int
 
 	for _, sqlFile := range sqlFiles {
-		relPath, _ := filepath.Rel(opts.Root, sqlFile)
+		relPath, _ := filepath.Rel(absRoot, sqlFile)
 		folderDir := filepath.Dir(relPath)
 		planDir := filepath.Join(suite.PlanDir, folderDir)
 
@@ -434,11 +440,19 @@ func expandPaths(root string, paths []string, suite *Suite) ([]string, error) {
 // getResultSetPathPattern returns a glob pattern for expected result files
 func getResultSetPathPattern(q *Query, expectedDir string) string {
 	basename := strings.TrimSuffix(filepath.Base(q.Path), filepath.Ext(q.Path))
+	// If query name matches file basename, don't duplicate it
+	if q.Name == basename {
+		return filepath.Join(expectedDir, basename+"*.json")
+	}
 	return filepath.Join(expectedDir, basename+"_"+q.Name+"*.json")
 }
 
 // getBaselinePathPattern returns a glob pattern for baseline files
 func getBaselinePathPattern(q *Query, baselineDir string) string {
 	basename := strings.TrimSuffix(filepath.Base(q.Path), filepath.Ext(q.Path))
+	// If query name matches file basename, don't duplicate it
+	if q.Name == basename {
+		return filepath.Join(baselineDir, basename+"*.json")
+	}
 	return filepath.Join(baselineDir, basename+"_"+q.Name+"*.json")
 }
