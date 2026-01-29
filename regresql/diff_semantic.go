@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"math"
 	"reflect"
@@ -170,6 +171,32 @@ func valuesEqual(a, b any, floatTolerance float64) bool {
 		return true
 	}
 	if a == nil || b == nil {
+		return false
+	}
+
+	// Handle []byte (JSONB columns)
+	// JSON marshal encodes []byte as base64
+	// Query returns raw []byte; decode base64 for comparison
+	if aBytes, ok := a.([]byte); ok {
+		switch bVal := b.(type) {
+		case []byte:
+			return string(aBytes) == string(bVal)
+		case string:
+			// b is likely base64-encoded (from JSON), decode and compare
+			if decoded, err := base64.StdEncoding.DecodeString(bVal); err == nil {
+				return string(aBytes) == string(decoded)
+			}
+			return string(aBytes) == bVal
+		}
+		return false
+	}
+	if bBytes, ok := b.([]byte); ok {
+		if aStr, ok := a.(string); ok {
+			if decoded, err := base64.StdEncoding.DecodeString(aStr); err == nil {
+				return string(decoded) == string(bBytes)
+			}
+			return aStr == string(bBytes)
+		}
 		return false
 	}
 

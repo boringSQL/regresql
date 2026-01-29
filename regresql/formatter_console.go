@@ -258,6 +258,8 @@ func formatValue(v any) string {
 	switch val := v.(type) {
 	case string:
 		return fmt.Sprintf(`"%s"`, val)
+	case []byte:
+		return fmt.Sprintf(`"%s"`, string(val))
 	case float64:
 		if val == float64(int64(val)) {
 			return fmt.Sprintf("%.0f", val)
