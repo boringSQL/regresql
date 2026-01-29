@@ -23,7 +23,6 @@ const (
 	MultipleSeqScans      WarningType = "multiple_sequential_scans"
 	MultipleSorts         WarningType = "multiple_sorts"
 	NestedLoopWithSeqScan WarningType = "nested_loop_with_seqscan"
-	NoIndexesUsed         WarningType = "no_indexes_used"
 )
 
 func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredTables []string) []PlanWarning {
@@ -72,16 +71,6 @@ func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredT
 			Message:    "Nested loop join with sequential scan detected",
 			Suggestion: "Add index on join column to avoid repeated sequential scans",
 			Details:    "Nested loops with seq scans can be very slow; the inner table is scanned repeatedly",
-		})
-	}
-
-	if len(sig.Relations) > 0 && len(sig.IndexesUsed) == 0 {
-		warnings = append(warnings, PlanWarning{
-			Type:       NoIndexesUsed,
-			Severity:   "info",
-			Message:    "No indexes used in query execution",
-			Suggestion: "Review query and consider adding indexes on filtered, joined, or ordered columns",
-			Details:    fmt.Sprintf("Query accesses %d table(s) but uses no indexes", len(sig.Relations)),
 		})
 	}
 
