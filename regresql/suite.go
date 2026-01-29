@@ -604,11 +604,7 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 func ensureDir(dir string) error {
 	stat, err := os.Stat(dir)
 	if err != nil || !stat.IsDir() {
-		fmt.Printf("Creating directory '%s'\n", dir)
-
-		err := os.MkdirAll(dir, 0755)
-
-		if err != nil {
+		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
 		}
 	}
