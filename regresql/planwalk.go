@@ -101,6 +101,7 @@ func findSQLFileAndQuery(sqlDir, planBase string) (string, string, error) {
 		return "", "", fmt.Errorf("cannot read SQL directory %s: %w", sqlDir, err)
 	}
 
+	// First pass: check for exact match (higher priority)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
@@ -112,8 +113,16 @@ func findSQLFileAndQuery(sqlDir, planBase string) (string, string, error) {
 		if planBase == sqlBase {
 			return entry.Name(), sqlBase, nil
 		}
+	}
 
-		// Check for prefix match (multi-query files: sqlbase_queryname)
+	// Second pass: check for prefix match (multi-query files: sqlbase_queryname)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+
+		sqlBase := strings.TrimSuffix(entry.Name(), ".sql")
+
 		prefix := sqlBase + "_"
 		if strings.HasPrefix(planBase, prefix) {
 			queryName := strings.TrimPrefix(planBase, prefix)
