@@ -51,6 +51,11 @@ func (fm *FixtureManager) registerBuiltinGenerators() error {
 		NewBoolGenerator(),
 		NewRangeGenerator(),
 		NewBcryptHashGenerator(),
+		NewWeightedGenerator(),
+		NewHistogramGenerator(),
+		NewNullGenerator(),
+		NewConstantGenerator(),
+		NewCountryCodeGenerator(),
 	}
 
 	for _, gen := range basicGens {
@@ -462,6 +467,12 @@ func (fm *FixtureManager) generateAndInsertBatch(genSpec GenerateSpec, tableInfo
 	}
 
 	if _, err := fm.tx.Exec(finalQuery, values...); err != nil {
+		// Include column info in error message for debugging
+		colCount := len(columns)
+		if colCount > 0 {
+			// Find which value index caused the error by checking error message
+			return fmt.Errorf("insert failed (columns: %v): %w", columns, err)
+		}
 		return err
 	}
 

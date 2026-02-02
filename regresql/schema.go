@@ -161,6 +161,7 @@ func getColumns(db *sql.DB, schemaName, tableName string) (map[string]*ColumnInf
 		SELECT
 			column_name,
 			data_type,
+			udt_name,
 			is_nullable,
 			column_default,
 			character_maximum_length
@@ -181,18 +182,25 @@ func getColumns(db *sql.DB, schemaName, tableName string) (map[string]*ColumnInf
 		var (
 			columnName    string
 			dataType      string
+			udtName       string
 			isNullable    string
 			columnDefault *string
 			maxLength     *int64
 		)
 
-		if err := rows.Scan(&columnName, &dataType, &isNullable, &columnDefault, &maxLength); err != nil {
+		if err := rows.Scan(&columnName, &dataType, &udtName, &isNullable, &columnDefault, &maxLength); err != nil {
 			return nil, err
+		}
+
+		// Use udt_name for USER-DEFINED types (e.g., hstore, custom enums)
+		colType := dataType
+		if dataType == "USER-DEFINED" && udtName != "" {
+			colType = udtName
 		}
 
 		col := &ColumnInfo{
 			Name:       columnName,
-			Type:       dataType,
+			Type:       colType,
 			IsNullable: isNullable == "YES",
 			Default:    columnDefault,
 		}

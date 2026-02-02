@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/boringsql/regresql/regresql"
 	"github.com/spf13/cobra"
@@ -49,8 +50,34 @@ var (
 		RunE:  runFixturesDeps,
 	}
 
-	fixturesCwd string
-	applyForce  bool
+	fixturesScaffoldCmd = &cobra.Command{
+		Use:   "scaffold",
+		Short: "Generate fixture from database schema and statistics",
+		Long: `Generate a complete fixture definition from PostgreSQL metadata.
+
+Queries pg_stats for column distributions and pg_constraint for relationships,
+then generates a fixture YAML with appropriate generators.
+
+Examples:
+  # Scaffold fixtures for specific tables
+  regresql fixtures scaffold --connection "$DB_URL" --tables users,orders
+
+  # Scaffold with custom counts
+  regresql fixtures scaffold --connection "$DB_URL" --tables users --counts users=500
+
+  # Dry run (preview without writing)
+  regresql fixtures scaffold --connection "$DB_URL" --tables users --dry-run`,
+		RunE: runFixturesScaffold,
+	}
+
+	fixturesCwd       string
+	applyForce        bool
+	scaffoldConn      string
+	scaffoldTables    string
+	scaffoldSchema    string
+	scaffoldOutput    string
+	scaffoldCounts    string
+	scaffoldDryRun    bool
 )
 
 func init() {
@@ -60,9 +87,20 @@ func init() {
 	fixturesCmd.AddCommand(fixturesShowCmd)
 	fixturesCmd.AddCommand(fixturesApplyCmd)
 	fixturesCmd.AddCommand(fixturesDepsCmd)
+	fixturesCmd.AddCommand(fixturesScaffoldCmd)
 
 	fixturesCmd.PersistentFlags().StringVarP(&fixturesCwd, "cwd", "C", ".", "Change to Directory")
 	fixturesApplyCmd.Flags().BoolVar(&applyForce, "force", false, "Truncate tables before applying fixture")
+
+	// Scaffold flags
+	fixturesScaffoldCmd.Flags().StringVar(&scaffoldConn, "connection", "", "PostgreSQL connection string (required)")
+	fixturesScaffoldCmd.Flags().StringVar(&scaffoldTables, "tables", "", "Comma-separated list of tables to scaffold (required)")
+	fixturesScaffoldCmd.Flags().StringVar(&scaffoldSchema, "schema", "public", "Schema name for unqualified tables")
+	fixturesScaffoldCmd.Flags().StringVar(&scaffoldOutput, "output", "", "Output file path (default: regresql/fixtures/scaffold.yaml)")
+	fixturesScaffoldCmd.Flags().StringVar(&scaffoldCounts, "counts", "", "Custom row counts (e.g., users=100,orders=500)")
+	fixturesScaffoldCmd.Flags().BoolVar(&scaffoldDryRun, "dry-run", false, "Preview generated YAML without writing")
+	fixturesScaffoldCmd.MarkFlagRequired("connection")
+	fixturesScaffoldCmd.MarkFlagRequired("tables")
 }
 
 func runFixturesList(cmd *cobra.Command, args []string) error {
@@ -436,4 +474,152 @@ func joinTables(tables []string) string {
 		result += ", " + tables[i]
 	}
 	return result
+}
+
+func runFixturesScaffold(cmd *cobra.Command, args []string) error {
+	// Parse tables
+	tables := parseCommaSeparated(scaffoldTables)
+	if len(tables) == 0 {
+		return fmt.Errorf("--tables is required")
+	}
+
+	// Parse counts
+	counts := make(map[string]int)
+	if scaffoldCounts != "" {
+		var err error
+		counts, err = parseCounts(scaffoldCounts)
+		if err != nil {
+			return fmt.Errorf("invalid --counts: %w", err)
+		}
+	}
+
+	// Connect to database
+	db, err := regresql.OpenDB(scaffoldConn)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer db.Close()
+
+	// Create scaffolder
+	options := &regresql.ScaffoldOptions{
+		Connection: scaffoldConn,
+		Tables:     tables,
+		Schema:     scaffoldSchema,
+		Output:     scaffoldOutput,
+		Counts:     counts,
+		DryRun:     scaffoldDryRun,
+	}
+
+	scaffolder := regresql.NewScaffolder(db, options)
+	result, err := scaffolder.Scaffold()
+	if err != nil {
+		return fmt.Errorf("scaffold failed: %w", err)
+	}
+
+	// Print warnings
+	for _, w := range result.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
+
+	// Dry run - just print
+	if scaffoldDryRun {
+		fmt.Println(result.YAML)
+		return nil
+	}
+
+	// Determine output path
+	outputPath := scaffoldOutput
+	if outputPath == "" {
+		if err := checkDirectory(fixturesCwd); err != nil {
+			return err
+		}
+		outputPath = filepath.Join(fixturesCwd, "regresql", "fixtures", "scaffold.yaml")
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Write file
+	if err := os.WriteFile(outputPath, []byte(result.YAML), 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	fmt.Printf("Scaffold written to: %s\n", outputPath)
+	fmt.Printf("Tables scaffolded: %d\n", len(tables))
+
+	if len(result.Warnings) > 0 {
+		fmt.Printf("\nReview %d warning(s) above and fix TODOs in the generated file.\n", len(result.Warnings))
+	}
+
+	return nil
+}
+
+func parseCommaSeparated(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := make([]string, 0)
+	for _, p := range splitComma(s) {
+		p = trimSpace(p)
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return parts
+}
+
+func splitComma(s string) []string {
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ',' {
+			result = append(result, s[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
+}
+
+func parseCounts(s string) (map[string]int, error) {
+	result := make(map[string]int)
+	pairs := parseCommaSeparated(s)
+	for _, pair := range pairs {
+		eqIdx := -1
+		for i := 0; i < len(pair); i++ {
+			if pair[i] == '=' {
+				eqIdx = i
+				break
+			}
+		}
+		if eqIdx == -1 {
+			return nil, fmt.Errorf("invalid count format %q, expected table=count", pair)
+		}
+		table := pair[:eqIdx]
+		countStr := pair[eqIdx+1:]
+		var count int
+		if _, err := fmt.Sscanf(countStr, "%d", &count); err != nil {
+			return nil, fmt.Errorf("invalid count %q for table %q", countStr, table)
+		}
+		if count <= 0 {
+			return nil, fmt.Errorf("count must be positive for table %q", table)
+		}
+		result[table] = count
+	}
+	return result, nil
 }
