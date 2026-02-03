@@ -39,10 +39,8 @@ type (
 /*
 Init initializes a code repository for RegreSQL processing.
 
-That means creating the ./regresql/ directory, walking the code repository
-in search of *.sql files, and creating the associated empty plan files. If
-the plan files already exists, we simply skip them, thus allowing to run
-init again on an existing repository to create missing plan files.
+That means creating the ./regresql/ directory and the regress.yaml config.
+Use 'regresql add' to add individual queries to the test suite.
 */
 func Init(root string, pguri string) {
 	if err := TestConnectionString(pguri); err != nil {
@@ -55,26 +53,10 @@ func Init(root string, pguri string) {
 	suite.createRegressDir()
 	suite.setupConfig(pguri)
 
-	if err := suite.initRegressHierarchy(); err != nil {
-		fmt.Print(err.Error())
-		os.Exit(11)
-	}
-
 	fmt.Println("")
-	fmt.Println("Added the following queries to the RegreSQL Test Suite:")
-	suite.Println()
-
+	fmt.Println("Initialized RegreSQL in ./regresql/")
 	fmt.Println("")
-	fmt.Printf(`Empty test plans have been created in '%s'.
-Edit the plans to add query binding values, then run
-
-  regresql update
-
-to create the expected regression files for your test plans. Plans are
-simple YAML files containing multiple set of query parameter bindings. The
-default plan files contain a single entry named "1", you can rename the test
-case and add a value for each parameter.`,
-		suite.PlanDir)
+	fmt.Println(`Use 'regresql add <path/to/query.sql>' to add queries to the test suite.`)
 }
 
 // PlanQueries create query plans for queries found in the root repository
