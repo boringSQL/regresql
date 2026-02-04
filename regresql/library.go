@@ -152,7 +152,11 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 		currentSig := ExtractPlanSignatureFromNode(&explainPlan.Plan)
 		opts := p.Query.GetRegressQLOptions()
 		ignoredTables := GetIgnoredSeqScanTables()
-		result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, ignoredTables)
+		costInfo := PlanCostInfo{
+			TotalCost:    explainPlan.Plan.TotalCost,
+			TotalBuffers: explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks,
+		}
+		result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, ignoredTables, costInfo)
 
 		results[i] = result
 	}

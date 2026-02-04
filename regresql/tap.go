@@ -295,7 +295,11 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	}
 
 	opts := p.Query.GetRegressQLOptions()
-	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables())
+	costInfo := PlanCostInfo{
+		TotalCost:    explainPlan.Plan.TotalCost,
+		TotalBuffers: explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks,
+	}
+	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), costInfo)
 
 	if useBufferComparison {
 		if isOk {

@@ -25,10 +25,28 @@ const (
 	NestedLoopWithSeqScan WarningType = "nested_loop_with_seqscan"
 )
 
-func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredTables []string) []PlanWarning {
+// Queries below these thresholds skip scan-related warnings.
+// Seq scan on tiny tables is the correct plan choice.
+const (
+	lowCostThreshold   = 10.0
+	lowBufferThreshold int64 = 10 // shared buffers (8KB pages)
+)
+
+type PlanCostInfo struct {
+	TotalCost    float64
+	TotalBuffers int64 // shared_hit + shared_read; -1 if unavailable
+}
+
+func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredTables []string, cost PlanCostInfo) []PlanWarning {
 	var warnings []PlanWarning
 
-	if sig.HasSeqScan && !opts.NoSeqScanWarn {
+	// Skip scan/join warnings for trivially cheap queries — seq scan on
+	// small tables is optimal and warning about it is noise.
+	lowCost := cost.TotalCost > 0 && cost.TotalCost < lowCostThreshold
+	lowBuffers := cost.TotalBuffers >= 0 && cost.TotalBuffers < lowBufferThreshold
+	trivial := lowCost || lowBuffers
+
+	if sig.HasSeqScan && !opts.NoSeqScanWarn && !trivial {
 		seqScanTables := filterIgnoredTables(findSeqScanTables(sig.Relations), ignoredTables)
 
 		switch len(seqScanTables) {
@@ -64,7 +82,7 @@ func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredT
 		})
 	}
 
-	if hasNestedLoopWithSeqScan(sig) {
+	if hasNestedLoopWithSeqScan(sig) && !trivial {
 		warnings = append(warnings, PlanWarning{
 			Type:       NestedLoopWithSeqScan,
 			Severity:   "warning",
