@@ -23,6 +23,7 @@ type (
 		Fixtures           []string
 		Verbose            bool
 		IgnoreSchemaErrors bool
+		DisableTriggers    bool
 	}
 
 	snapshotBuildResult struct {
@@ -137,12 +138,27 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 
 	var fixturesUsed []string
 	if len(opts.Fixtures) > 0 {
+		if opts.DisableTriggers {
+			if opts.Verbose {
+				fmt.Println("Disabling triggers (session_replication_role = replica)...")
+			}
+			if _, err := db.Exec("SET session_replication_role = 'replica'"); err != nil {
+				return nil, fmt.Errorf("failed to disable triggers: %w", err)
+			}
+		}
+
 		if opts.Verbose {
 			fmt.Printf("Applying %d fixture(s)...\n", len(opts.Fixtures))
 		}
 		fixturesUsed, err = applyFixtures(db, root, opts.Fixtures, opts.Verbose)
 		if err != nil {
 			return nil, err
+		}
+
+		if opts.DisableTriggers {
+			if _, err := db.Exec("SET session_replication_role = 'origin'"); err != nil {
+				return nil, fmt.Errorf("failed to re-enable triggers: %w", err)
+			}
 		}
 	}
 

@@ -25,6 +25,7 @@ var (
 	snapshotBuildMigrations        string
 	snapshotBuildVerbose           bool
 	snapshotBuildIgnoreSchemaErrs  bool
+	snapshotBuildDisableTriggers   bool
 	snapshotInfoCompare     bool
 	snapshotTagNote         string
 	snapshotTagArchive      string
@@ -209,6 +210,7 @@ func init() {
 	snapshotBuildCmd.Flags().StringSliceVar(&snapshotBuildFixtures, "fixtures", nil, "Fixture names to apply")
 	snapshotBuildCmd.Flags().BoolVarP(&snapshotBuildVerbose, "verbose", "v", false, "Print detailed progress")
 	snapshotBuildCmd.Flags().BoolVar(&snapshotBuildIgnoreSchemaErrs, "ignore-schema-errors", false, "Continue on schema errors (e.g., missing roles)")
+	snapshotBuildCmd.Flags().BoolVar(&snapshotBuildDisableTriggers, "disable-triggers", false, "Disable user triggers during fixture application (uses replica mode)")
 
 	snapshotInfoCmd.Flags().BoolVar(&snapshotInfoCompare, "compare", false, "Compare stored settings with current database")
 
@@ -558,6 +560,7 @@ func runSnapshotBuild() error {
 		Fixtures:           fixtures,
 		Verbose:            snapshotBuildVerbose,
 		IgnoreSchemaErrors: snapshotBuildIgnoreSchemaErrs,
+		DisableTriggers:    snapshotBuildDisableTriggers,
 	})
 	if err != nil {
 		return err
