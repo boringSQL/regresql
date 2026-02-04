@@ -22,6 +22,7 @@ var (
 	testNoDiff        bool
 	testSnapshot  string
 	testStatsFile string
+	testVerbose   bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -45,6 +46,7 @@ var (
 				NoDiff:        testNoDiff,
 				Snapshot:      testSnapshot,
 				StatsFile:     testStatsFile,
+				Verbose:       testVerbose,
 			}
 			regresql.Test(opts)
 		},
@@ -67,4 +69,5 @@ func init() {
 	testCmd.Flags().BoolVar(&testNoDiff, "no-diff", false, "Suppress diff output entirely")
 	testCmd.Flags().StringVar(&testSnapshot, "snapshot", "", "Run tests against specific snapshot (tag or hash prefix)")
 	testCmd.Flags().StringVar(&testStatsFile, "stats", "", "Statistics file to apply instead of ANALYZE (requires PG18+)")
+	testCmd.Flags().BoolVarP(&testVerbose, "verbose", "v", false, "Show each test with name, type, and duration")
 }

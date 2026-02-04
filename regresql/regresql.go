@@ -21,6 +21,7 @@ type (
 		NoDiff        bool
 		Snapshot      string
 		StatsFile     string // External statistics file to apply instead of ANALYZE (PG18+)
+		Verbose       bool
 	}
 
 	UpdateOptions struct {
@@ -415,6 +416,7 @@ func Test(opts TestOptions) {
 			NoColor:  opts.NoColor,
 			FullDiff: opts.FullDiff,
 			NoDiff:   opts.NoDiff,
+			Verbose:  opts.Verbose,
 		})
 	}
 

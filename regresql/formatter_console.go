@@ -14,6 +14,7 @@ type ConsoleOptions struct {
 	NoColor  bool
 	FullDiff bool
 	NoDiff   bool
+	Verbose  bool
 }
 
 type ConsoleFormatter struct {
@@ -68,12 +69,20 @@ func (f *ConsoleFormatter) colorize(text, color string) string {
 
 func (f *ConsoleFormatter) Start(w io.Writer) error {
 	fmt.Fprintln(w, "\nRunning regression tests...")
+	if f.options.Verbose {
+		fmt.Fprintln(w)
+	}
 	f.results = make([]TestResult, 0)
 	return nil
 }
 
 func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 	f.results = append(f.results, r)
+
+	if f.options.Verbose {
+		f.printVerboseResult(r, w)
+		return nil
+	}
 
 	// Show progress indicator with color
 	switch r.Status {
@@ -93,6 +102,44 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 		fmt.Fprint(w, f.colorize("S", colorDim))
 	}
 	return nil
+}
+
+func (f *ConsoleFormatter) printVerboseResult(r TestResult, w io.Writer) {
+	var statusIcon, statusColor string
+	switch r.Status {
+	case "passed":
+		if r.Improved {
+			statusIcon = "↑ IMPROVED"
+			statusColor = colorGreen
+		} else {
+			statusIcon = "✓ PASS"
+			statusColor = colorGreen
+		}
+	case "failed":
+		statusIcon = "✗ FAIL"
+		statusColor = colorRed
+	case "pending":
+		statusIcon = "? PENDING"
+		statusColor = colorCyan
+	case "warning":
+		statusIcon = "⚠ WARNING"
+		statusColor = colorYellow
+	case "skipped":
+		statusIcon = "- SKIP"
+		statusColor = colorDim
+	}
+
+	testType := r.Type
+	if testType == "" {
+		testType = "output"
+	}
+
+	fmt.Fprintf(w, "  %s  %-7s  %s  %s\n",
+		f.colorize(fmt.Sprintf("%-11s", statusIcon), statusColor),
+		testType,
+		fmt.Sprintf("%.3fs", r.Duration),
+		r.Name,
+	)
 }
 
 func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
