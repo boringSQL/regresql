@@ -1,7 +1,6 @@
 package regresql
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -10,14 +9,12 @@ import (
 
 type (
 	ValidationResult struct {
-		ConfigFile       string
-		ConfigValid      bool
-		ConfigError      string
-		PlanIssues       []ValidationIssue
-		FixtureIssues    []ValidationIssue
-		SnapshotIssues   []ValidationIssue
-		FixtureCount     int
-		Passed           bool
+		ConfigFile     string
+		ConfigValid    bool
+		ConfigError    string
+		PlanIssues     []ValidationIssue
+		SnapshotIssues []ValidationIssue
+		Passed         bool
 	}
 
 	ValidationIssue struct {
@@ -44,13 +41,6 @@ func ValidateForUpgrade(root string) ValidationResult {
 
 	result.PlanIssues = scanPlanFilesForDeprecated(root)
 	if len(result.PlanIssues) > 0 {
-		result.Passed = false
-	}
-
-	fixtureIssues, fixtureCount := validateFixtureFiles(root)
-	result.FixtureIssues = fixtureIssues
-	result.FixtureCount = fixtureCount
-	if len(result.FixtureIssues) > 0 {
 		result.Passed = false
 	}
 
@@ -113,53 +103,6 @@ func scanPlanFilesForDeprecated(root string) []ValidationIssue {
 	return issues
 }
 
-func validateFixtureFiles(root string) ([]ValidationIssue, int) {
-	var issues []ValidationIssue
-	count := 0
-
-	fixtureDir := filepath.Join(root, "regresql", "fixtures")
-	if _, err := os.Stat(fixtureDir); os.IsNotExist(err) {
-		return issues, count
-	}
-
-	fixtureFiles, err := filepath.Glob(filepath.Join(fixtureDir, "*.yaml"))
-	if err != nil {
-		return issues, count
-	}
-
-	for _, ffile := range fixtureFiles {
-		count++
-		data, err := os.ReadFile(ffile)
-		if err != nil {
-			relPath, _ := filepath.Rel(root, ffile)
-			issues = append(issues, ValidationIssue{
-				File:    relPath,
-				Message: fmt.Sprintf("cannot read: %v", err),
-			})
-			continue
-		}
-
-		var fixture Fixture
-		if err := yaml.Unmarshal(data, &fixture); err != nil {
-			relPath, _ := filepath.Rel(root, ffile)
-			issues = append(issues, ValidationIssue{
-				File:    relPath,
-				Message: fmt.Sprintf("invalid YAML: %v", err),
-			})
-			continue
-		}
-
-		if err := fixture.Validate(); err != nil {
-			relPath, _ := filepath.Rel(root, ffile)
-			issues = append(issues, ValidationIssue{
-				File:    relPath,
-				Message: err.Error(),
-			})
-		}
-	}
-
-	return issues, count
-}
 
 func validateSnapshotPaths(root string, snap *SnapshotConfig) []ValidationIssue {
 	var issues []ValidationIssue

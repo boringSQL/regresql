@@ -49,7 +49,6 @@ func runValidateConfig(cmd *cobra.Command, args []string) {
 	}
 
 	printPlanIssues(result.PlanIssues)
-	printFixtureIssues(result.FixtureIssues, result.FixtureCount)
 	printSnapshotIssues(result.SnapshotIssues)
 
 	fmt.Println()
@@ -82,21 +81,6 @@ func printPlanIssues(issues []regresql.ValidationIssue) {
 		fmt.Println("✗ Deprecated 'cleanup:' found in plan files:")
 		for _, issue := range cleanupIssues {
 			fmt.Printf("  - %s\n", issue.File)
-		}
-	}
-}
-
-func printFixtureIssues(issues []regresql.ValidationIssue, count int) {
-	if len(issues) == 0 {
-		if count > 0 {
-			fmt.Printf("✓ Fixture files valid (%d files)\n", count)
-		} else {
-			fmt.Println("✓ No fixture files to validate")
-		}
-	} else {
-		fmt.Println("✗ Fixture file issues:")
-		for _, issue := range issues {
-			fmt.Printf("  - %s: %s\n", issue.File, issue.Message)
 		}
 	}
 }
