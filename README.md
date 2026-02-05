@@ -175,9 +175,6 @@ pguri: postgres://localhost/mydb
 snapshot:
   schema: db/schema.sql
   migrations: db/migrations/
-  fixtures:
-    - users
-    - products
 ```
 
 ```bash
@@ -200,41 +197,11 @@ regresql snapshot list
 regresql diff --from v1.0 --to current
 ```
 
-## Test Fixtures
+## Fixturize
 
-Fixtures define test data declaratively:
+RegreSQL is fully integrated with [fixturize](https://github.com/boringSQL/fixturize), providing ability to capture consistent data sub-graphs from a PostgreSQL database and apply them for snapshot building.
 
-```yaml
-# regresql/fixtures/users.yaml
-fixture: users
-data:
-  - table: users
-    rows:
-      - id: 1
-        email: test@example.com
-        name: Test User
-```
-
-### Generated Data
-
-```yaml
-fixture: large_dataset
-generate:
-  - table: customers
-    count: 1000
-    columns:
-      id: { generator: sequence, start: 1 }
-      email: { generator: email, domain: example.com }
-      name: { generator: name, type: full }
-```
-
-Generators: `sequence`, `int`, `decimal`, `string`, `email`, `name`, `uuid`, `date_between`, and more.
-
-```bash
-regresql fixtures list
-regresql fixtures validate
-regresql fixtures apply users    # for debugging
-```
+For more help check `fixturize` repository or try `regresql fixturize`.
 
 ## Migration Testing
 
