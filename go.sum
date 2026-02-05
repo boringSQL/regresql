@@ -1,3 +1,5 @@
+github.com/boringsql/fixturize v0.1.0 h1:dsPsDNctdN6Qaf2QGuZtdHF2DdC4BJ1CnI1m3aHn50k=
+github.com/boringsql/fixturize v0.1.0/go.mod h1:/eOsOUfLkkY3fLRFGrEUMkehAF1dZwS7i9PMpNzZ86s=
 github.com/boringsql/queries v1.6.1 h1:J/vImXYdisC+tlQNYt45O6CG6RX/MiIDR8j5/k6rQGk=
 github.com/boringsql/queries v1.6.1/go.mod h1:zRQzwzZZ8e9o8PZWTKMxPqxTTg8hGvvinwitEBd0FCQ=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=

@@ -3,7 +3,7 @@ module github.com/boringsql/regresql
 go 1.25.6
 
 require (
-	github.com/boringsql/fixturize v0.0.0
+	github.com/boringsql/fixturize v0.1.0
 	github.com/boringsql/queries v1.6.1
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/mndrix/tap-go v0.0.0-20171203230836-629fa407e90b
@@ -12,8 +12,6 @@ require (
 	golang.org/x/term v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/boringsql/fixturize => ../fixturize
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
