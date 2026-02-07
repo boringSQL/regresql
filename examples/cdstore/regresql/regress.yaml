@@ -1,0 +1,10 @@
+pguri: postgres://localhost/cdstore?sslmode=disable
+root: .
+
+snapshot:
+  path: snapshots/default.dump
+  schema: db/schema.sql
+  fixtures:
+    - db/fixtures/01_base_data.sql
+    - db/fixtures/02_albums.sql
+    - db/fixtures/03_playlists.sql
