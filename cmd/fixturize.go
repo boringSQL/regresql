@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/boringsql/fixturize/fixturize"
+	"github.com/boringsql/regresql/regresql"
 	"github.com/spf13/cobra"
 )
 
@@ -42,9 +43,12 @@ Examples:
 		Long: `Apply a previously extracted JSON fixture to a PostgreSQL database.
 Inserts rows in FK-dependency order.
 
+If --connection is not provided, use pguri from regress.yaml.
+
 Examples:
-  regresql fixturize apply --connection "$TEST_DB" customer_12345.json
-  regresql fixturize apply --connection "$TEST_DB" --force customer_12345.json`,
+  regresql fixturize apply customer_12345.json
+  regresql fixturize apply --force customer_12345.json
+  regresql fixturize apply --connection "$OTHER_DB" customer_12345.json`,
 		Args: cobra.ExactArgs(1),
 		RunE: runFixturizeApply,
 	}
@@ -62,6 +66,7 @@ Examples:
 	fzExtractDryRun           bool
 
 	fzApplyConn            string
+	fzApplyCwd             string
 	fzApplyForce           bool
 	fzApplyDryRun          bool
 	fzApplyDisableTriggers bool
@@ -88,11 +93,11 @@ func init() {
 	fixturizeExtractCmd.MarkFlagRequired("root")
 
 	// Apply flags
-	fixturizeApplyCmd.Flags().StringVar(&fzApplyConn, "connection", "", "PostgreSQL connection string (required)")
+	fixturizeApplyCmd.Flags().StringVar(&fzApplyConn, "connection", "", "PostgreSQL connection string (defaults to pguri from regress.yaml)")
+	fixturizeApplyCmd.Flags().StringVarP(&fzApplyCwd, "cwd", "C", ".", "Change to directory")
 	fixturizeApplyCmd.Flags().BoolVar(&fzApplyForce, "force", false, "Truncate tables before applying fixture")
 	fixturizeApplyCmd.Flags().BoolVar(&fzApplyDryRun, "dry-run", false, "Show what would be done without making changes")
 	fixturizeApplyCmd.Flags().BoolVar(&fzApplyDisableTriggers, "disable-triggers", false, "Disable triggers during insert (uses replica mode)")
-	fixturizeApplyCmd.MarkFlagRequired("connection")
 }
 
 func runFixturizeExtract(cmd *cobra.Command, args []string) error {
@@ -155,15 +160,34 @@ func runFixturizeExtract(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func resolveApplyConnection() (string, error) {
+	if fzApplyConn != "" {
+		return fzApplyConn, nil
+	}
+	cfg, err := regresql.ReadConfig(fzApplyCwd)
+	if err != nil {
+		return "", fmt.Errorf("no --connection flag and cannot read config: %w", err)
+	}
+	if cfg.PgUri == "" {
+		return "", fmt.Errorf("no --connection flag and pguri is empty in regress.yaml")
+	}
+	return cfg.PgUri, nil
+}
+
 func runFixturizeApply(cmd *cobra.Command, args []string) error {
-	db, err := fixturize.OpenDB(fzApplyConn)
+	connStr, err := resolveApplyConnection()
+	if err != nil {
+		return err
+	}
+
+	db, err := fixturize.OpenDB(connStr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer db.Close()
 
 	options := &fixturize.ApplyOptions{
-		Connection:      fzApplyConn,
+		Connection:      connStr,
 		Fixture:         args[0],
 		Force:           fzApplyForce,
 		DryRun:          fzApplyDryRun,
