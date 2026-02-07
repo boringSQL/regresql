@@ -39,6 +39,7 @@ type (
 		MigrationCommand     string         `yaml:"migration_command,omitempty"`
 		MigrationCommandHash string         `yaml:"migration_command_hash,omitempty"`
 		FixturesUsed         []string       `yaml:"fixtures_used,omitempty"`
+		FixturizeUsed        []string       `yaml:"fixturize_used,omitempty"`
 		Server               *ServerContext `yaml:"server,omitempty"`
 	}
 

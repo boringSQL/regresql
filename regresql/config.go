@@ -43,6 +43,7 @@ type (
 		Migrations       string   `yaml:"migrations,omitempty"`
 		MigrationCommand string   `yaml:"migration_command,omitempty"`
 		Fixtures         []string `yaml:"fixtures,omitempty"`
+		Fixturize        []string `yaml:"fixturize,omitempty"`
 		RestoreDatabase  string   `yaml:"restore_database,omitempty"`
 		ValidateSettings string   `yaml:"validate_settings,omitempty"`
 	}

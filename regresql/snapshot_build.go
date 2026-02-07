@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/boringsql/fixturize/fixturize"
 )
 
 type (
@@ -21,6 +23,7 @@ type (
 		MigrationsDir      string
 		MigrationCommand   string
 		Fixtures           []string
+		Fixturize          []string
 		Verbose            bool
 		IgnoreSchemaErrors bool
 		DisableTriggers    bool
@@ -54,7 +57,7 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		}
 	}
 
-	if len(opts.Fixtures) == 0 && opts.SchemaPath == "" && opts.MigrationsDir == "" && opts.MigrationCommand == "" {
+	if len(opts.Fixtures) == 0 && len(opts.Fixturize) == 0 && opts.SchemaPath == "" && opts.MigrationsDir == "" && opts.MigrationCommand == "" {
 		return nil, fmt.Errorf("no schema, migrations, or fixtures specified for snapshot build")
 	}
 
@@ -162,6 +165,18 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		}
 	}
 
+	// apply fixturize JSON fixtures
+	var fixturizeUsed []string
+	if len(opts.Fixturize) > 0 {
+		if opts.Verbose {
+			fmt.Printf("Applying %d fixturize fixture(s)...\n", len(opts.Fixturize))
+		}
+		fixturizeUsed, err = applyFixturizeFiles(db, root, opts.Fixturize, opts.DisableTriggers, opts.Verbose)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Capture server context before snapshot
 	if opts.Verbose {
 		fmt.Printf("Capturing server context...\n")
@@ -200,6 +215,7 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 	info.MigrationCommand = opts.MigrationCommand
 	info.MigrationCommandHash = migrationCommandHash
 	info.FixturesUsed = fixturesUsed
+	info.FixturizeUsed = fixturizeUsed
 	info.Server = serverCtx
 
 	return &snapshotBuildResult{
@@ -281,6 +297,48 @@ func applySchemaFile(pguri, schemaPath string, ignoreErrors bool) error {
 
 func isSQLFixture(name string) bool {
 	return strings.HasSuffix(strings.ToLower(name), ".sql")
+}
+
+func GetSnapshotFixturize(cfg *SnapshotConfig) []string {
+	if cfg == nil {
+		return nil
+	}
+	return cfg.Fixturize
+}
+
+func applyFixturizeFiles(db *sql.DB, root string, files []string, disableTriggers, verbose bool) ([]string, error) {
+	var applied []string
+	for _, f := range files {
+		path := f
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		if verbose {
+			fmt.Printf("  Fixturize: %s\n", f)
+		}
+		opts := &fixturize.ApplyOptions{
+			Fixture:         path,
+			DisableTriggers: disableTriggers,
+		}
+		if _, err := fixturize.ApplyFixtureFile(db, opts); err != nil {
+			return nil, fmt.Errorf("fixturize %q: %w", f, err)
+		}
+		applied = append(applied, f)
+	}
+	return applied, nil
+}
+
+func FixturizeExist(root string, files []string) error {
+	for _, f := range files {
+		path := f
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		if err := checkFile(path); err != nil {
+			return fmt.Errorf("fixturize %q: %w", f, err)
+		}
+	}
+	return nil
 }
 
 func GetSnapshotFixtures(cfg *SnapshotConfig) []string {

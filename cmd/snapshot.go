@@ -508,13 +508,19 @@ func runSnapshotBuild() error {
 		fixtures = regresql.GetSnapshotFixtures(cfg.Snapshot)
 	}
 
-	// require at least schema, migrations, migration_command, or fixtures
-	if len(fixtures) == 0 && schemaPath == "" && migrationsDir == "" && migrationCommand == "" {
+	fixturize := regresql.GetSnapshotFixturize(cfg.Snapshot)
+
+	if len(fixtures) == 0 && len(fixturize) == 0 && schemaPath == "" && migrationsDir == "" && migrationCommand == "" {
 		return fmt.Errorf("no schema, migrations, or fixtures specified. Use flags or configure in regress.yaml")
 	}
 
 	if len(fixtures) > 0 {
 		if err := regresql.FixturesExist(snapshotCwd, fixtures); err != nil {
+			return err
+		}
+	}
+	if len(fixturize) > 0 {
+		if err := regresql.FixturizeExist(snapshotCwd, fixturize); err != nil {
 			return err
 		}
 	}
@@ -549,6 +555,9 @@ func runSnapshotBuild() error {
 	if len(fixtures) > 0 {
 		fmt.Printf("  Fixtures: %v\n", fixtures)
 	}
+	if len(fixturize) > 0 {
+		fmt.Printf("  Fixturize: %v\n", fixturize)
+	}
 	fmt.Println()
 
 	result, err := regresql.BuildSnapshot(cfg.PgUri, snapshotCwd, regresql.SnapshotBuildOptions{
@@ -558,6 +567,7 @@ func runSnapshotBuild() error {
 		MigrationsDir:      migrationsDir,
 		MigrationCommand:   migrationCommand,
 		Fixtures:           fixtures,
+		Fixturize:          fixturize,
 		Verbose:            snapshotBuildVerbose,
 		IgnoreSchemaErrors: snapshotBuildIgnoreSchemaErrs,
 		DisableTriggers:    snapshotBuildDisableTriggers,
@@ -586,6 +596,9 @@ func runSnapshotBuild() error {
 	}
 	if len(result.FixturesUsed) > 0 {
 		fmt.Printf("  Fixtures: %d applied\n", len(result.FixturesUsed))
+	}
+	if len(result.Info.FixturizeUsed) > 0 {
+		fmt.Printf("  Fixturize: %d applied\n", len(result.Info.FixturizeUsed))
 	}
 	if result.Info.Server != nil {
 		fmt.Printf("  Server:   PostgreSQL %d\n", result.Info.Server.MajorVersion())
@@ -645,6 +658,14 @@ func runSnapshotInfo() error {
 		fmt.Println()
 		fmt.Println("Fixtures used:")
 		for _, f := range info.FixturesUsed {
+			fmt.Printf("  - %s\n", f)
+		}
+	}
+
+	if len(info.FixturizeUsed) > 0 {
+		fmt.Println()
+		fmt.Println("Fixturize used:")
+		for _, f := range info.FixturizeUsed {
 			fmt.Printf("  - %s\n", f)
 		}
 	}
