@@ -191,14 +191,21 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 	return nil
 }
 
-func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
-	config, err := ReadConfig(root)
+type BaselineOptions struct {
+	Root      string
+	RunFilter string
+	Analyze   bool
+	Paths     []string
+}
+
+func BaselineQueries(opts BaselineOptions) {
+	config, err := ReadConfig(opts.Root)
 	if err != nil {
 		fmt.Printf("Error reading config: %s\n", err.Error())
 		os.Exit(3)
 	}
 	SetGlobalConfig(config)
-	useAnalyze := analyzeOverride || IsAnalyzeEnabled()
+	useAnalyze := opts.Analyze || IsAnalyzeEnabled()
 
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Printf("Error connecting to database: %s\n", err.Error())
@@ -212,7 +219,7 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	}
 	defer db.Close()
 
-	baselineDir := filepath.Join(root, "regresql", "baselines")
+	baselineDir := filepath.Join(opts.Root, "regresql", "baselines")
 
 	fmt.Printf("Creating baselines directory: %s\n", baselineDir)
 	if err := ensureDir(baselineDir); err != nil {
@@ -226,26 +233,30 @@ func BaselineQueries(root string, runFilter string, analyzeOverride bool) {
 	}
 	fmt.Printf("\nCreating baselines for queries (%s):\n", mode)
 
-	plannedQueries, err := WalkPlans(root)
+	plannedQueries, err := WalkPlans(opts.Root)
 	if err != nil {
 		fmt.Printf("Error walking plans: %s\n", err.Error())
 		os.Exit(11)
 	}
 
-	var runFilterMatch func(fileName, queryName string) bool
-	if runFilter == "" {
-		runFilterMatch = func(_, _ string) bool { return true }
-	} else {
-		runFilterMatch = func(fileName, queryName string) bool {
-			return strings.Contains(fileName, runFilter) || strings.Contains(queryName, runFilter)
-		}
+	// Build a Suite for path filtering
+	ignorePatterns := []string{}
+	cfg, cfgErr := ReadConfig(opts.Root)
+	if cfgErr == nil {
+		ignorePatterns = cfg.Ignore
 	}
+	suite := Walk(opts.Root, ignorePatterns)
+	suite.SetRunFilter(opts.RunFilter)
+	suite.SetPathFilters(opts.Paths)
 
 	baselineDirs := make(map[string]*lazyDir)
 
 	for _, pq := range plannedQueries {
 		fileName := filepath.Base(pq.SQLPath)
-		if !runFilterMatch(fileName, pq.Query.Name) {
+		if !suite.matchesRunFilter(fileName, pq.Query.Name) {
+			continue
+		}
+		if !suite.matchesPathFilter(pq.RelPath) {
 			continue
 		}
 

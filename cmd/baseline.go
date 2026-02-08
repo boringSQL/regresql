@@ -15,20 +15,32 @@ var (
 
 	// baselineCmd represents the baseline command
 	baselineCmd = &cobra.Command{
-		Use:   "baseline [flags]",
+		Use:   "baseline [path...] [flags]",
 		Short: "Creates baseline EXPLAIN analysis for queries",
-		Long: `Creates baseline EXPLAIN analysis for all queries in the suite.
-This command executes EXPLAIN for each query and stores the query plan
-metrics (costs, timing, rows) in JSON files under the baselines directory.
+		Long: `Creates baseline EXPLAIN analysis for queries in the suite.
+
+Without arguments, creates baselines for all queries. With path arguments,
+only creates baselines for queries matching those paths.
+
+Examples:
+  regresql baseline                         # All queries
+  regresql baseline orders/                 # Queries in orders/
+  regresql baseline orders/get_order.sql    # Specific query
 
 Use --analyze to create baselines with EXPLAIN (ANALYZE, BUFFERS) which
 captures actual buffer I/O counts for deterministic regression detection.`,
+		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(baselineCwd); err != nil {
 				fmt.Print(err.Error())
 				os.Exit(1)
 			}
-			regresql.BaselineQueries(baselineCwd, baselineRunFilter, baselineAnalyze)
+			regresql.BaselineQueries(regresql.BaselineOptions{
+				Root:      baselineCwd,
+				RunFilter: baselineRunFilter,
+				Analyze:   baselineAnalyze,
+				Paths:     args,
+			})
 		},
 	}
 )
