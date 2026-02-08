@@ -279,10 +279,15 @@ func RemoveQueries(opts RemoveOptions) error {
 		return fmt.Errorf("no SQL files found matching the specified paths")
 	}
 
+	absRoot, err := filepath.Abs(opts.Root)
+	if err != nil {
+		return fmt.Errorf("failed to resolve root path: %w", err)
+	}
+
 	var filesToDelete []string
 
 	for _, sqlFile := range sqlFiles {
-		relPath, _ := filepath.Rel(opts.Root, sqlFile)
+		relPath, _ := filepath.Rel(absRoot, sqlFile)
 		folderDir := filepath.Dir(relPath)
 		planDir := filepath.Join(suite.PlanDir, folderDir)
 		expectedDir := filepath.Join(suite.ExpectedDir, folderDir)
@@ -336,8 +341,7 @@ func RemoveQueries(opts RemoveOptions) error {
 	if opts.DryRun {
 		fmt.Println("Would delete the following files:")
 		for _, f := range filesToDelete {
-			relPath, _ := filepath.Rel(opts.Root, f)
-			fmt.Printf("  %s\n", relPath)
+			fmt.Printf("  %s\n", f)
 		}
 		return nil
 	}
@@ -349,8 +353,7 @@ func RemoveQueries(opts RemoveOptions) error {
 			fmt.Printf("Warning: failed to delete %s: %s\n", f, err)
 			continue
 		}
-		relPath, _ := filepath.Rel(opts.Root, f)
-		fmt.Printf("  Deleted: %s\n", relPath)
+		fmt.Printf("  Deleted: %s\n", f)
 		deleted++
 	}
 
@@ -409,6 +412,15 @@ func expandPaths(root string, paths []string, suite *Suite) ([]string, error) {
 			continue
 		}
 
+		// Try as exact file path (accept any .sql file that exists on disk)
+		if strings.HasSuffix(absPath, ".sql") && fileExists(absPath) {
+			if !seen[absPath] {
+				seen[absPath] = true
+				result = append(result, absPath)
+			}
+			continue
+		}
+
 		// Try glob pattern
 		matches, err := filepath.Glob(absPath)
 		if err == nil && len(matches) > 0 {
@@ -422,14 +434,6 @@ func expandPaths(root string, paths []string, suite *Suite) ([]string, error) {
 				}
 			}
 			continue
-		}
-
-		// Try as exact file path
-		if strings.HasSuffix(absPath, ".sql") && allSQLFiles[absPath] {
-			if !seen[absPath] {
-				seen[absPath] = true
-				result = append(result, absPath)
-			}
 		}
 	}
 
