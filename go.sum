@@ -4,8 +4,8 @@ github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOEl
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/boringsql/fixturize v0.2.0 h1:I/REte0qrOwL6gvHeS6wFNGQeQQTnPppXKc/XGWDisE=
-github.com/boringsql/fixturize v0.2.0/go.mod h1:ACmNFJBq7a9yar4GYkNBh8sRWDBew/85BYdZCFfS6Vs=
+github.com/boringsql/fixturize v0.3.0 h1:2dEiL4DX22w7dfi94++7Ku6+jrygayhmrgJxCPbQB8w=
+github.com/boringsql/fixturize v0.3.0/go.mod h1:ACmNFJBq7a9yar4GYkNBh8sRWDBew/85BYdZCFfS6Vs=
 github.com/boringsql/queries v1.6.1 h1:J/vImXYdisC+tlQNYt45O6CG6RX/MiIDR8j5/k6rQGk=
 github.com/boringsql/queries v1.6.1/go.mod h1:zRQzwzZZ8e9o8PZWTKMxPqxTTg8hGvvinwitEBd0FCQ=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
