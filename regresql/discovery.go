@@ -25,6 +25,7 @@ type (
 	DiscoverOptions struct {
 		Root       string
 		ShowDetail bool
+		NewOnly    bool
 	}
 
 	AddOptions struct {
@@ -141,8 +142,9 @@ func hasPlan(planPath string) bool {
 }
 
 // PrintDiscoveryResults prints the discovery results to stdout
-func PrintDiscoveryResults(results []DiscoveryResult, showDetail bool) {
+func PrintDiscoveryResults(results []DiscoveryResult, showDetail bool, newOnly ...bool) {
 	var added, notAdded, partial int
+	skipTracked := len(newOnly) > 0 && newOnly[0]
 
 	fmt.Println("SQL files in project:")
 
@@ -153,6 +155,10 @@ func PrintDiscoveryResults(results []DiscoveryResult, showDetail bool) {
 			notAdded++
 		} else {
 			partial++
+		}
+
+		if skipTracked && r.AddedQueries == r.TotalQueries {
+			continue
 		}
 
 		fmt.Printf("  %s %s %s\n", r.Status(), r.RelPath, r.StatusDetail())

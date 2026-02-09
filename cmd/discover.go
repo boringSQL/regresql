@@ -11,6 +11,7 @@ import (
 var (
 	discoverCwd     string
 	discoverQueries bool
+	discoverNewOnly bool
 
 	discoverCmd = &cobra.Command{
 		Use:   "discover",
@@ -46,7 +47,7 @@ Use 'regresql add <path>' to add files to the test suite.`,
 				return
 			}
 
-			regresql.PrintDiscoveryResults(results, discoverQueries)
+			regresql.PrintDiscoveryResults(results, discoverQueries, discoverNewOnly)
 		},
 	}
 )
@@ -56,4 +57,5 @@ func init() {
 
 	discoverCmd.Flags().StringVarP(&discoverCwd, "cwd", "C", ".", "Change to directory")
 	discoverCmd.Flags().BoolVar(&discoverQueries, "queries", false, "Show query-level detail")
+	discoverCmd.Flags().BoolVar(&discoverNewOnly, "new", false, "Only show files with untracked queries")
 }
