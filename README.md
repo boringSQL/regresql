@@ -9,7 +9,7 @@ RegreSQL finds your `*.sql` files, runs them against PostgreSQL, and compares ou
 ### Homebrew (macOS)
 
 ```bash
-brew tap boringsql/regresql https://github.com/boringsql/homebrew-regresql
+brew tap boringsql/boringsql
 brew install regresql
 ```
 
