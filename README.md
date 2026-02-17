@@ -1,8 +1,8 @@
 # RegreSQL
 
-Regression testing for SQL queries. Write queries, capture expected results, compare when their cost or I/O characteristics change, detect when something changes.
+SQL queries can break silently. Schema migrations, data changes, and index modifications can alter query results and tank performance — without any test catching it.
 
-RegreSQL finds your `*.sql` files, runs them against PostgreSQL, and compares output to known-good baselines. When a query's result changes unexpectedly, you'll know immediately.
+RegreSQL is a language-agnostic SQL regression testing tool for PostgreSQL. It finds your `*.sql` files, runs them against your database, compares output to known-good baselines, and tracks EXPLAIN plan changes.  Detect broken queries and performance regressions before production.
 
 ## Installing
 
@@ -58,6 +58,15 @@ regresql update
 regresql test
 ```
 
+## Why RegreSQL
+
+- **Language-agnostic** — works with any `.sql` file, no specific language, ORM, or database extension required
+- **Snapshot testing for SQL** — expected results committed as fixtures, diff when something changes
+- **EXPLAIN plan baselines** — track query costs over time, detect performance regressions automatically
+- **Sequential scan detection** — catch missing indexes before they hit production
+- **CI/CD ready** — JUnit, GitHub Actions, pgTAP, and JSON output formats
+- **Migration testing** — run queries before and after a migration, see exactly what changed
+
 ## Core Commands
 
 ### `regresql discover`
@@ -111,14 +120,16 @@ Runs queries and compares output against expected results:
 ```bash
 regresql test
 regresql test --run "user"           # filter by regexp
-regresql test --format junit -o results.xml
+regresql test --format github-actions    # inline PR annotations
+regresql test --format junit -o results.xml  # Jenkins/CI
+regresql test --format pgtap            # TAP protocol
 ```
 
 Output formats: `console` (default), `pgtap`, `junit`, `json`, `github-actions`
 
 ### `regresql baseline`
 
-Creates EXPLAIN cost baselines to detect query plan regressions:
+Tracks EXPLAIN cost estimates/I/O buffers over time. When a schema change or migration causes a query plan regression. Cost spikes, sequential scans on large tables — you'll catch it in CI before it reaches production.
 
 ```bash
 regresql baseline
@@ -270,6 +281,7 @@ regresql/
 ## History
 
 Fork of the original [regresql](https://github.com/dimitri) by Dimitri Fontaine, from [Mastering PostgreSQL](http://masteringpostgresql.com/). Extended as part of the [boringSQL](https://boringsql.com) project.
+
 
 ## License
 
