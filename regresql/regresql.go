@@ -3,6 +3,7 @@ package regresql
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -20,7 +21,7 @@ type (
 		FullDiff      bool
 		NoDiff        bool
 		Snapshot      string
-		StatsFile     string // External statistics file to apply instead of ANALYZE (PG18+)
+		Stats         string // Stats profile name, YAML path, or SQL path
 		Verbose       bool
 	}
 
@@ -215,7 +216,7 @@ the regresql update command again to reset the expected output files.
 
 // maybeRestore restores the snapshot if configured and not skipped.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
-// statsFiles, if provided, are applied instead of running ANALYZE (requires PG18+).
+// statsFile is a SQL stats file to apply instead of ANALYZE. Empty means use config default or ANALYZE.
 func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, statsFile string) {
 	if noRestore {
 		return
@@ -260,12 +261,28 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 	} else {
 		defer db.Close()
 
-		if statsFile != "" {
-			if err := ApplyStatistics(db, statsFile); err != nil {
+		// Resolve stats file: flag > config default
+		sf := statsFile
+		if sf == "" && cfg.Stats != nil && cfg.Stats.Default != "" {
+			sf = cfg.Stats.Default
+			if !filepath.IsAbs(sf) {
+				sf = filepath.Join(root, "regresql", sf)
+			}
+		}
+
+		if sf != "" {
+			if _, err := os.Stat(sf); os.IsNotExist(err) {
+				fmt.Printf("Warning: stats file not found: %s (falling back to ANALYZE)\n", sf)
+				sf = ""
+			}
+		}
+
+		if sf != "" {
+			if err := ApplyStatistics(db, sf); err != nil {
 				fmt.Printf("Error: %s\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Applied statistics: %s\n", statsFile)
+			fmt.Printf("Applied statistics: %s\n", sf)
 		} else {
 			if _, err := db.Exec("ANALYZE"); err != nil {
 				fmt.Printf("Warning: ANALYZE failed: %s\n", err)
@@ -368,7 +385,7 @@ func Test(opts TestOptions) {
 		fmt.Printf("Using snapshot: %s (%s)\n", FormatSnapshotRef(info), info.Path)
 	}
 
-	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, opts.StatsFile)
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, opts.Stats)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {

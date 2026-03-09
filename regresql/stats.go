@@ -30,5 +30,15 @@ func ApplyStatistics(db *sql.DB, file string) error {
 		return fmt.Errorf("applying stats from %s: %w", file, err)
 	}
 
+	loadPgRegresql(db)
+
 	return nil
+}
+
+// loadPgRegresql tries to LOAD the pg_regresql extension for the session
+func loadPgRegresql(db *sql.DB) {
+	if _, err := db.Exec(`LOAD 'pg_regresql'`); err != nil {
+		fmt.Printf("Warning: could not load pg_regresql. The planner will use the actual physical file size instead of the injected tuple count.\n")
+		fmt.Printf("  Install from: https://github.com/boringsql/regresql/tree/master/pg_ext\n")
+	}
 }

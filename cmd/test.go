@@ -45,7 +45,7 @@ var (
 				FullDiff:      testFullDiff,
 				NoDiff:        testNoDiff,
 				Snapshot:      testSnapshot,
-				StatsFile:     testStatsFile,
+				Stats:         testStatsFile,
 				Verbose:       testVerbose,
 			}
 			regresql.Test(opts)
@@ -68,6 +68,6 @@ func init() {
 	testCmd.Flags().BoolVar(&testFullDiff, "diff", false, "Show full diff output (no truncation)")
 	testCmd.Flags().BoolVar(&testNoDiff, "no-diff", false, "Suppress diff output entirely")
 	testCmd.Flags().StringVar(&testSnapshot, "snapshot", "", "Run tests against specific snapshot (tag or hash prefix)")
-	testCmd.Flags().StringVar(&testStatsFile, "stats", "", "Statistics file to apply instead of ANALYZE (requires PG18+)")
+	testCmd.Flags().StringVar(&testStatsFile, "stats", "", "SQL statistics file to apply instead of ANALYZE (requires PG18+)")
 	testCmd.Flags().BoolVarP(&testVerbose, "verbose", "v", false, "Show each test with name, type, and duration")
 }

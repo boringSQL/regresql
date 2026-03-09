@@ -17,6 +17,11 @@ type (
 		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
 		Snapshot       *SnapshotConfig       `yaml:"snapshot,omitempty"`
 		Analyze        *AnalyzeConfig        `yaml:"analyze,omitempty"`
+		Stats          *StatsConfig          `yaml:"stats,omitempty"`
+	}
+
+	StatsConfig struct {
+		Default string `yaml:"default,omitempty"`
 	}
 
 	AnalyzeConfig struct {
