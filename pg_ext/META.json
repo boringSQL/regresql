@@ -1,0 +1,42 @@
+{
+  "name": "pg_regresql",
+  "abstract": "Trust pg_class statistics for query planning instead of physical file size",
+  "version": "2.0.0-alpha5",
+  "maintainer": "Radim Marek <radim@boringsql.com>",
+  "license": "postgresql",
+  "provides": {
+    "pg_regresql": {
+      "file": "pg_regresql.c",
+      "version": "2.0.0-alpha5",
+      "abstract": "Trust pg_class statistics for query planning instead of physical file size"
+    }
+  },
+  "prereqs": {
+    "runtime": {
+      "requires": {
+        "PostgreSQL": "13.0"
+      }
+    }
+  },
+  "resources": {
+    "repository": {
+      "url": "https://github.com/boringsql/regresql",
+      "web": "https://github.com/boringsql/regresql/tree/master/pg_ext",
+      "type": "git"
+    },
+    "bugtracker": {
+      "web": "https://github.com/boringsql/regresql/issues"
+    }
+  },
+  "generated_by": "hand",
+  "meta-spec": {
+    "version": "1.0.0",
+    "url": "https://pgxn.org/spec/"
+  },
+  "tags": [
+    "planner",
+    "statistics",
+    "testing",
+    "regression"
+  ]
+}
