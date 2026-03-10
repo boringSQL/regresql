@@ -60,17 +60,19 @@ func getBaselinePath(q *Query, baselineDir string, bindingName string) string {
 
 // ExplainOptions configures EXPLAIN execution
 type ExplainOptions struct {
-	Analyze bool // Execute query and show actual timing/rows (default: false)
-	Buffers bool // Show buffer usage statistics (default: false)
-	Verbose bool // Show additional output (default: false)
+	Analyze  bool // Execute query and show actual timing/rows (default: false)
+	Buffers  bool // Show buffer usage statistics (default: false)
+	Verbose  bool // Show additional output (default: true)
+	Settings bool // Show modified configuration parameters (default: true)
 }
 
 // DefaultExplainOptions returns safe defaults (no ANALYZE, no BUFFERS)
 func DefaultExplainOptions() ExplainOptions {
 	return ExplainOptions{
-		Analyze: false,
-		Buffers: false,
-		Verbose: false,
+		Analyze:  false,
+		Buffers:  false,
+		Verbose:  true,
+		Settings: true,
 	}
 }
 
@@ -82,8 +84,8 @@ func ExecuteExplain(q Querier, query string, args ...any) (*ExplainOutput, error
 // ExecuteExplainWithOptions runs EXPLAIN (FORMAT JSON) with configurable options
 func ExecuteExplainWithOptions(q Querier, query string, opts ExplainOptions, args ...any) (*ExplainOutput, error) {
 	explainQuery := fmt.Sprintf(
-		"EXPLAIN (FORMAT JSON, ANALYZE %t, VERBOSE %t, COSTS true, BUFFERS %t) %s",
-		opts.Analyze, opts.Verbose, opts.Buffers, query,
+		"EXPLAIN (FORMAT JSON, ANALYZE %t, VERBOSE %t, COSTS true, BUFFERS %t, SETTINGS %t) %s",
+		opts.Analyze, opts.Verbose, opts.Buffers, opts.Settings, query,
 	)
 
 	rows, err := q.Query(explainQuery, args...)
