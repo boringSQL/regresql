@@ -24,6 +24,12 @@ The extension hooks into `get_relation_info_hook` (fires after `estimate_rel_siz
 
 ## Installation
 
+### From PGXN
+
+```bash
+sudo pgxn install pg_regresql
+```
+
 ### From PostgreSQL source tree
 
 ```bash

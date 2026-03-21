@@ -1,4 +1,4 @@
 comment = 'Trust pg_class statistics for query planning instead of physical file size'
-default_version = '1.0'
+default_version = '2.0'
 module_pathname = '$libdir/pg_regresql'
 relocatable = true

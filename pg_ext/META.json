@@ -1,20 +1,20 @@
 {
   "name": "pg_regresql",
   "abstract": "Trust pg_class statistics for query planning instead of physical file size",
-  "version": "2.0.0-alpha5",
+  "version": "2.0.0",
   "maintainer": "Radim Marek <radim@boringsql.com>",
   "license": "postgresql",
   "provides": {
     "pg_regresql": {
       "file": "pg_regresql.c",
-      "version": "2.0.0-alpha5",
+      "version": "2.0.0",
       "abstract": "Trust pg_class statistics for query planning instead of physical file size"
     }
   },
   "prereqs": {
     "runtime": {
       "requires": {
-        "PostgreSQL": "13.0"
+        "PostgreSQL": "13.0.0"
       }
     }
   },
