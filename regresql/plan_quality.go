@@ -19,16 +19,17 @@ type (
 )
 
 const (
-	SeqScanDetected       WarningType = "sequential_scan_detected"
-	MultipleSeqScans      WarningType = "multiple_sequential_scans"
-	MultipleSorts         WarningType = "multiple_sorts"
-	NestedLoopWithSeqScan WarningType = "nested_loop_with_seqscan"
+	SeqScanDetected        WarningType = "sequential_scan_detected"
+	MultipleSeqScans       WarningType = "multiple_sequential_scans"
+	MultipleSorts          WarningType = "multiple_sorts"
+	NestedLoopWithSeqScan  WarningType = "nested_loop_with_seqscan"
+	SeqScanOnCriticalTable WarningType = "seq_scan_critical_table"
 )
 
 // Queries below these thresholds skip scan-related warnings.
 // Seq scan on tiny tables is the correct plan choice.
 const (
-	lowCostThreshold   = 10.0
+	lowCostThreshold         = 10.0
 	lowBufferThreshold int64 = 10 // shared buffers (8KB pages)
 )
 
@@ -37,7 +38,7 @@ type PlanCostInfo struct {
 	TotalBuffers int64 // shared_hit + shared_read; -1 if unavailable
 }
 
-func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredTables []string, cost PlanCostInfo) []PlanWarning {
+func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredTables, criticalTables []string, cost PlanCostInfo) []PlanWarning {
 	var warnings []PlanWarning
 
 	// Skip scan/join warnings for trivially cheap queries — seq scan on
@@ -46,8 +47,28 @@ func DetectPlanQualityIssues(sig *PlanSignature, opts RegressQLOptions, ignoredT
 	lowBuffers := cost.TotalBuffers >= 0 && cost.TotalBuffers < lowBufferThreshold
 	trivial := lowCost || lowBuffers
 
+	// Critical-table seq scans bypass both the trivial-cost filter and the
+	// ignore list
+	if sig.HasSeqScan && !opts.NoSeqScanWarn && len(criticalTables) > 0 {
+		seqTables := findSeqScanTables(sig.Relations)
+		critical := intersectTables(seqTables, criticalTables)
+		for _, t := range critical {
+			warnings = append(warnings, PlanWarning{
+				Type:       SeqScanOnCriticalTable,
+				Severity:   "error",
+				Table:      t,
+				Message:    fmt.Sprintf("Sequential scan on critical table '%s'", t),
+				Suggestion: "Add an index covering the filter/join columns, or remove this table from plan_quality.critical_tables",
+				Details:    fmt.Sprintf("Table '%s' is listed in plan_quality.critical_tables; seq scans on it are treated as errors", t),
+			})
+		}
+	}
+
 	if sig.HasSeqScan && !opts.NoSeqScanWarn && !trivial {
-		seqScanTables := filterIgnoredTables(findSeqScanTables(sig.Relations), ignoredTables)
+		seqScanTables := filterIgnoredTables(
+			filterCriticalTables(findSeqScanTables(sig.Relations), criticalTables),
+			ignoredTables,
+		)
 
 		switch len(seqScanTables) {
 		case 1:
@@ -125,6 +146,42 @@ func hasNestedLoopWithSeqScan(sig *PlanSignature) bool {
 		}
 	}
 	return false
+}
+
+func intersectTables(tables, wanted []string) []string {
+	if len(wanted) == 0 || len(tables) == 0 {
+		return nil
+	}
+	wantedMap := make(map[string]bool, len(wanted))
+	for _, t := range wanted {
+		wantedMap[t] = true
+	}
+	out := make([]string, 0, len(tables))
+	for _, t := range tables {
+		if wantedMap[t] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// filterCriticalTables removes tables that are already being reported as
+// critical, so the generic seq-scan rule does not double-report them.
+func filterCriticalTables(tables, criticalTables []string) []string {
+	if len(criticalTables) == 0 {
+		return tables
+	}
+	critMap := make(map[string]bool, len(criticalTables))
+	for _, t := range criticalTables {
+		critMap[t] = true
+	}
+	out := make([]string, 0, len(tables))
+	for _, t := range tables {
+		if !critMap[t] {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func filterIgnoredTables(tables, ignoredTables []string) []string {

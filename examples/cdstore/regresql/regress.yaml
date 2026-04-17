@@ -8,3 +8,12 @@ snapshot:
     - db/fixtures/01_base_data.sql
     - db/fixtures/02_albums.sql
     - db/fixtures/03_playlists.sql
+analyze:
+  enabled: true
+
+plan_quality:
+  critical_tables:
+    - orders
+  ignore_seqscan_tables:
+    - countries
+

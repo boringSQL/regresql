@@ -1,3 +1,4 @@
+regresql/regresql.go
 package regresql
 
 import (
@@ -299,7 +300,7 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		TotalCost:    explainPlan.Plan.TotalCost,
 		TotalBuffers: explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks,
 	}
-	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), costInfo)
+	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
 
 	if useBufferComparison {
 		if isOk {

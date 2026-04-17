@@ -23,6 +23,7 @@ var (
 	testSnapshot  string
 	testStatsFile string
 	testVerbose   bool
+	testStrict    bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -47,6 +48,7 @@ var (
 				Snapshot:      testSnapshot,
 				Stats:         testStatsFile,
 				Verbose:       testVerbose,
+				Strict:        testStrict,
 			}
 			regresql.Test(opts)
 		},
@@ -63,6 +65,7 @@ func init() {
 	testCmd.Flags().BoolVar(&testCommit, "commit", false, "Commit transactions instead of rollback (use with caution)")
 	testCmd.Flags().BoolVar(&testNoRestore, "no-restore", false, "Skip snapshot restore before test")
 	testCmd.Flags().BoolVar(&testFailOnSkipped, "fail-on-skipped", false, "Exit with code 2 if skipped tests exist")
+	testCmd.Flags().BoolVar(&testStrict, "strict", false, "Exit with code 10 if any plan warning or regression is present (treats warnings as errors)")
 	testCmd.Flags().BoolVar(&testColor, "color", false, "Force colored output")
 	testCmd.Flags().BoolVar(&testNoColor, "no-color", false, "Disable colored output")
 	testCmd.Flags().BoolVar(&testFullDiff, "diff", false, "Show full diff output (no truncation)")

@@ -34,6 +34,7 @@ type (
 
 	PlanQualityGlobal struct {
 		IgnoreSeqScanTables []string `yaml:"ignore_seqscan_tables,omitempty"`
+		CriticalTables      []string `yaml:"critical_tables,omitempty"`
 	}
 
 	DiffComparisonGlobal struct {
@@ -168,6 +169,13 @@ func GetIgnoredSeqScanTables() []string {
 		return nil
 	}
 	return cachedConfig.PlanQuality.IgnoreSeqScanTables
+}
+
+func GetCriticalTables() []string {
+	if cachedConfig == nil || cachedConfig.PlanQuality == nil {
+		return nil
+	}
+	return cachedConfig.PlanQuality.CriticalTables
 }
 
 func GetDiffConfig() *DiffConfig {

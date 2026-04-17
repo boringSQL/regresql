@@ -23,6 +23,7 @@ type (
 		Snapshot      string
 		Stats         string // Stats profile name, YAML path, or SQL path
 		Verbose       bool
+		Strict        bool
 	}
 
 	UpdateOptions struct {
@@ -343,6 +344,8 @@ func validateServerSettings(cfg config, root string) error {
 //	1  - test failures
 //	2  - skipped tests (if failOnSkipped)
 //	3  - config error
+//	10 - severity violation (error-level plan warning/regression, or any
+//	     warning-level finding when --strict)
 //	13 - query execution error
 //	14 - invalid formatter
 func Test(opts TestOptions) {
@@ -448,6 +451,31 @@ func Test(opts TestOptions) {
 	if opts.FailOnSkipped && summary.Skipped > 0 {
 		os.Exit(2)
 	}
+	if hasSeverityViolation(summary.Results, opts.Strict) {
+		os.Exit(10)
+	}
+}
+
+func hasSeverityViolation(results []TestResult, strict bool) bool {
+	match := func(sev string) bool {
+		if sev == "error" {
+			return true
+		}
+		return strict && sev == "warning"
+	}
+	for _, r := range results {
+		for _, w := range r.PlanWarnings {
+			if match(w.Severity) {
+				return true
+			}
+		}
+		for _, reg := range r.PlanRegressions {
+			if match(reg.Severity) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // List walks a repository, builds a Suite instance and pretty prints it.
