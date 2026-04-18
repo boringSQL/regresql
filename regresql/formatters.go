@@ -43,6 +43,10 @@ type (
 		BindingsFile string
 		BindingName  string
 		Parameters   map[string]any
+
+		// Policy evaluator audit trail — each entry explains one
+		// severity re-mapping made by ApplyPolicies.
+		PolicyApplied []PolicyDecision
 	}
 
 	TestSummary struct {

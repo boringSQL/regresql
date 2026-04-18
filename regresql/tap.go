@@ -1,4 +1,3 @@
-regresql/regresql.go
 package regresql
 
 import (

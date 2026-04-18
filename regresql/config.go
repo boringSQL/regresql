@@ -18,6 +18,7 @@ type (
 		Snapshot       *SnapshotConfig       `yaml:"snapshot,omitempty"`
 		Analyze        *AnalyzeConfig        `yaml:"analyze,omitempty"`
 		Stats          *StatsConfig          `yaml:"stats,omitempty"`
+		Policies       *PoliciesConfig       `yaml:"policies,omitempty"`
 	}
 
 	StatsConfig struct {
@@ -34,7 +35,12 @@ type (
 
 	PlanQualityGlobal struct {
 		IgnoreSeqScanTables []string `yaml:"ignore_seqscan_tables,omitempty"`
-		CriticalTables      []string `yaml:"critical_tables,omitempty"`
+	}
+
+	PoliciesConfig struct {
+		CriticalTables []string          `yaml:"critical_tables,omitempty"`
+		Severity       map[string]string `yaml:"severity,omitempty"`
+		Reasons        map[string]string `yaml:"reasons,omitempty"`
 	}
 
 	DiffComparisonGlobal struct {
@@ -172,10 +178,17 @@ func GetIgnoredSeqScanTables() []string {
 }
 
 func GetCriticalTables() []string {
-	if cachedConfig == nil || cachedConfig.PlanQuality == nil {
+	if cachedConfig == nil || cachedConfig.Policies == nil {
 		return nil
 	}
-	return cachedConfig.PlanQuality.CriticalTables
+	return cachedConfig.Policies.CriticalTables
+}
+
+func GetPoliciesConfig() *PoliciesConfig {
+	if cachedConfig == nil {
+		return nil
+	}
+	return cachedConfig.Policies
 }
 
 func GetDiffConfig() *DiffConfig {
