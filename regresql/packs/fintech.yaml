@@ -1,0 +1,19 @@
+analyze:
+  buffer_threshold: 1.05
+  cost_threshold: 5.0
+
+policies:
+  severity:
+    seq_scan_critical_table: error
+    index_to_seqscan: error
+    sort_added: error
+    multiple_sorts: warning
+    nested_loop_with_seqscan: error
+    join_type_changed: warning
+  reasons:
+    seq_scan_critical_table: >
+      Sequential scan on a critical table in a fintech workload is a
+      regulatory/SLA risk, not a performance hint.
+    index_to_seqscan: >
+      Plan regressed from an index scan to a seq scan. At fintech row
+      counts and SLAs, this is a release blocker.

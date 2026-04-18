@@ -1,0 +1,14 @@
+analyze:
+  buffer_threshold: 1.2
+  cost_threshold: 10.0
+
+policies:
+  severity:
+    seq_scan_critical_table: error
+    index_to_seqscan: warning
+    multiple_sorts: warning
+    nested_loop_with_seqscan: warning
+  reasons:
+    seq_scan_critical_table: >
+      Customer-visible SaaS endpoints can't afford seq scans on
+      critical tables — latency SLOs depend on stable index access.

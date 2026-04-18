@@ -1,0 +1,18 @@
+analyze:
+  buffer_threshold: 1.5
+  cost_threshold: 50.0
+
+policies:
+  severity:
+    sequential_scan_detected: info
+    multiple_sequential_scans: info
+    seq_scan_critical_table: warning
+    multiple_sorts: error
+    sort_added: warning
+  reasons:
+    sequential_scan_detected: >
+      Analytics workloads frequently scan tables in full; seq scans
+      are expected.
+    multiple_sorts: >
+      Multiple sorts in an analytical query usually means work_mem
+      spill and hash/disk roundtrips. Treat as an error.

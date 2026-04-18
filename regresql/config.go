@@ -10,6 +10,7 @@ import (
 
 type (
 	config struct {
+		Extends        string                `yaml:"extends,omitempty"`
 		Root           string                `yaml:"root"`
 		PgUri          string                `yaml:"pguri"`
 		Ignore         []string              `yaml:"ignore,omitempty"`
@@ -100,29 +101,16 @@ func (s *Suite) setupConfig(pguri string) {
 }
 
 func (s *Suite) readConfig() (config, error) {
-	var cfg config
-	configFile := s.getRegressConfigFile()
-
-	data, err := os.ReadFile(configFile)
-	if err != nil {
-		return cfg, fmt.Errorf("Failed to read config '%s': %s",
-			configFile,
-			err)
-	}
-
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("Failed to parse config '%s': %s",
-			configFile,
-			err)
-	}
-
-	return cfg, nil
+	return loadConfig(s.getRegressConfigFile())
 }
 
 // ReadConfig reads the configuration from the regress.yaml file
 func ReadConfig(root string) (config, error) {
+	return loadConfig(filepath.Join(root, "regresql", "regress.yaml"))
+}
+
+func loadConfig(configFile string) (config, error) {
 	var cfg config
-	configFile := filepath.Join(root, "regresql", "regress.yaml")
 
 	data, err := os.ReadFile(configFile)
 	if err != nil {
@@ -131,6 +119,15 @@ func ReadConfig(root string) (config, error) {
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("failed to parse config '%s': %w", configFile, err)
+	}
+
+	if cfg.Extends != "" {
+		base, err := resolveAndLoadPack(cfg.Extends, filepath.Dir(configFile))
+		if err != nil {
+			return config{}, fmt.Errorf("failed to resolve extends %q: %w", cfg.Extends, err)
+		}
+		cfg.Extends = ""
+		cfg = mergeConfig(base, cfg)
 	}
 
 	return cfg, nil
@@ -236,6 +233,182 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 		result.ImprovementThreshold = 20.0
 	}
 	return result
+}
+
+func mergeConfig(base, over config) config {
+	out := base
+	if over.Root != "" {
+		out.Root = over.Root
+	}
+	if over.PgUri != "" {
+		out.PgUri = over.PgUri
+	}
+	out.Ignore = mergeStringSlice(base.Ignore, over.Ignore)
+	out.PlanQuality = mergePlanQuality(base.PlanQuality, over.PlanQuality)
+	out.DiffComparison = mergeDiffComparison(base.DiffComparison, over.DiffComparison)
+	out.Snapshot = mergeSnapshotConfig(base.Snapshot, over.Snapshot)
+	out.Analyze = mergeAnalyzeConfig(base.Analyze, over.Analyze)
+	out.Stats = mergeStatsConfig(base.Stats, over.Stats)
+	out.Policies = mergePoliciesConfig(base.Policies, over.Policies)
+	return out
+}
+
+func mergeStringSlice(a, b []string) []string {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, v := range a {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	for _, v := range b {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func mergeStringMap(a, b map[string]string) map[string]string {
+	if len(a) == 0 {
+		return b
+	}
+	if len(b) == 0 {
+		return a
+	}
+	out := make(map[string]string, len(a)+len(b))
+	for k, v := range a {
+		out[k] = v
+	}
+	for k, v := range b {
+		out[k] = v
+	}
+	return out
+}
+
+func mergePlanQuality(a, b *PlanQualityGlobal) *PlanQualityGlobal {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	return &PlanQualityGlobal{
+		IgnoreSeqScanTables: mergeStringSlice(a.IgnoreSeqScanTables, b.IgnoreSeqScanTables),
+	}
+}
+
+func mergePoliciesConfig(a, b *PoliciesConfig) *PoliciesConfig {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	return &PoliciesConfig{
+		CriticalTables: mergeStringSlice(a.CriticalTables, b.CriticalTables),
+		Severity:       mergeStringMap(a.Severity, b.Severity),
+		Reasons:        mergeStringMap(a.Reasons, b.Reasons),
+	}
+}
+
+func mergeDiffComparison(a, b *DiffComparisonGlobal) *DiffComparisonGlobal {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	out := *a
+	if b.FloatTolerance != 0 {
+		out.FloatTolerance = b.FloatTolerance
+	}
+	if b.MaxSamples != 0 {
+		out.MaxSamples = b.MaxSamples
+	}
+	return &out
+}
+
+func mergeSnapshotConfig(a, b *SnapshotConfig) *SnapshotConfig {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	out := *a
+	if b.Path != "" {
+		out.Path = b.Path
+	}
+	if b.Format != "" {
+		out.Format = b.Format
+	}
+	if b.Schema != "" {
+		out.Schema = b.Schema
+	}
+	if b.Migrations != "" {
+		out.Migrations = b.Migrations
+	}
+	if b.MigrationCommand != "" {
+		out.MigrationCommand = b.MigrationCommand
+	}
+	out.Fixtures = mergeStringSlice(a.Fixtures, b.Fixtures)
+	out.Fixturize = mergeStringSlice(a.Fixturize, b.Fixturize)
+	if b.RestoreDatabase != "" {
+		out.RestoreDatabase = b.RestoreDatabase
+	}
+	if b.ValidateSettings != "" {
+		out.ValidateSettings = b.ValidateSettings
+	}
+	return &out
+}
+
+func mergeAnalyzeConfig(a, b *AnalyzeConfig) *AnalyzeConfig {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	out := *a
+	if b.Enabled {
+		out.Enabled = true
+	}
+	if b.Comparison != "" {
+		out.Comparison = b.Comparison
+	}
+	if b.BufferThreshold != 0 {
+		out.BufferThreshold = b.BufferThreshold
+	}
+	if b.CostThreshold != 0 {
+		out.CostThreshold = b.CostThreshold
+	}
+	if b.ImprovementThreshold != 0 {
+		out.ImprovementThreshold = b.ImprovementThreshold
+	}
+	return &out
+}
+
+func mergeStatsConfig(a, b *StatsConfig) *StatsConfig {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	out := *a
+	if b.Default != "" {
+		out.Default = b.Default
+	}
+	return &out
 }
 
 func IsAnalyzeEnabled() bool {
