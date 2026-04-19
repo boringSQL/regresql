@@ -67,6 +67,19 @@ func (f *ConsoleFormatter) colorize(text, color string) string {
 	return color + text + colorReset
 }
 
+func (f *ConsoleFormatter) severityColor(severity string) string {
+	switch severity {
+	case "error", "critical":
+		return colorRed
+	case "warning":
+		return colorYellow
+	case "info":
+		return colorCyan
+	default:
+		return colorDim
+	}
+}
+
 func (f *ConsoleFormatter) Start(w io.Writer) error {
 	fmt.Fprintln(w, "\nRunning regression tests...")
 	if f.options.Verbose {
@@ -319,11 +332,34 @@ func formatValue(v any) string {
 
 func (f *ConsoleFormatter) printWarnings(warnings []PlanWarning, w io.Writer) {
 	for _, warning := range warnings {
-		if warning.Severity == "warning" {
-			fmt.Fprintf(w, "  %s  %s\n", f.colorize("⚠️", colorYellow), warning.Message)
-			if warning.Suggestion != "" {
-				fmt.Fprintf(w, "    %s %s\n", f.colorize("Suggestion:", colorDim), warning.Suggestion)
-			}
+		symbol := GetSeveritySymbol(warning.Severity)
+		color := f.severityColor(warning.Severity)
+		fmt.Fprintf(w, "  %s  %s\n", f.colorize(symbol, color), warning.Message)
+		if warning.Suggestion != "" {
+			fmt.Fprintf(w, "    %s %s\n", f.colorize("Suggestion:", colorDim), warning.Suggestion)
+		}
+	}
+}
+
+func (f *ConsoleFormatter) printPolicyDecisions(decisions []PolicyDecision, w io.Writer) {
+	if len(decisions) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "    %s\n", f.colorize("Policy applied:", colorDim))
+	for _, d := range decisions {
+		arrow := fmt.Sprintf("%s → %s", d.FromSeverity, d.ToSeverity)
+		table := ""
+		if d.Table != "" {
+			table = fmt.Sprintf("  (%s)", d.Table)
+		}
+		fmt.Fprintf(w, "      • %s  %s%s\n",
+			d.Rule,
+			f.colorize(arrow, f.severityColor(d.ToSeverity)),
+			table,
+		)
+		if d.Reason != "" {
+			reason := strings.TrimSpace(d.Reason)
+			fmt.Fprintf(w, "        %s\n", f.colorize(reason, colorDim))
 		}
 	}
 }
@@ -366,6 +402,7 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 				if r.Error != "" {
 					fmt.Fprintf(w, "    %s %s\n", f.colorize("Error:", colorRed), r.Error)
 				}
+				f.printPolicyDecisions(r.PolicyApplied, w)
 			}
 		}
 	}
@@ -408,6 +445,7 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 		for _, r := range warnings {
 			fmt.Fprintf(w, "  %s\n", r.Name)
 			f.printWarnings(r.PlanWarnings, w)
+			f.printPolicyDecisions(r.PolicyApplied, w)
 		}
 	}
 
