@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boringsql/fixturize/fixturize"
 )
 
 type (
@@ -171,7 +170,7 @@ func BuildSnapshot(basePgUri string, root string, opts SnapshotBuildOptions) (*s
 		if opts.Verbose {
 			fmt.Printf("Applying %d fixturize fixture(s)...\n", len(opts.Fixturize))
 		}
-		fixturizeUsed, err = applyFixturizeFiles(db, root, opts.Fixturize, opts.DisableTriggers, opts.Verbose)
+		fixturizeUsed, err = applyFixturizeFiles(tempDB.PgUri, root, opts.Fixturize, opts.DisableTriggers, opts.Verbose)
 		if err != nil {
 			return nil, err
 		}
@@ -306,7 +305,7 @@ func GetSnapshotFixturize(cfg *SnapshotConfig) []string {
 	return cfg.Fixturize
 }
 
-func applyFixturizeFiles(db *sql.DB, root string, files []string, disableTriggers, verbose bool) ([]string, error) {
+func applyFixturizeFiles(pgUri string, root string, files []string, disableTriggers, verbose bool) ([]string, error) {
 	var applied []string
 	for _, f := range files {
 		path := f
@@ -316,12 +315,14 @@ func applyFixturizeFiles(db *sql.DB, root string, files []string, disableTrigger
 		if verbose {
 			fmt.Printf("  Fixturize: %s\n", f)
 		}
-		opts := &fixturize.ApplyOptions{
-			Fixture:         path,
-			DisableTriggers: disableTriggers,
+		fzArgs := []string{"apply", "--connection", pgUri}
+		if disableTriggers {
+			fzArgs = append(fzArgs, "--disable-triggers")
 		}
-		if _, err := fixturize.ApplyFixtureFile(db, opts); err != nil {
-			return nil, fmt.Errorf("fixturize %q: %w", f, err)
+		fzArgs = append(fzArgs, path)
+		cmd := exec.Command("fixturize", fzArgs...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("fixturize %q: %w\n%s", f, err, out)
 		}
 		applied = append(applied, f)
 	}

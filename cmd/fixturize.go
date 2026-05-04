@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"os/exec"
+	"strconv"
 
-	"github.com/boringsql/fixturize/fixturize"
 	"github.com/boringsql/regresql/regresql"
 	"github.com/spf13/cobra"
 )
@@ -100,64 +100,49 @@ func init() {
 	fixturizeApplyCmd.Flags().BoolVar(&fzApplyDisableTriggers, "disable-triggers", false, "Disable triggers during insert (uses replica mode)")
 }
 
-func runFixturizeExtract(cmd *cobra.Command, args []string) error {
-	db, err := fixturize.OpenDB(fzExtractConn)
-	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+func checkFixturizeBinary() error {
+	if _, err := exec.LookPath("fixturize"); err != nil {
+		return fmt.Errorf("fixturize binary not found in PATH\nSee https://github.com/boringSQL/fixturize for install instructions")
 	}
-	defer db.Close()
-
-	options := &fixturize.ExtractOptions{
-		Connection:       fzExtractConn,
-		Root:             fzExtractRoot,
-		Schema:           fzExtractSchema,
-		Output:           fzExtractOutput,
-		Limit:            fzExtractLimit,
-		Depth:            fzExtractDepth,
-		Include:          parseCommaSeparatedFz(fzExtractInclude),
-		Exclude:          parseCommaSeparatedFz(fzExtractExclude),
-		Mask:             fzExtractMask,
-		StatementTimeout: fzExtractStatementTimeout,
-		DryRun:           fzExtractDryRun,
-	}
-
-	if !fzExtractDryRun && fzExtractOutput != "" {
-		os.Remove(fzExtractOutput)
-	}
-
-	extractor := fixturize.NewExtractor(db, options)
-	result, err := extractor.Extract()
-	if err != nil {
-		return fmt.Errorf("extraction failed: %w", err)
-	}
-
-	for _, w := range result.Warnings {
-		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
-	}
-
-	if fzExtractDryRun {
-		fmt.Println(string(result.JSON))
-		return nil
-	}
-
-	outputPath := fzExtractOutput
-	if outputPath == "" {
-		outputPath = "extracted.json"
-	}
-
-	dir := filepath.Dir(outputPath)
-	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
-		}
-	}
-
-	if err := os.WriteFile(outputPath, result.JSON, 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	fmt.Printf("Fixture written to: %s\n", outputPath)
 	return nil
+}
+
+func runFixturizeExtract(cmd *cobra.Command, args []string) error {
+	if err := checkFixturizeBinary(); err != nil {
+		return err
+	}
+	fzArgs := []string{"extract", "--connection", fzExtractConn, "--root", fzExtractRoot}
+	if fzExtractSchema != "" {
+		fzArgs = append(fzArgs, "--schema", fzExtractSchema)
+	}
+	if fzExtractOutput != "" {
+		fzArgs = append(fzArgs, "--output", fzExtractOutput)
+	}
+	if fzExtractLimit > 0 {
+		fzArgs = append(fzArgs, "--limit", strconv.Itoa(fzExtractLimit))
+	}
+	if fzExtractDepth > 0 {
+		fzArgs = append(fzArgs, "--depth", strconv.Itoa(fzExtractDepth))
+	}
+	if fzExtractInclude != "" {
+		fzArgs = append(fzArgs, "--include", fzExtractInclude)
+	}
+	if fzExtractExclude != "" {
+		fzArgs = append(fzArgs, "--exclude", fzExtractExclude)
+	}
+	for _, m := range fzExtractMask {
+		fzArgs = append(fzArgs, "--mask", m)
+	}
+	if fzExtractStatementTimeout > 0 {
+		fzArgs = append(fzArgs, "--statement-timeout", strconv.Itoa(fzExtractStatementTimeout))
+	}
+	if fzExtractDryRun {
+		fzArgs = append(fzArgs, "--dry-run")
+	}
+	c := exec.Command("fixturize", fzArgs...)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return c.Run()
 }
 
 func resolveApplyConnection() (string, error) {
@@ -175,69 +160,27 @@ func resolveApplyConnection() (string, error) {
 }
 
 func runFixturizeApply(cmd *cobra.Command, args []string) error {
+	if err := checkFixturizeBinary(); err != nil {
+		return err
+	}
 	connStr, err := resolveApplyConnection()
 	if err != nil {
 		return err
 	}
-
-	db, err := fixturize.OpenDB(connStr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+	fzArgs := []string{"apply", "--connection", connStr}
+	if fzApplyForce {
+		fzArgs = append(fzArgs, "--force")
 	}
-	defer db.Close()
-
-	options := &fixturize.ApplyOptions{
-		Connection:      connStr,
-		Fixture:         args[0],
-		Force:           fzApplyForce,
-		DryRun:          fzApplyDryRun,
-		DisableTriggers: fzApplyDisableTriggers,
+	if fzApplyDryRun {
+		fzArgs = append(fzArgs, "--dry-run")
 	}
-
-	result, err := fixturize.ApplyFixtureFile(db, options)
-	if err != nil {
-		return err
+	if fzApplyDisableTriggers {
+		fzArgs = append(fzArgs, "--disable-triggers")
 	}
-
-	totalRows := 0
-	for _, count := range result.RowsInserted {
-		totalRows += count
-	}
-
-	fmt.Printf("Applied %d table(s), %d row(s) total\n", len(result.TablesApplied), totalRows)
-	return nil
+	fzArgs = append(fzArgs, args[0])
+	c := exec.Command("fixturize", fzArgs...)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return c.Run()
 }
 
-func parseCommaSeparatedFz(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var parts []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == ',' {
-			p := trimSpaceFz(s[start:i])
-			if p != "" {
-				parts = append(parts, p)
-			}
-			start = i + 1
-		}
-	}
-	p := trimSpaceFz(s[start:])
-	if p != "" {
-		parts = append(parts, p)
-	}
-	return parts
-}
-
-func trimSpaceFz(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
-		end--
-	}
-	return s[start:end]
-}
