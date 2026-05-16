@@ -37,6 +37,12 @@ type (
 	DiffConfig struct {
 		FloatTolerance float64
 		MaxSamples     int
+
+		// IgnoreColumns: drop these column names from both sides before comparing.
+		IgnoreColumns []string
+
+		// IgnoreOrder: treat ordering-only differences as identical.
+		IgnoreOrder bool
 	}
 )
 
@@ -56,6 +62,10 @@ func DefaultDiffConfig() *DiffConfig {
 func CompareResultSets(expected, actual *ResultSet, config *DiffConfig) *StructuredDiff {
 	if config == nil {
 		config = DefaultDiffConfig()
+	}
+
+	if len(config.IgnoreColumns) > 0 {
+		expected, actual = projectColumns(expected, actual, config.IgnoreColumns)
 	}
 
 	diff := &StructuredDiff{
@@ -88,6 +98,11 @@ func CompareResultSets(expected, actual *ResultSet, config *DiffConfig) *Structu
 
 			if len(unmatchedExpected) == 0 && len(unmatchedActual) == 0 {
 				// All rows match when unordered - just ordering changed
+				if config.IgnoreOrder {
+					diff.Type = DiffTypeIdentical
+					diff.MatchingRows = len(expected.Rows)
+					return diff
+				}
 				diff.Identical = false
 				diff.Type = DiffTypeOrdering
 				diff.MatchingRows = len(expected.Rows)
@@ -126,6 +141,46 @@ func CompareResultSets(expected, actual *ResultSet, config *DiffConfig) *Structu
 	diff.RemovedSamples = collectSamples(expected, unmatchedExpected, config.MaxSamples)
 
 	return diff
+}
+
+// projectColumns drops named columns from both sides
+func projectColumns(expected, actual *ResultSet, ignore []string) (*ResultSet, *ResultSet) {
+	ignoreSet := make(map[string]bool, len(ignore))
+	for _, c := range ignore {
+		ignoreSet[c] = true
+	}
+	keep := make([]string, 0, len(expected.Cols))
+	for _, c := range expected.Cols {
+		if !ignoreSet[c] {
+			keep = append(keep, c)
+		}
+	}
+	return projectByNames(expected, keep), projectByNames(actual, keep)
+}
+
+func projectByNames(rs *ResultSet, keep []string) *ResultSet {
+	idx := make([]int, 0, len(keep))
+	cols := make([]string, 0, len(keep))
+	for _, name := range keep {
+		for i, c := range rs.Cols {
+			if c == name {
+				idx = append(idx, i)
+				cols = append(cols, c)
+				break
+			}
+		}
+	}
+	rows := make([][]any, len(rs.Rows))
+	for i, row := range rs.Rows {
+		nr := make([]any, len(idx))
+		for j, k := range idx {
+			if k < len(row) {
+				nr[j] = row[k]
+			}
+		}
+		rows[i] = nr
+	}
+	return &ResultSet{Cols: cols, Rows: rows, Filename: rs.Filename}
 }
 
 // columnsMatch checks if two column lists are identical
