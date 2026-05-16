@@ -5,7 +5,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/boringsql/regresql/regresql"
+	"github.com/boringsql/regresql/v2/regresql"
 	"github.com/spf13/cobra"
 )
 

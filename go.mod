@@ -1,4 +1,4 @@
-module github.com/boringsql/regresql
+module github.com/boringsql/regresql/v2
 
 go 1.25.6
 

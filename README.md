@@ -16,7 +16,7 @@ brew install regresql
 ### Go
 
 ```bash
-go install github.com/boringsql/regresql@latest
+go install github.com/boringsql/regresql/v2@latest
 ```
 
 Binary goes to `$GOPATH/bin` (defaults to `~/go/bin`).

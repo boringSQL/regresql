@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/boringsql/regresql/regresql"
+	"github.com/boringsql/regresql/v2/regresql"
 	"github.com/spf13/cobra"
 )
 
