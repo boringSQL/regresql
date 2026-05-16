@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -77,18 +78,18 @@ func DefaultExplainOptions() ExplainOptions {
 }
 
 // ExecuteExplain runs EXPLAIN (FORMAT JSON) with default options (ANALYZE=false)
-func ExecuteExplain(q Querier, query string, args ...any) (*ExplainOutput, error) {
-	return ExecuteExplainWithOptions(q, query, DefaultExplainOptions(), args...)
+func ExecuteExplain(ctx context.Context, q Querier, query string, args ...any) (*ExplainOutput, error) {
+	return ExecuteExplainWithOptions(ctx, q, query, DefaultExplainOptions(), args...)
 }
 
 // ExecuteExplainWithOptions runs EXPLAIN (FORMAT JSON) with configurable options
-func ExecuteExplainWithOptions(q Querier, query string, opts ExplainOptions, args ...any) (*ExplainOutput, error) {
+func ExecuteExplainWithOptions(ctx context.Context, q Querier, query string, opts ExplainOptions, args ...any) (*ExplainOutput, error) {
 	explainQuery := fmt.Sprintf(
 		"EXPLAIN (FORMAT JSON, ANALYZE %t, VERBOSE %t, COSTS true, BUFFERS %t, SETTINGS %t) %s",
 		opts.Analyze, opts.Verbose, opts.Buffers, opts.Settings, query,
 	)
 
-	rows, err := q.Query(explainQuery, args...)
+	rows, err := q.QueryContext(ctx, explainQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute EXPLAIN: %w", err)
 	}
@@ -113,7 +114,7 @@ func ExecuteExplainWithOptions(q Querier, query string, opts ExplainOptions, arg
 	return &plans[0], nil
 }
 
-func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, useAnalyze bool) error {
+func (q *Query) CreateBaseline(ctx context.Context, baselineDir string, planDir string, db *sql.DB, useAnalyze bool) error {
 	var plan *Plan
 	var err error
 
@@ -130,7 +131,7 @@ func (q *Query) CreateBaseline(baselineDir string, planDir string, db *sql.DB, u
 		}
 	}
 
-	baselines, fullPlans, err := plan.CreateBaselines(db, useAnalyze)
+	baselines, fullPlans, err := plan.CreateBaselines(ctx, db, useAnalyze)
 	if err != nil {
 		return err
 	}
@@ -287,7 +288,7 @@ func BaselineQueries(opts BaselineOptions) {
 			os.Exit(11)
 		}
 
-		if err := createBaselineFromPlan(pq, dir.path, db, useAnalyze); err != nil {
+		if err := createBaselineFromPlan(context.Background(), pq, dir.path, db, useAnalyze); err != nil {
 			fmt.Printf("  Error creating baseline for %s: %s\n", pq.Query.Name, err.Error())
 		}
 	}
@@ -296,7 +297,7 @@ func BaselineQueries(opts BaselineOptions) {
 	fmt.Printf("Baseline files are stored in: %s\n", baselineDir)
 }
 
-func createBaselineFromPlan(pq *PlannedQuery, baselineDir string, db *sql.DB, useAnalyze bool) error {
+func createBaselineFromPlan(ctx context.Context, pq *PlannedQuery, baselineDir string, db *sql.DB, useAnalyze bool) error {
 	q := pq.Query
 	plan := pq.Plan
 
@@ -309,7 +310,7 @@ func createBaselineFromPlan(pq *PlannedQuery, baselineDir string, db *sql.DB, us
 		plan = NewPlan(q, []TestCase{{Name: ""}})
 	}
 
-	baselines, fullPlans, err := plan.CreateBaselines(db, useAnalyze)
+	baselines, fullPlans, err := plan.CreateBaselines(ctx, db, useAnalyze)
 	if err != nil {
 		return err
 	}

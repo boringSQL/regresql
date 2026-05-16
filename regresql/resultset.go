@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -36,7 +37,7 @@ func TestConnectionString(pguri string) error {
 	}
 	defer db.Close()
 
-	if _, err := QueryDB(db, "Select 1"); err != nil {
+	if _, err := RunQuery(context.Background(), db, "Select 1"); err != nil {
 		fmt.Println("✗")
 		return err
 	}
@@ -46,12 +47,12 @@ func TestConnectionString(pguri string) error {
 }
 
 // RunQuery executes a query and returns a ResultSet
-func RunQuery(q Querier, query string, args ...any) (*ResultSet, error) {
+func RunQuery(ctx context.Context, q Querier, query string, args ...any) (*ResultSet, error) {
 	if q == nil {
 		return nil, errors.New("querier is nil")
 	}
 
-	rows, err := q.Query(query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +79,6 @@ func RunQuery(q Querier, query string, args ...any) (*ResultSet, error) {
 		res = append(res, r)
 	}
 	return &ResultSet{cols, res, ""}, nil
-}
-
-// QueryDB runs the query against a database connection (legacy wrapper)
-func QueryDB(db *sql.DB, query string, args ...any) (*ResultSet, error) {
-	return RunQuery(db, query, args...)
 }
 
 // Println outputs to standard output a Pretty Printed result set.

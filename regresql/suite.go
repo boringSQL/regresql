@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -360,7 +361,7 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 		// Execute query and handle results
 		var writtenFiles []string
 		if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
-			if err := pq.Plan.Execute(tx); err != nil {
+			if err := pq.Plan.Execute(context.Background(), tx); err != nil {
 				return err
 			}
 
@@ -493,7 +494,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 		}
 
 		if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
-			if err := pq.Plan.Execute(tx); err != nil {
+			if err := pq.Plan.Execute(context.Background(), tx); err != nil {
 				return err
 			}
 			if err := pq.Plan.WriteResultSets(odir.path); err != nil {
@@ -510,7 +511,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 			}
 
 			if !opts.NoBaseline && hasBaselines(pq.Query, bdir, pq.Plan.Names) {
-				for _, r := range pq.Plan.CompareBaselinesToResults(bdir, tx, DefaultCostThresholdPercent) {
+				for _, r := range pq.Plan.CompareBaselinesToResults(context.Background(), bdir, tx, DefaultCostThresholdPercent) {
 					ApplyPolicies(&r, policies)
 					summary.AddResult(r)
 					if err := formatter.AddResult(r, w); err != nil {
@@ -583,7 +584,7 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 		}
 
 		if err := s.runInTransaction(db, false, func(tx *sql.Tx) error {
-			if err := pq.Plan.Execute(tx); err != nil {
+			if err := pq.Plan.Execute(context.Background(), tx); err != nil {
 				return err
 			}
 			if err := pq.Plan.WriteResultSets(odir.path); err != nil {

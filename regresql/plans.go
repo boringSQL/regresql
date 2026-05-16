@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -174,13 +175,13 @@ func parseYAMLPlan(data []byte, pfile string, q *Query) (*Plan, error) {
 }
 
 // Execute runs the plan's query against the given querier (db or transaction)
-func (p *Plan) Execute(q Querier) error {
+func (p *Plan) Execute(ctx context.Context, q Querier) error {
 	if os.Getenv("REGRESQL_DEBUG") == "1" {
 		fmt.Fprintf(os.Stderr, "[DEBUG] Executing query %s with %d bindings: %v\n", p.Query.Name, len(p.Bindings), p.Names)
 	}
 
 	if len(p.Query.Args) == 0 {
-		res, err := RunQuery(q, p.Query.OrdinalQuery)
+		res, err := RunQuery(ctx, q, p.Query.OrdinalQuery)
 		if err != nil {
 			return fmt.Errorf("error executing query: %w\n%s", err, p.Query.OrdinalQuery)
 		}
@@ -191,7 +192,7 @@ func (p *Plan) Execute(q Querier) error {
 	p.ResultSets = make([]ResultSet, len(p.Bindings))
 	for i, bindings := range p.Bindings {
 		sql, args := p.Query.Prepare(bindings)
-		res, err := RunQuery(q, sql, args...)
+		res, err := RunQuery(ctx, q, sql, args...)
 		if err != nil {
 			return fmt.Errorf("error executing query with params %v: %w\n%s", args, err, sql)
 		}

@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,8 +18,8 @@ func (p *Plan) CompareResultSets(regressDir, expectedDir string, t *tap.T) {
 	}
 }
 
-func (p *Plan) CompareBaselines(baselineDir string, q Querier, t *tap.T, thresholdPercent float64) {
-	for _, r := range p.CompareBaselinesToResults(baselineDir, q, thresholdPercent) {
+func (p *Plan) CompareBaselines(ctx context.Context, baselineDir string, q Querier, t *tap.T, thresholdPercent float64) {
+	for _, r := range p.CompareBaselinesToResults(ctx, baselineDir, q, thresholdPercent) {
 		outputResultToTAP(r, t)
 	}
 }
@@ -175,20 +176,20 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 	return results
 }
 
-func (p *Plan) CompareBaselinesToResults(baselineDir string, q Querier, thresholdPercent float64) []TestResult {
+func (p *Plan) CompareBaselinesToResults(ctx context.Context, baselineDir string, q Querier, thresholdPercent float64) []TestResult {
 	if len(p.Query.Args) == 0 {
-		return []TestResult{p.compareBaseline(baselineDir, "", nil, q, thresholdPercent)}
+		return []TestResult{p.compareBaseline(ctx, baselineDir, "", nil, q, thresholdPercent)}
 	}
 
 	results := make([]TestResult, 0, len(p.Bindings))
 	for i, bindings := range p.Bindings {
-		result := p.compareBaseline(baselineDir, p.Names[i], bindings, q, thresholdPercent)
+		result := p.compareBaseline(ctx, baselineDir, p.Names[i], bindings, q, thresholdPercent)
 		results = append(results, result)
 	}
 	return results
 }
 
-func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64) TestResult {
+func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64) TestResult {
 	start := time.Now()
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
@@ -221,7 +222,7 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 		return result
 	}
 
-	explainPlan, err := p.runExplainWithMode(q, bindings, useBufferComparison)
+	explainPlan, err := p.runExplainWithMode(ctx, q, bindings, useBufferComparison)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = fmt.Sprintf("Failed to execute EXPLAIN: %s", err.Error())
@@ -322,15 +323,15 @@ func (p *Plan) compareBaseline(baselineDir, bindingName string, bindings map[str
 	return result
 }
 
-func (p *Plan) runExplain(q Querier, bindings map[string]any) (*ExplainOutput, error) {
+func (p *Plan) runExplain(ctx context.Context, q Querier, bindings map[string]any) (*ExplainOutput, error) {
 	if bindings == nil {
-		return ExecuteExplain(q, p.Query.OrdinalQuery)
+		return ExecuteExplain(ctx, q, p.Query.OrdinalQuery)
 	}
 	sql, args := p.Query.Prepare(bindings)
-	return ExecuteExplain(q, sql, args...)
+	return ExecuteExplain(ctx, q, sql, args...)
 }
 
-func (p *Plan) runExplainWithMode(q Querier, bindings map[string]any, useAnalyze bool) (*ExplainOutput, error) {
+func (p *Plan) runExplainWithMode(ctx context.Context, q Querier, bindings map[string]any, useAnalyze bool) (*ExplainOutput, error) {
 	opts := DefaultExplainOptions()
 	if useAnalyze {
 		opts.Analyze = true
@@ -338,10 +339,10 @@ func (p *Plan) runExplainWithMode(q Querier, bindings map[string]any, useAnalyze
 	}
 
 	if bindings == nil {
-		return ExecuteExplainWithOptions(q, p.Query.OrdinalQuery, opts)
+		return ExecuteExplainWithOptions(ctx, q, p.Query.OrdinalQuery, opts)
 	}
 	sql, args := p.Query.Prepare(bindings)
-	return ExecuteExplainWithOptions(q, sql, opts, args...)
+	return ExecuteExplainWithOptions(ctx, q, sql, opts, args...)
 }
 
 func hasCriticalRegression(regressions []PlanRegression) bool {

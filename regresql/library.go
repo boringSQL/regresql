@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -95,7 +96,7 @@ func (p *Plan) CompareResultsData(expected []ResultSet) []ComparisonResult {
 	return results
 }
 
-func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPercent float64) []CostResult {
+func (p *Plan) CompareCostsData(ctx context.Context, db *sql.DB, baselines []Baseline, thresholdPercent float64) []CostResult {
 	results := make([]CostResult, len(p.Names))
 
 	for i, name := range p.Names {
@@ -107,10 +108,10 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 		var explainPlan *ExplainOutput
 		var err error
 		if len(p.Query.Args) == 0 {
-			explainPlan, err = ExecuteExplain(db, p.Query.OrdinalQuery)
+			explainPlan, err = ExecuteExplain(ctx, db, p.Query.OrdinalQuery)
 		} else {
 			sql, args := p.Query.Prepare(p.Bindings[i])
-			explainPlan, err = ExecuteExplain(db, sql, args...)
+			explainPlan, err = ExecuteExplain(ctx, db, sql, args...)
 		}
 		if err != nil {
 			results[i] = CostResult{TestName: name, Error: err.Error()}
@@ -165,12 +166,12 @@ func (p *Plan) CompareCostsData(db *sql.DB, baselines []Baseline, thresholdPerce
 	return results
 }
 
-func (p *Plan) CreateBaselines(db *sql.DB, useAnalyze bool) ([]Baseline, []*ExplainOutput, error) {
+func (p *Plan) CreateBaselines(ctx context.Context, db *sql.DB, useAnalyze bool) ([]Baseline, []*ExplainOutput, error) {
 	baselines := make([]Baseline, len(p.Names))
 	fullPlans := make([]*ExplainOutput, len(p.Names))
 
 	for i := range p.Names {
-		baseline, fullPlan, err := p.createSingleBaseline(db, i, useAnalyze)
+		baseline, fullPlan, err := p.createSingleBaseline(ctx, db, i, useAnalyze)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -181,7 +182,7 @@ func (p *Plan) CreateBaselines(db *sql.DB, useAnalyze bool) ([]Baseline, []*Expl
 	return baselines, fullPlans, nil
 }
 
-func (p *Plan) createSingleBaseline(db *sql.DB, index int, useAnalyze bool) (Baseline, *ExplainOutput, error) {
+func (p *Plan) createSingleBaseline(ctx context.Context, db *sql.DB, index int, useAnalyze bool) (Baseline, *ExplainOutput, error) {
 	var explainPlan *ExplainOutput
 	var err error
 
@@ -192,10 +193,10 @@ func (p *Plan) createSingleBaseline(db *sql.DB, index int, useAnalyze bool) (Bas
 	}
 
 	if len(p.Query.Args) == 0 {
-		explainPlan, err = ExecuteExplainWithOptions(db, p.Query.OrdinalQuery, opts)
+		explainPlan, err = ExecuteExplainWithOptions(ctx, db, p.Query.OrdinalQuery, opts)
 	} else {
 		sql, args := p.Query.Prepare(p.Bindings[index])
-		explainPlan, err = ExecuteExplainWithOptions(db, sql, opts, args...)
+		explainPlan, err = ExecuteExplainWithOptions(ctx, db, sql, opts, args...)
 	}
 	if err != nil {
 		return Baseline{}, nil, fmt.Errorf("failed to create baseline for %s: %w", p.Names[index], err)

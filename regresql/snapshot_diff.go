@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"path/filepath"
@@ -195,7 +196,7 @@ func dropDatabase(pguri, dbName string) {
 }
 
 func executeQueryForDiff(db *sql.DB, sqlText string) (*ResultSet, error) {
-	return RunQuery(db, sqlText)
+	return RunQuery(context.Background(), db, sqlText)
 }
 
 func diffResultSetsEqual(a, b *ResultSet) bool {
