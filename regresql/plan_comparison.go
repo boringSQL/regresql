@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -44,15 +45,8 @@ func DetectPlanRegressions(baseline, current *PlanSignature) []PlanRegression {
 		}
 	}
 
-	if len(baseline.JoinTypes) != len(current.JoinTypes) {
-		for i := range baseline.JoinTypes {
-			if i >= len(current.JoinTypes) || baseline.JoinTypes[i] != current.JoinTypes[i] {
-				if regression := compareJoinTypes(baseline.JoinTypes, current.JoinTypes); regression != nil {
-					regressions = append(regressions, *regression)
-				}
-				break
-			}
-		}
+	if regression := compareJoinTypes(baseline.JoinTypes, current.JoinTypes); regression != nil {
+		regressions = append(regressions, *regression)
 	}
 
 	if !baseline.HasSort && current.HasSort {
@@ -144,7 +138,7 @@ func compareScanMethods(tableName string, baseline, current ScanInfo) *PlanRegre
 }
 
 func compareJoinTypes(baseline, current []string) *PlanRegression {
-	if len(baseline) == 0 && len(current) == 0 {
+	if slices.Equal(baseline, current) {
 		return nil
 	}
 
