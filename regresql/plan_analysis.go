@@ -71,16 +71,39 @@ func extractFromTypedNode(node *PlanNode, sig *PlanSignature) {
 			IndexCond: node.IndexCond,
 			Filter:    node.Filter,
 		}
-		sig.Relations[node.RelationName] = scanInfo
 
-		if scanInfo.IndexName != "" {
+		// Bitmap Heap Scan's index name lives on child Bitmap Index Scan nodes.
+		if node.NodeType == "Bitmap Heap Scan" {
+			bitmapIndexes := collectBitmapIndexNamesTyped(node)
+			if len(bitmapIndexes) > 0 {
+				scanInfo.IndexName = strings.Join(bitmapIndexes, ", ")
+				sig.IndexesUsed = append(sig.IndexesUsed, bitmapIndexes...)
+			}
+		} else if scanInfo.IndexName != "" {
 			sig.IndexesUsed = append(sig.IndexesUsed, scanInfo.IndexName)
 		}
+
+		sig.Relations[node.RelationName] = scanInfo
 	}
 
 	for i := range node.Plans {
 		extractFromTypedNode(&node.Plans[i], sig)
 	}
+}
+
+func collectBitmapIndexNamesTyped(node *PlanNode) []string {
+	var names []string
+	for i := range node.Plans {
+		child := &node.Plans[i]
+		if child.NodeType == "Bitmap Index Scan" {
+			if child.IndexName != "" {
+				names = append(names, child.IndexName)
+			}
+		} else if child.NodeType == "BitmapAnd" || child.NodeType == "BitmapOr" {
+			names = append(names, collectBitmapIndexNamesTyped(child)...)
+		}
+	}
+	return names
 }
 
 // ExtractPlanSignature extracts plan signature from untyped map (for backwards compatibility)
@@ -121,11 +144,18 @@ func extractFromNode(node map[string]any, sig *PlanSignature) {
 			IndexCond: getString(node, "Index Cond"),
 			Filter:    getString(node, "Filter"),
 		}
-		sig.Relations[relationName] = scanInfo
 
-		if scanInfo.IndexName != "" {
+		if nodeType == "Bitmap Heap Scan" {
+			bitmapIndexes := collectBitmapIndexNames(node)
+			if len(bitmapIndexes) > 0 {
+				scanInfo.IndexName = strings.Join(bitmapIndexes, ", ")
+				sig.IndexesUsed = append(sig.IndexesUsed, bitmapIndexes...)
+			}
+		} else if scanInfo.IndexName != "" {
 			sig.IndexesUsed = append(sig.IndexesUsed, scanInfo.IndexName)
 		}
+
+		sig.Relations[relationName] = scanInfo
 	}
 
 	if plans, ok := node["Plans"].([]any); ok {
@@ -135,6 +165,29 @@ func extractFromNode(node map[string]any, sig *PlanSignature) {
 			}
 		}
 	}
+}
+
+func collectBitmapIndexNames(node map[string]any) []string {
+	var names []string
+	plans, ok := node["Plans"].([]any)
+	if !ok {
+		return names
+	}
+	for _, p := range plans {
+		child, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch getString(child, "Node Type") {
+		case "Bitmap Index Scan":
+			if name := getString(child, "Index Name"); name != "" {
+				names = append(names, name)
+			}
+		case "BitmapAnd", "BitmapOr":
+			names = append(names, collectBitmapIndexNames(child)...)
+		}
+	}
+	return names
 }
 
 func getString(m map[string]any, key string) string {
