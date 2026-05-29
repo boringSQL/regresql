@@ -34,6 +34,11 @@ type (
 		BaselineBuffers int64
 		BufferIncrease  float64
 
+		// Temp/spill comparisons (when analyze_mode baseline)
+		ActualTempBuffers   int64
+		BaselineTempBuffers int64
+		SpillRegression     bool
+
 		// Improvement detection
 		Improved            bool
 		ImprovementPercent  float64

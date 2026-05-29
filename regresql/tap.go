@@ -241,10 +241,20 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 
 		isOk, percentageIncrease = CompareBuffers(actualBuffers, baselineBuffers, bufferThreshold)
 
+		// spill fails the check even when shared buffers pass
+		actualTemp := explainPlan.Plan.TempReadBlocks + explainPlan.Plan.TempWrittenBlocks
+		baselineTemp := baseline.Buffers.TempBuffers
+		if IsSpillRegression(actualTemp, baselineTemp, bufferThreshold) {
+			result.SpillRegression = true
+			isOk = false
+		}
+
 		result.AnalyzeMode = true
 		result.ActualBuffers = actualBuffers
 		result.BaselineBuffers = baselineBuffers
 		result.BufferIncrease = percentageIncrease
+		result.ActualTempBuffers = actualTemp
+		result.BaselineTempBuffers = baselineTemp
 		result.Threshold = bufferThreshold
 		result.ActualCost = explainPlan.Plan.TotalCost
 		result.ExpectedCost = toFloat64(baseline.Plan["total_cost"])
@@ -303,10 +313,14 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
 
 	if useBufferComparison {
-		if isOk {
+		switch {
+		case result.SpillRegression:
+			result.Status = "failed"
+			result.Name = fmt.Sprintf("%s (spill: temp %d > %d blocks)", testName, result.ActualTempBuffers, result.BaselineTempBuffers)
+		case isOk:
 			result.Status = "passed"
 			result.Name = fmt.Sprintf("%s (%d <= %d * %.0f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold)
-		} else {
+		default:
 			result.Status = "failed"
 			result.Name = fmt.Sprintf("%s (%d > %d * %.0f%%, +%.1f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold, percentageIncrease)
 		}

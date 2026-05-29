@@ -159,6 +159,11 @@ func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
 	if r.AnalyzeMode {
 		fmt.Fprintf(w, "  Expected buffers: %d\n", r.BaselineBuffers)
 		fmt.Fprintf(w, "  Actual buffers:   %d (+%.1f%%)\n", r.ActualBuffers, r.BufferIncrease)
+		if r.SpillRegression {
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "  Spill (temp blocks): %d -> %d\n", r.BaselineTempBuffers, r.ActualTempBuffers)
+			fmt.Fprintln(w, "  Plan spilled to disk (sort/hash exceeded work_mem)")
+		}
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "  Cost (info):      %.2f (baseline: %.2f)\n", r.ActualCost, r.ExpectedCost)
 		fmt.Fprintln(w)

@@ -27,9 +27,12 @@ type (
 	}
 
 	BufferBaseline struct {
-		SharedHitBlocks  int64 `json:"shared_hit_blocks"`
-		SharedReadBlocks int64 `json:"shared_read_blocks"`
-		TotalBuffers     int64 `json:"total_buffers"`
+		SharedHitBlocks   int64 `json:"shared_hit_blocks"`
+		SharedReadBlocks  int64 `json:"shared_read_blocks"`
+		TotalBuffers      int64 `json:"total_buffers"`
+		TempReadBlocks    int64 `json:"temp_read_blocks"`
+		TempWrittenBlocks int64 `json:"temp_written_blocks"`
+		TempBuffers       int64 `json:"temp_buffers"`
 	}
 
 	ActualBaseline struct {
@@ -166,9 +169,12 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 	if useAnalyze && fullExplainPlan != nil {
 		baseline.AnalyzeMode = true
 		baseline.Buffers = &BufferBaseline{
-			SharedHitBlocks:  fullExplainPlan.Plan.SharedHitBlocks,
-			SharedReadBlocks: fullExplainPlan.Plan.SharedReadBlocks,
-			TotalBuffers:     fullExplainPlan.Plan.SharedHitBlocks + fullExplainPlan.Plan.SharedReadBlocks,
+			SharedHitBlocks:   fullExplainPlan.Plan.SharedHitBlocks,
+			SharedReadBlocks:  fullExplainPlan.Plan.SharedReadBlocks,
+			TotalBuffers:      fullExplainPlan.Plan.SharedHitBlocks + fullExplainPlan.Plan.SharedReadBlocks,
+			TempReadBlocks:    fullExplainPlan.Plan.TempReadBlocks,
+			TempWrittenBlocks: fullExplainPlan.Plan.TempWrittenBlocks,
+			TempBuffers:       fullExplainPlan.Plan.TempReadBlocks + fullExplainPlan.Plan.TempWrittenBlocks,
 		}
 		baseline.Actuals = &ActualBaseline{
 			ActualRows:      fullExplainPlan.Plan.ActualRows,
@@ -366,4 +372,10 @@ func CompareBuffers(actualBuffers, baselineBuffers int64, thresholdPercent float
 	isOk := percentageIncrease <= thresholdPercent
 
 	return isOk, percentageIncrease
+}
+
+// IsSpillRegression: temp blocks appeared or grew past threshold.
+func IsSpillRegression(actualTemp, baselineTemp int64, thresholdPercent float64) bool {
+	ok, _ := CompareBuffers(actualTemp, baselineTemp, thresholdPercent)
+	return !ok
 }
