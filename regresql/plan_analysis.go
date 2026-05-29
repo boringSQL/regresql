@@ -3,17 +3,20 @@ package regresql
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
 type (
 	PlanSignature struct {
-		NodeTypes   []string
-		Relations   map[string]ScanInfo
-		IndexesUsed []string
-		HasSeqScan  bool
-		HasSort     bool
-		JoinTypes   []string
+		NodeTypes    []string
+		Relations    map[string]ScanInfo
+		IndexesUsed  []string
+		HasSeqScan   bool
+		HasSort      bool
+		JoinTypes    []string
+		JoinModes    []string // Join Type qualifier, parallel to JoinTypes
+		PartialModes []string // "Partial"/"Finalize"
 	}
 
 	ScanInfo struct {
@@ -61,6 +64,10 @@ func extractFromTypedNode(node *PlanNode, sig *PlanSignature) {
 		}
 		if joinNodeTypes[node.NodeType] {
 			sig.JoinTypes = append(sig.JoinTypes, node.NodeType)
+			sig.JoinModes = append(sig.JoinModes, node.JoinType)
+		}
+		if node.PartialMode == "Partial" || node.PartialMode == "Finalize" {
+			sig.PartialModes = append(sig.PartialModes, node.PartialMode)
 		}
 	}
 
@@ -134,6 +141,10 @@ func extractFromNode(node map[string]any, sig *PlanSignature) {
 		}
 		if joinNodeTypes[nodeType] {
 			sig.JoinTypes = append(sig.JoinTypes, nodeType)
+			sig.JoinModes = append(sig.JoinModes, getString(node, "Join Type"))
+		}
+		if pm := getString(node, "Partial Mode"); pm == "Partial" || pm == "Finalize" {
+			sig.PartialModes = append(sig.PartialModes, pm)
 		}
 	}
 
@@ -231,14 +242,16 @@ func HasPlanChanged(baseline, current *PlanSignature) bool {
 		}
 	}
 
-	if len(baseline.JoinTypes) != len(current.JoinTypes) {
+	if !slices.Equal(baseline.JoinTypes, current.JoinTypes) {
 		return true
 	}
 
-	for i := range baseline.JoinTypes {
-		if baseline.JoinTypes[i] != current.JoinTypes[i] {
-			return true
-		}
+	if !slices.Equal(baseline.JoinModes, current.JoinModes) {
+		return true
+	}
+
+	if !slices.Equal(baseline.PartialModes, current.PartialModes) {
+		return true
 	}
 
 	return false

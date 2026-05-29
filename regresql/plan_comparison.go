@@ -26,6 +26,8 @@ const (
 	IndexToSeqScan     RegressionType = "index_to_seqscan"
 	IndexOnlyToIndex   RegressionType = "index_only_to_index"
 	JoinTypeChanged    RegressionType = "join_type_changed"
+	JoinModeChanged    RegressionType = "join_mode_changed"
+	PartialModeChanged RegressionType = "partial_mode_changed"
 	SortAdded          RegressionType = "sort_added"
 	IndexChanged       RegressionType = "index_changed"
 	TableAccessChanged RegressionType = "table_access_changed"
@@ -46,6 +48,14 @@ func DetectPlanRegressions(baseline, current *PlanSignature) []PlanRegression {
 	}
 
 	if regression := compareJoinTypes(baseline.JoinTypes, current.JoinTypes); regression != nil {
+		regressions = append(regressions, *regression)
+	}
+
+	if regression := compareJoinModes(baseline.JoinModes, current.JoinModes); regression != nil {
+		regressions = append(regressions, *regression)
+	}
+
+	if regression := comparePartialModes(baseline.PartialModes, current.PartialModes); regression != nil {
 		regressions = append(regressions, *regression)
 	}
 
@@ -149,6 +159,40 @@ func compareJoinTypes(baseline, current []string) *PlanRegression {
 		Recommendations: []string{
 			"-- Join strategy changed - this may be better or worse",
 			"-- Run ANALYZE on joined tables to ensure statistics are up to date",
+		},
+	}
+}
+
+// catches Inner → Right Anti/Semi etc. that keep the same node type
+func compareJoinModes(baseline, current []string) *PlanRegression {
+	if slices.Equal(baseline, current) {
+		return nil
+	}
+
+	return &PlanRegression{
+		Type:     JoinModeChanged,
+		Severity: "warning",
+		Message:  fmt.Sprintf("Join type changed: [%s] → [%s]", strings.Join(baseline, ", "), strings.Join(current, ", ")),
+		Recommendations: []string{
+			"-- Join semantics changed (e.g. anti/semi join rewrite)",
+			"-- Verify the query still returns the intended rows",
+		},
+	}
+}
+
+// catches partial-aggregate pushdown appearing/disappearing
+func comparePartialModes(baseline, current []string) *PlanRegression {
+	if slices.Equal(baseline, current) {
+		return nil
+	}
+
+	return &PlanRegression{
+		Type:     PartialModeChanged,
+		Severity: "info",
+		Message:  fmt.Sprintf("Aggregate partial mode changed: [%s] → [%s]", strings.Join(baseline, ", "), strings.Join(current, ", ")),
+		Recommendations: []string{
+			"-- Partial/finalize aggregation changed - often a parallelism shift",
+			"-- Confirm work_mem and parallel GUCs match across runs",
 		},
 	}
 }

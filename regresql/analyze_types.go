@@ -14,13 +14,13 @@ type (
 	// PlanNode represents a node in the query execution plan
 	PlanNode struct {
 		// Core fields (always present)
-		NodeType       string  `json:"Node Type"`
-		StartupCost    float64 `json:"Startup Cost"`
-		TotalCost      float64 `json:"Total Cost"`
-		PlanRows       float64 `json:"Plan Rows"`
-		PlanWidth      int     `json:"Plan Width"`
-		ParallelAware  bool    `json:"Parallel Aware,omitempty"`
-		AsyncCapable   bool    `json:"Async Capable,omitempty"`
+		NodeType      string  `json:"Node Type"`
+		StartupCost   float64 `json:"Startup Cost"`
+		TotalCost     float64 `json:"Total Cost"`
+		PlanRows      float64 `json:"Plan Rows"`
+		PlanWidth     int     `json:"Plan Width"`
+		ParallelAware bool    `json:"Parallel Aware,omitempty"`
+		AsyncCapable  bool    `json:"Async Capable,omitempty"`
 
 		// Relationship to parent
 		ParentRelationship string `json:"Parent Relationship,omitempty"`
@@ -42,6 +42,8 @@ type (
 		// Join fields
 		JoinType    string `json:"Join Type,omitempty"`
 		InnerUnique bool   `json:"Inner Unique,omitempty"`
+
+		PartialMode string `json:"Partial Mode,omitempty"`
 
 		// Sort fields
 		SortKey       []string `json:"Sort Key,omitempty"`
@@ -136,13 +138,13 @@ type (
 		ActualRows      float64 `json:"actual_rows"`
 
 		// Buffer stats (root node only)
-		SharedHitBlocks   int64 `json:"shared_hit_blocks"`
-		SharedReadBlocks  int64 `json:"shared_read_blocks"`
-		LocalHitBlocks    int64 `json:"local_hit_blocks"`
-		LocalReadBlocks   int64 `json:"local_read_blocks"`
-		TempReadBlocks    int64 `json:"temp_read_blocks"`
-		TempWrittenBlocks int64 `json:"temp_written_blocks"`
-		TotalBuffers      int64 `json:"total_buffers"`
+		SharedHitBlocks   int64   `json:"shared_hit_blocks"`
+		SharedReadBlocks  int64   `json:"shared_read_blocks"`
+		LocalHitBlocks    int64   `json:"local_hit_blocks"`
+		LocalReadBlocks   int64   `json:"local_read_blocks"`
+		TempReadBlocks    int64   `json:"temp_read_blocks"`
+		TempWrittenBlocks int64   `json:"temp_written_blocks"`
+		TotalBuffers      int64   `json:"total_buffers"`
 		IOReadTimeMs      float64 `json:"io_read_time_ms"`
 		IOWriteTimeMs     float64 `json:"io_write_time_ms"`
 	}
