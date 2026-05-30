@@ -3,6 +3,7 @@ package regresql
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/boringsql/queries"
 )
@@ -17,6 +18,7 @@ type (
 		NoBaseline         bool
 		NoSeqScanWarn      bool
 		DiffFloatTolerance float64
+		Timeout            time.Duration // statement_timeout override (0 = unset)
 	}
 )
 
@@ -43,6 +45,11 @@ func (q *Query) GetRegressQLOptions() RegressQLOptions {
 			value := strings.TrimPrefix(part, "DiffFloatTolerance:")
 			value = strings.TrimPrefix(value, "difffloattolerance:")
 			fmt.Sscanf(value, "%f", &opts.DiffFloatTolerance)
+		case strings.HasPrefix(partLower, "timeout:"):
+			value := part[len("timeout:"):]
+			if d, err := time.ParseDuration(strings.TrimSpace(value)); err == nil {
+				opts.Timeout = d
+			}
 		}
 	}
 

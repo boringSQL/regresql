@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -13,6 +14,7 @@ type (
 		Extends        string                `yaml:"extends,omitempty"`
 		Root           string                `yaml:"root"`
 		PgUri          string                `yaml:"pguri"`
+		Timeout        string                `yaml:"timeout,omitempty"` // statement_timeout, e.g. "30s"
 		Ignore         []string              `yaml:"ignore,omitempty"`
 		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
 		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
@@ -243,6 +245,9 @@ func mergeConfig(base, over config) config {
 	if over.PgUri != "" {
 		out.PgUri = over.PgUri
 	}
+	if over.Timeout != "" {
+		out.Timeout = over.Timeout
+	}
 	out.Ignore = mergeStringSlice(base.Ignore, over.Ignore)
 	out.PlanQuality = mergePlanQuality(base.PlanQuality, over.PlanQuality)
 	out.DiffComparison = mergeDiffComparison(base.DiffComparison, over.DiffComparison)
@@ -409,6 +414,18 @@ func mergeStatsConfig(a, b *StatsConfig) *StatsConfig {
 		out.Default = b.Default
 	}
 	return &out
+}
+
+// GetStatementTimeout returns the default statement_timeout (0 = none).
+func GetStatementTimeout() time.Duration {
+	if cachedConfig == nil || cachedConfig.Timeout == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(cachedConfig.Timeout)
+	if err != nil {
+		return 0
+	}
+	return d
 }
 
 func IsAnalyzeEnabled() bool {

@@ -359,9 +359,19 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 		}
 
 		// Execute query and handle results
+		timeout := resolveTimeout(pq.Query)
+		var timedOut bool
 		var writtenFiles []string
 		if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
+			if err := applyStatementTimeout(context.Background(), tx, timeout); err != nil {
+				return err
+			}
 			if err := pq.Plan.Execute(context.Background(), tx); err != nil {
+				// timeout: can't produce an expected result, skip
+				if isTimeoutError(err) {
+					timedOut = true
+					return nil
+				}
 				return err
 			}
 
@@ -400,6 +410,11 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 				return nil
 			}
 			return err
+		}
+
+		if timedOut {
+			fmt.Printf("  Skipping '%s': did not complete within %s (statement_timeout)\n", pq.Query.Name, timeout)
+			continue
 		}
 
 		// Record baseline metadata for written files
@@ -493,8 +508,18 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 			return nil, err
 		}
 
+		timeout := resolveTimeout(pq.Query)
+		var timedOut bool
 		if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
+			if err := applyStatementTimeout(context.Background(), tx, timeout); err != nil {
+				return err
+			}
 			if err := pq.Plan.Execute(context.Background(), tx); err != nil {
+				// timeout = divergence, not a fatal error: record and continue
+				if isTimeoutError(err) {
+					timedOut = true
+					return nil
+				}
 				return err
 			}
 			if err := pq.Plan.WriteResultSets(odir.path); err != nil {
@@ -522,6 +547,20 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 			return nil
 		}); err != nil {
 			return nil, err
+		}
+
+		if timedOut {
+			r := TestResult{
+				Name:      pq.Query.Name,
+				Type:      "timeout",
+				Status:    "failed",
+				Error:     fmt.Sprintf("query did not complete within %s (statement_timeout)", timeout),
+				QueryFile: pq.SQLPath,
+			}
+			summary.AddResult(r)
+			if err := formatter.AddResult(r, w); err != nil {
+				return nil, err
+			}
 		}
 	}
 
