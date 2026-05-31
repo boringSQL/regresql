@@ -850,6 +850,11 @@ var PlannerSettings = []string{
 	"cpu_operator_cost",
 	"effective_cache_size",
 	"work_mem",
+	"max_parallel_workers_per_gather",
+	"max_parallel_workers",
+	"min_parallel_table_scan_size",
+	"parallel_setup_cost",
+	"parallel_tuple_cost",
 }
 
 // CaptureServerContext captures PostgreSQL server version and planner settings
