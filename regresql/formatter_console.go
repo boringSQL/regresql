@@ -164,6 +164,11 @@ func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
 			fmt.Fprintf(w, "  Spill (temp blocks): %d -> %d\n", r.BaselineTempBuffers, r.ActualTempBuffers)
 			fmt.Fprintln(w, "  Plan spilled to disk (sort/hash exceeded work_mem)")
 		}
+		if r.TupleRegression {
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "  Tuples processed: %.0f -> %.0f (+%.1f%%)\n", r.BaselineTuples, r.ActualTuples, r.TupleIncrease)
+			fmt.Fprintln(w, "  Plan touches more tuples for the same result (CPU-work regression)")
+		}
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "  Cost (info):      %.2f (baseline: %.2f)\n", r.ActualCost, r.ExpectedCost)
 		fmt.Fprintln(w)

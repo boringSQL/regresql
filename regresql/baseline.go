@@ -36,9 +36,10 @@ type (
 	}
 
 	ActualBaseline struct {
-		ActualRows      float64 `json:"actual_rows"`
-		PlanRows        float64 `json:"plan_rows"`
-		ExecutionTimeMs float64 `json:"execution_time_ms"`
+		ActualRows           float64 `json:"actual_rows"`
+		PlanRows             float64 `json:"plan_rows"`
+		ExecutionTimeMs      float64 `json:"execution_time_ms"`
+		TotalTuplesProcessed float64 `json:"total_tuples_processed,omitempty"`
 	}
 )
 
@@ -177,9 +178,10 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 			TempBuffers:       fullExplainPlan.Plan.TempReadBlocks + fullExplainPlan.Plan.TempWrittenBlocks,
 		}
 		baseline.Actuals = &ActualBaseline{
-			ActualRows:      fullExplainPlan.Plan.ActualRows,
-			PlanRows:        fullExplainPlan.Plan.PlanRows,
-			ExecutionTimeMs: fullExplainPlan.ExecutionTime,
+			ActualRows:           fullExplainPlan.Plan.ActualRows,
+			PlanRows:             fullExplainPlan.Plan.PlanRows,
+			ExecutionTimeMs:      fullExplainPlan.ExecutionTime,
+			TotalTuplesProcessed: SumTuplesProcessed(&fullExplainPlan.Plan),
 		}
 	}
 
@@ -378,4 +380,16 @@ func CompareBuffers(actualBuffers, baselineBuffers int64, thresholdPercent float
 func IsSpillRegression(actualTemp, baselineTemp int64, thresholdPercent float64) bool {
 	ok, _ := CompareBuffers(actualTemp, baselineTemp, thresholdPercent)
 	return !ok
+}
+
+// CompareTuples checks the tuple no grows compared to baseline
+func CompareTuples(actualTuples, baselineTuples, thresholdPercent float64) (bool, float64) {
+	if baselineTuples == 0 {
+		return true, 0
+	}
+
+	percentageIncrease := ((actualTuples - baselineTuples) / baselineTuples) * 100
+	isOk := percentageIncrease <= thresholdPercent
+
+	return isOk, percentageIncrease
 }

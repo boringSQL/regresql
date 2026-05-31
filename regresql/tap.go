@@ -249,6 +249,18 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 			isOk = false
 		}
 
+		// tuple-flow: advisory only (plan-shape changes legitimately move more rows)
+		actualTuples := SumTuplesProcessed(&explainPlan.Plan)
+		var baselineTuples float64
+		if baseline.Actuals != nil {
+			baselineTuples = baseline.Actuals.TotalTuplesProcessed
+		}
+		tupleOk, tupleIncrease := CompareTuples(actualTuples, baselineTuples, bufferThreshold)
+		result.ActualTuples = actualTuples
+		result.BaselineTuples = baselineTuples
+		result.TupleIncrease = tupleIncrease
+		result.TupleRegression = !tupleOk
+
 		result.AnalyzeMode = true
 		result.ActualBuffers = actualBuffers
 		result.BaselineBuffers = baselineBuffers
@@ -323,6 +335,10 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		default:
 			result.Status = "failed"
 			result.Name = fmt.Sprintf("%s (%d > %d * %.0f%%, +%.1f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold, percentageIncrease)
+		}
+
+		if result.TupleRegression {
+			result.Name += fmt.Sprintf(" [tuples +%.1f%%]", result.TupleIncrease)
 		}
 	} else {
 		if isOk {

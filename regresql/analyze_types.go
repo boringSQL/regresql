@@ -235,6 +235,20 @@ func collectNodeRowEstimates(node *PlanNode, analysis *RowEstimateAnalysis) {
 	}
 }
 
+// SumTuplesProcessed sums actual rows times number of loops over all nodes (as kind of CPU-work proxy)
+func SumTuplesProcessed(node *PlanNode) float64 {
+	loops := node.ActualLoops
+	if loops < 1 {
+		loops = 1
+	}
+	total := node.ActualRows * loops
+
+	for i := range node.Plans {
+		total += SumTuplesProcessed(&node.Plans[i])
+	}
+	return total
+}
+
 func toInt64(v any) int64 {
 	switch val := v.(type) {
 	case float64:

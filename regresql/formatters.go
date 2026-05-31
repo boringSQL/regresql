@@ -39,6 +39,12 @@ type (
 		BaselineTempBuffers int64
 		SpillRegression     bool
 
+		// Tuple-flow comparisons (deterministic CPU-work proxy)
+		ActualTuples    float64
+		BaselineTuples  float64
+		TupleIncrease   float64
+		TupleRegression bool
+
 		// Improvement detection
 		Improved            bool
 		ImprovementPercent  float64
