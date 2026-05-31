@@ -235,7 +235,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	improvementThreshold := GetImprovementThreshold()
 
 	if useBufferComparison {
-		actualBuffers := explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks
+		actualBuffers := explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks + explainPlan.Plan.LocalHitBlocks + explainPlan.Plan.LocalReadBlocks
 		baselineBuffers := baseline.Buffers.TotalBuffers
 		bufferThreshold := GetBufferThreshold()
 
@@ -320,7 +320,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	opts := p.Query.GetRegressQLOptions()
 	costInfo := PlanCostInfo{
 		TotalCost:    explainPlan.Plan.TotalCost,
-		TotalBuffers: explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks,
+		TotalBuffers: explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks + explainPlan.Plan.LocalHitBlocks + explainPlan.Plan.LocalReadBlocks,
 	}
 	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
 

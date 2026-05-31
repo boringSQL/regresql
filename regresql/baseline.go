@@ -29,6 +29,8 @@ type (
 	BufferBaseline struct {
 		SharedHitBlocks   int64 `json:"shared_hit_blocks"`
 		SharedReadBlocks  int64 `json:"shared_read_blocks"`
+		LocalHitBlocks    int64 `json:"local_hit_blocks"`
+		LocalReadBlocks   int64 `json:"local_read_blocks"`
 		TotalBuffers      int64 `json:"total_buffers"`
 		TempReadBlocks    int64 `json:"temp_read_blocks"`
 		TempWrittenBlocks int64 `json:"temp_written_blocks"`
@@ -172,7 +174,9 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 		baseline.Buffers = &BufferBaseline{
 			SharedHitBlocks:   fullExplainPlan.Plan.SharedHitBlocks,
 			SharedReadBlocks:  fullExplainPlan.Plan.SharedReadBlocks,
-			TotalBuffers:      fullExplainPlan.Plan.SharedHitBlocks + fullExplainPlan.Plan.SharedReadBlocks,
+			LocalHitBlocks:    fullExplainPlan.Plan.LocalHitBlocks,
+			LocalReadBlocks:   fullExplainPlan.Plan.LocalReadBlocks,
+			TotalBuffers:      fullExplainPlan.Plan.SharedHitBlocks + fullExplainPlan.Plan.SharedReadBlocks + fullExplainPlan.Plan.LocalHitBlocks + fullExplainPlan.Plan.LocalReadBlocks,
 			TempReadBlocks:    fullExplainPlan.Plan.TempReadBlocks,
 			TempWrittenBlocks: fullExplainPlan.Plan.TempWrittenBlocks,
 			TempBuffers:       fullExplainPlan.Plan.TempReadBlocks + fullExplainPlan.Plan.TempWrittenBlocks,
