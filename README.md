@@ -4,6 +4,8 @@ SQL queries can break silently. Schema migrations, data changes, and index modif
 
 RegreSQL is a language-agnostic SQL regression testing tool for PostgreSQL. It finds your `*.sql` files, runs them against your database, compares output to known-good baselines, and tracks EXPLAIN plan changes.  Detect broken queries and performance regressions before production.
 
+`RegreSQL` is part of the [boringSQL](https://boringsql.com) stack alongside [Fixturize](https://github.com/boringSQL/fixturize) and [dryrun](https://github.com/boringSQL/dryrun). See the [project page](https://boringsql.com/products/regresql/) for the full overview.
+
 ## Installing
 
 ### Homebrew (macOS)
@@ -281,6 +283,14 @@ regresql/
 ## History
 
 Fork of the original [regresql](https://github.com/dimitri) by Dimitri Fontaine, from [Mastering PostgreSQL](http://masteringpostgresql.com/). Extended as part of the [boringSQL](https://boringsql.com) project.
+
+## Learn more
+
+- **[boringSQL](https://boringsql.com)**, the blog and project home
+- **[RegreSQL project page](https://boringsql.com/products/regresql/)**, overview and docs
+- **[Regression testing for PostgreSQL queries](https://boringsql.com/posts/regresql-testing-queries/)**, the why and how
+- **[RegreSQL as a PostgreSQL extension](https://boringsql.com/posts/regresql-extension/)**, running checks from inside the database
+- **[Fixturize](https://github.com/boringSQL/fixturize)** and **[dryrun](https://github.com/boringSQL/dryrun)**, companion tools in the suite
 
 
 ## License
