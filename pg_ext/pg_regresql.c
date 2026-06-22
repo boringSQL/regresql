@@ -20,6 +20,7 @@
 #include "access/htup_details.h"
 #include "catalog/pg_class.h"
 #include "optimizer/plancat.h"
+#include "utils/guc.h"
 #include "utils/syscache.h"
 
 PG_MODULE_MAGIC;
@@ -28,6 +29,9 @@ PGDLLEXPORT void _PG_init(void);
 
 // hook chaining
 static get_relation_info_hook_type prev_hook = NULL;
+
+// marker so callers can probe current_setting('pg_regresql.active')
+static bool pg_regresql_active = true;
 
 // regresql hook function
 static void
@@ -117,6 +121,18 @@ override_relation_stats(PlannerInfo *root,
 void
 _PG_init(void)
 {
+    DefineCustomBoolVariable("pg_regresql.active",
+                             "Reports that pg_regresql is loaded.",
+                             NULL,
+                             &pg_regresql_active,
+                             true,
+                             PGC_USERSET,
+                             GUC_NOT_IN_SAMPLE,
+                             NULL, NULL, NULL);
+#if PG_VERSION_NUM >= 150000
+    MarkGUCPrefixReserved("pg_regresql");
+#endif
+
     // setup the hook function
     prev_hook = get_relation_info_hook;
     get_relation_info_hook = override_relation_stats;
