@@ -66,6 +66,7 @@ type (
 
 		// Row removal stats
 		RowsRemovedByFilter       float64 `json:"Rows Removed by Filter,omitempty"`
+		RowsRemovedByJoinFilter   float64 `json:"Rows Removed by Join Filter,omitempty"`
 		RowsRemovedByIndexRecheck float64 `json:"Rows Removed by Index Recheck,omitempty"`
 
 		// ANALYZE fields (only present with ANALYZE true)
@@ -235,18 +236,72 @@ func collectNodeRowEstimates(node *PlanNode, analysis *RowEstimateAnalysis) {
 	}
 }
 
-// SumTuplesProcessed sums actual rows times number of loops over all nodes (as kind of CPU-work proxy)
+// SumTuplesProcessed sums (emitted + removed) rows times loops over all nodes (CPU-work proxy)
 func SumTuplesProcessed(node *PlanNode) float64 {
 	loops := node.ActualLoops
 	if loops < 1 {
 		loops = 1
 	}
-	total := node.ActualRows * loops
+	perLoop := node.ActualRows + node.RowsRemovedByFilter + node.RowsRemovedByJoinFilter + node.RowsRemovedByIndexRecheck
+	total := perLoop * loops
 
 	for i := range node.Plans {
 		total += SumTuplesProcessed(&node.Plans[i])
 	}
 	return total
+}
+
+// QErrorResult identifies the plan node with the worst cardinality-estimation error
+type QErrorResult struct {
+	QError       float64 `json:"qerror"`
+	NodeType     string  `json:"node_type"`
+	RelationName string  `json:"relation_name,omitempty"`
+	PlanRows     float64 `json:"plan_rows"`
+	ActualRows   float64 `json:"actual_rows"`
+}
+
+// WorstQError returns the worst per-node q-error: max(est/act, act/est), clamped to >= 1.
+// PlanRows and ActualRows are both per-loop; never-executed nodes are skipped.
+func WorstQError(node *PlanNode) *QErrorResult {
+	var worst *QErrorResult
+	walkQError(node, &worst)
+	return worst
+}
+
+func walkQError(node *PlanNode, worst **QErrorResult) {
+	if node.ActualLoops > 0 {
+		est := math.Max(node.PlanRows, 1)
+		act := math.Max(node.ActualRows, 1)
+		q := math.Max(est/act, act/est)
+		if *worst == nil || q > (*worst).QError {
+			*worst = &QErrorResult{
+				QError:       q,
+				NodeType:     node.NodeType,
+				RelationName: node.RelationName,
+				PlanRows:     node.PlanRows,
+				ActualRows:   node.ActualRows,
+			}
+		}
+	}
+	for i := range node.Plans {
+		walkQError(&node.Plans[i], worst)
+	}
+}
+
+func qErrorNodeLabel(q *QErrorResult) string {
+	if q.RelationName != "" {
+		return q.NodeType + " on " + q.RelationName
+	}
+	return q.NodeType
+}
+
+// IsQErrorRegression gates on ratio AND absolute floor (dual condition suppresses
+// cross-plan noise); missing baseline gives no signal.
+func IsQErrorRegression(actual, baseline, ratioThreshold, absFloor float64) bool {
+	if baseline <= 0 {
+		return false
+	}
+	return actual >= baseline*ratioThreshold && actual >= absFloor
 }
 
 func toInt64(v any) int64 {

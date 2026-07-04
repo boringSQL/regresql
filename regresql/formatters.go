@@ -45,6 +45,12 @@ type (
 		TupleIncrease   float64
 		TupleRegression bool
 
+		// Estimation-quality (worst-node q-error) comparisons
+		ActualQError     float64
+		BaselineQError   float64
+		QErrorNode       string
+		QErrorRegression bool
+
 		// Improvement detection
 		Improved            bool
 		ImprovementPercent  float64

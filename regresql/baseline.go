@@ -42,6 +42,8 @@ type (
 		PlanRows             float64 `json:"plan_rows"`
 		ExecutionTimeMs      float64 `json:"execution_time_ms"`
 		TotalTuplesProcessed float64 `json:"total_tuples_processed,omitempty"`
+		WorstQError          float64 `json:"worst_qerror,omitempty"`
+		WorstQErrorNode      string  `json:"worst_qerror_node,omitempty"`
 	}
 )
 
@@ -186,6 +188,10 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 			PlanRows:             fullExplainPlan.Plan.PlanRows,
 			ExecutionTimeMs:      fullExplainPlan.ExecutionTime,
 			TotalTuplesProcessed: SumTuplesProcessed(&fullExplainPlan.Plan),
+		}
+		if worst := WorstQError(&fullExplainPlan.Plan); worst != nil {
+			baseline.Actuals.WorstQError = worst.QError
+			baseline.Actuals.WorstQErrorNode = qErrorNodeLabel(worst)
 		}
 	}
 

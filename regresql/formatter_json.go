@@ -75,6 +75,15 @@ func formatTests(results []TestResult) []map[string]any {
 				test["plan_changed"] = true
 			}
 
+			if r.ActualQError > 0 {
+				test["qerror"] = map[string]any{
+					"actual":     r.ActualQError,
+					"baseline":   r.BaselineQError,
+					"node":       r.QErrorNode,
+					"regression": r.QErrorRegression,
+				}
+			}
+
 			if len(r.PlanRegressions) > 0 {
 				regressions := make([]map[string]any, 0, len(r.PlanRegressions))
 				for _, reg := range r.PlanRegressions {

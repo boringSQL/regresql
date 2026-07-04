@@ -169,6 +169,11 @@ func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
 			fmt.Fprintf(w, "  Tuples processed: %.0f -> %.0f (+%.1f%%)\n", r.BaselineTuples, r.ActualTuples, r.TupleIncrease)
 			fmt.Fprintln(w, "  Plan touches more tuples for the same result (CPU-work regression)")
 		}
+		if r.QErrorRegression {
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "  Worst q-error: %.0fx -> %.0fx (%s)\n", r.BaselineQError, r.ActualQError, r.QErrorNode)
+			fmt.Fprintln(w, "  Cardinality estimation degraded (row estimates far from actuals)")
+		}
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "  Cost (info):      %.2f (baseline: %.2f)\n", r.ActualCost, r.ExpectedCost)
 		fmt.Fprintln(w)

@@ -34,6 +34,8 @@ type (
 		BufferThreshold      float64 `yaml:"buffer_threshold,omitempty"`      // default: 2.0
 		CostThreshold        float64 `yaml:"cost_threshold,omitempty"`        // default: 10.0
 		ImprovementThreshold float64 `yaml:"improvement_threshold,omitempty"` // default: 20.0
+		QErrorRatio          float64 `yaml:"qerror_ratio,omitempty"`          // default: 2.0 (x worse than baseline)
+		QErrorFloor          float64 `yaml:"qerror_floor,omitempty"`          // default: 10.0 (absolute q-error floor)
 	}
 
 	PlanQualityGlobal struct {
@@ -212,6 +214,8 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 			BufferThreshold:      2.0,
 			CostThreshold:        10.0,
 			ImprovementThreshold: 20.0,
+			QErrorRatio:          2.0,
+			QErrorFloor:          10.0,
 		}
 	}
 	cfg := cachedConfig.Analyze
@@ -221,6 +225,8 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 		BufferThreshold:      cfg.BufferThreshold,
 		CostThreshold:        cfg.CostThreshold,
 		ImprovementThreshold: cfg.ImprovementThreshold,
+		QErrorRatio:          cfg.QErrorRatio,
+		QErrorFloor:          cfg.QErrorFloor,
 	}
 	if result.Comparison == "" {
 		result.Comparison = "auto"
@@ -233,6 +239,12 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 	}
 	if result.ImprovementThreshold == 0 {
 		result.ImprovementThreshold = 20.0
+	}
+	if result.QErrorRatio == 0 {
+		result.QErrorRatio = 2.0
+	}
+	if result.QErrorFloor == 0 {
+		result.QErrorFloor = 10.0
 	}
 	return result
 }
@@ -399,6 +411,12 @@ func mergeAnalyzeConfig(a, b *AnalyzeConfig) *AnalyzeConfig {
 	if b.ImprovementThreshold != 0 {
 		out.ImprovementThreshold = b.ImprovementThreshold
 	}
+	if b.QErrorRatio != 0 {
+		out.QErrorRatio = b.QErrorRatio
+	}
+	if b.QErrorFloor != 0 {
+		out.QErrorFloor = b.QErrorFloor
+	}
 	return &out
 }
 
@@ -446,4 +464,12 @@ func GetComparisonMode() string {
 
 func GetImprovementThreshold() float64 {
 	return GetAnalyzeConfig().ImprovementThreshold
+}
+
+func GetQErrorRatio() float64 {
+	return GetAnalyzeConfig().QErrorRatio
+}
+
+func GetQErrorFloor() float64 {
+	return GetAnalyzeConfig().QErrorFloor
 }

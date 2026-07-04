@@ -230,7 +230,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		return result
 	}
 
-	var isOk bool
+	var isOk, bufferOk bool
 	var percentageIncrease float64
 	improvementThreshold := GetImprovementThreshold()
 
@@ -240,6 +240,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		bufferThreshold := GetBufferThreshold()
 
 		isOk, percentageIncrease = CompareBuffers(actualBuffers, baselineBuffers, bufferThreshold)
+		bufferOk = isOk
 
 		// spill fails the check even when shared buffers pass
 		actualTemp := explainPlan.Plan.TempReadBlocks + explainPlan.Plan.TempWrittenBlocks
@@ -260,6 +261,19 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		result.BaselineTuples = baselineTuples
 		result.TupleIncrease = tupleIncrease
 		result.TupleRegression = !tupleOk
+
+		// q-error gate (estimation quality)
+		if worst := WorstQError(&explainPlan.Plan); worst != nil {
+			result.ActualQError = worst.QError
+			result.QErrorNode = qErrorNodeLabel(worst)
+		}
+		if baseline.Actuals != nil {
+			result.BaselineQError = baseline.Actuals.WorstQError
+		}
+		if IsQErrorRegression(result.ActualQError, result.BaselineQError, GetQErrorRatio(), GetQErrorFloor()) {
+			result.QErrorRegression = true
+			isOk = false
+		}
 
 		result.AnalyzeMode = true
 		result.ActualBuffers = actualBuffers
@@ -325,6 +339,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
 
 	if useBufferComparison {
+		qErrorNamed := false
 		switch {
 		case result.SpillRegression:
 			result.Status = "failed"
@@ -332,6 +347,10 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		case isOk:
 			result.Status = "passed"
 			result.Name = fmt.Sprintf("%s (%d <= %d * %.0f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold)
+		case bufferOk && result.QErrorRegression:
+			qErrorNamed = true
+			result.Status = "failed"
+			result.Name = fmt.Sprintf("%s (q-error %.0fx > baseline %.0fx, %s)", testName, result.ActualQError, result.BaselineQError, result.QErrorNode)
 		default:
 			result.Status = "failed"
 			result.Name = fmt.Sprintf("%s (%d > %d * %.0f%%, +%.1f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold, percentageIncrease)
@@ -339,6 +358,9 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 
 		if result.TupleRegression {
 			result.Name += fmt.Sprintf(" [tuples +%.1f%%]", result.TupleIncrease)
+		}
+		if result.QErrorRegression && !qErrorNamed {
+			result.Name += fmt.Sprintf(" [q-error %.0fx > %.0fx]", result.ActualQError, result.BaselineQError)
 		}
 	} else {
 		if isOk {
