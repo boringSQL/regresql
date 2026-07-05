@@ -329,15 +329,20 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 }
 
 func openCompareDB(uri string) (*sql.DB, error) {
-	// simple protocol so parallel query engages (extended protocol disables it)
-	if strings.Contains(uri, "://") && !strings.Contains(uri, "default_query_exec_mode") {
-		sep := "?"
-		if strings.Contains(uri, "?") {
-			sep = "&"
-		}
-		uri += sep + "default_query_exec_mode=simple_protocol"
+	return OpenDB(compareDSN(uri))
+}
+
+// compareDSN forces simple protocol so parallel query engages (the extended
+// protocol pgx defaults to silently disables it). Only rewrites URL-form DSNs.
+func compareDSN(uri string) string {
+	if !strings.Contains(uri, "://") || strings.Contains(uri, "default_query_exec_mode") {
+		return uri
 	}
-	return OpenDB(uri)
+	sep := "?"
+	if strings.Contains(uri, "?") {
+		sep = "&"
+	}
+	return uri + sep + "default_query_exec_mode=simple_protocol"
 }
 
 func queryEngineInfo(db *sql.DB) (EngineInfo, error) {
