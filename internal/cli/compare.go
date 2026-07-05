@@ -15,6 +15,7 @@ var (
 	compareRunFilter string
 	compareFormat    string
 	compareOutput    string
+	compareWarmups   int
 
 	compareCmd = &cobra.Command{
 		Use:   "compare --base <uri> --target <uri>",
@@ -38,6 +39,7 @@ when the server versions differ. Emits a scoreboard for a patch cover letter.`,
 				RunFilter:  compareRunFilter,
 				Format:     compareFormat,
 				OutputPath: compareOutput,
+				Warmups:    compareWarmups,
 			})
 			os.Exit(code)
 		},
@@ -53,4 +55,5 @@ func init() {
 	compareCmd.Flags().StringVar(&compareRunFilter, "run", "", "Run only queries matching regexp")
 	compareCmd.Flags().StringVar(&compareFormat, "format", "console", "Output format: console, markdown, json")
 	compareCmd.Flags().StringVarP(&compareOutput, "output", "o", "", "Output file path (default: stdout)")
+	compareCmd.Flags().IntVar(&compareWarmups, "warmups", 2, "Discarded EXPLAIN ANALYZE runs before the measured one (warm buffer cache for fair comparison)")
 }

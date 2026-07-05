@@ -18,6 +18,7 @@ type (
 		RunFilter  string
 		Format     string // console | markdown | json
 		OutputPath string
+		Warmups    int // discarded EXPLAIN ANALYZE runs before the measured one
 	}
 
 	EngineInfo struct {
@@ -162,8 +163,8 @@ func Compare(opts CompareOptions) int {
 		}
 		timeout := resolveTimeout(pq.Query)
 		for _, b := range iterateBindings(pq.Plan) {
-			base := captureBinding(context.Background(), baseDB, pq.Query, b.bindings, timeout)
-			target := captureBinding(context.Background(), targetDB, pq.Query, b.bindings, timeout)
+			base := captureBinding(context.Background(), baseDB, pq.Query, b.bindings, timeout, opts.Warmups)
+			target := captureBinding(context.Background(), targetDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			cmp := compareCaptures(pq.Query.Name, b.name, base, target, board.SameVersion)
 			board.Comparisons = append(board.Comparisons, cmp)
 		}
@@ -211,8 +212,9 @@ type engineCapture struct {
 }
 
 // captureBinding runs the query for its result set plus EXPLAIN ANALYZE for its
-// plan, in one rolled-back transaction (never mutates either server).
-func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[string]any, timeout time.Duration) engineCapture {
+// plan, in one rolled-back transaction. Equal warmup on both engines (keep the
+// last read, not the min) cancels cold-read/hint-bit buffer asymmetry.
+func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[string]any, timeout time.Duration, warmups int) engineCapture {
 	tx, err := db.Begin()
 	if err != nil {
 		return engineCapture{err: err}
@@ -240,12 +242,15 @@ func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[stri
 	eopts := DefaultExplainOptions()
 	eopts.Analyze = true
 	eopts.Buffers = true
-	ex, err := ExecuteExplainWithOptions(ctx, tx, sqlText, eopts, args...)
-	if isTimeoutError(err) {
-		return engineCapture{result: rs, timedOut: true}
-	}
-	if err != nil {
-		return engineCapture{result: rs, err: err}
+	var ex *ExplainOutput
+	for r := 0; r <= warmups; r++ { // warmups discarded + one measured (last)
+		ex, err = ExecuteExplainWithOptions(ctx, tx, sqlText, eopts, args...)
+		if isTimeoutError(err) {
+			return engineCapture{result: rs, timedOut: true}
+		}
+		if err != nil {
+			return engineCapture{result: rs, err: err}
+		}
 	}
 	return engineCapture{result: rs, explain: ex}
 }
