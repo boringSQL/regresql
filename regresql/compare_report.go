@@ -19,10 +19,11 @@ type scoreboardTotals struct {
 	Spill         int
 	Incomplete    int
 	Errors        int
+	Excluded      int
 }
 
 func (b *Scoreboard) totals() scoreboardTotals {
-	t := scoreboardTotals{Queries: len(b.Comparisons)}
+	t := scoreboardTotals{Queries: len(b.Comparisons), Excluded: len(b.Excluded)}
 	for _, c := range b.Comparisons {
 		switch {
 		case c.Severity == SevError:
@@ -52,10 +53,14 @@ func (b *Scoreboard) totals() scoreboardTotals {
 }
 
 func (t scoreboardTotals) line() string {
-	return fmt.Sprintf(
+	s := fmt.Sprintf(
 		"%d queries · %d correctness · %d shape · q-error +%d/-%d · %d buffer · %d spill · %d incomplete",
 		t.Queries, t.Correctness, t.Shape, t.QErrImproved, t.QErrRegressed,
 		t.BufferRegress, t.Spill, t.Incomplete)
+	if t.Excluded > 0 {
+		s += fmt.Sprintf(" · %d excluded", t.Excluded)
+	}
+	return s
 }
 
 func (b *Scoreboard) costLine() string {
@@ -156,6 +161,10 @@ func (b *Scoreboard) renderConsole(w io.Writer) error {
 		fmt.Fprintf(w, "  %s  %-28s %s\n", icon, compareLabel(c), detail)
 	}
 
+	for _, e := range b.Excluded {
+		fmt.Fprintf(w, "  ⊘ EXCL   %-28s %s\n", admitLabel(e), e.Reason)
+	}
+
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  ── scoreboard ──")
 	fmt.Fprintf(w, "  %s\n", b.totals().line())
@@ -186,5 +195,15 @@ func (b *Scoreboard) renderMarkdown(w io.Writer) error {
 		}
 		fmt.Fprintf(w, "| %s | `%s` | %s |\n", c.Severity, compareLabel(c), detail)
 	}
+	for _, e := range b.Excluded {
+		fmt.Fprintf(w, "| excluded | `%s` | %s |\n", admitLabel(e), e.Reason)
+	}
 	return nil
+}
+
+func admitLabel(e AdmitResult) string {
+	if e.Binding != "" {
+		return e.Name + " (" + e.Binding + ")"
+	}
+	return e.Name
 }

@@ -18,7 +18,9 @@ type (
 		RunFilter  string
 		Format     string // console | markdown | json
 		OutputPath string
-		Warmups    int // discarded EXPLAIN ANALYZE runs before the measured one
+		Warmups    int  // discarded EXPLAIN ANALYZE runs before the measured one
+		Admit      bool // preflight: exclude queries whose result isn't plan-invariant
+		AdmitReps  int  // repetitions per perturbation in the admit preflight
 	}
 
 	EngineInfo struct {
@@ -64,6 +66,7 @@ type (
 		SameVersion bool              `json:"same_version"`
 		GUCMismatch []GUCDiff         `json:"guc_mismatch,omitempty"`
 		Comparisons []QueryComparison `json:"comparisons"`
+		Excluded    []AdmitResult     `json:"excluded,omitempty"` // rejected by the --admit preflight
 	}
 
 	GUCDiff struct {
@@ -154,6 +157,11 @@ func Compare(opts CompareOptions) int {
 	suite := Walk(opts.Root, nil)
 	suite.SetRunFilter(opts.RunFilter)
 
+	admitReps := opts.AdmitReps
+	if admitReps < 1 {
+		admitReps = DefaultAdmitReps
+	}
+
 	for _, pq := range plannedQueries {
 		if !suite.matchesRunFilter(filepath.Base(pq.SQLPath), pq.Query.Name) {
 			continue
@@ -163,6 +171,13 @@ func Compare(opts CompareOptions) int {
 		}
 		timeout := resolveTimeout(pq.Query)
 		for _, b := range iterateBindings(pq.Plan) {
+			// exclude plan-dependent queries: their diff would be a false signal
+			if opts.Admit {
+				if ar := admitBinding(context.Background(), baseDB, pq.Query, b, admitReps); !ar.Admitted {
+					board.Excluded = append(board.Excluded, ar)
+					continue
+				}
+			}
 			base := captureBinding(context.Background(), baseDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			target := captureBinding(context.Background(), targetDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			cmp := compareCaptures(pq.Query.Name, b.name, base, target, board.SameVersion)

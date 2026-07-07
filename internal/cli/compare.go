@@ -16,6 +16,8 @@ var (
 	compareFormat    string
 	compareOutput    string
 	compareWarmups   int
+	compareAdmit     bool
+	compareAdmitReps int
 
 	compareCmd = &cobra.Command{
 		Use:   "compare --base <uri> --target <uri>",
@@ -40,6 +42,8 @@ when the server versions differ. Emits a scoreboard for a patch cover letter.`,
 				Format:     compareFormat,
 				OutputPath: compareOutput,
 				Warmups:    compareWarmups,
+				Admit:      compareAdmit,
+				AdmitReps:  compareAdmitReps,
 			})
 			os.Exit(code)
 		},
@@ -56,4 +60,6 @@ func init() {
 	compareCmd.Flags().StringVar(&compareFormat, "format", "console", "Output format: console, markdown, json")
 	compareCmd.Flags().StringVarP(&compareOutput, "output", "o", "", "Output file path (default: stdout)")
 	compareCmd.Flags().IntVar(&compareWarmups, "warmups", 2, "Discarded EXPLAIN ANALYZE runs before the measured one (warm buffer cache for fair comparison)")
+	compareCmd.Flags().BoolVar(&compareAdmit, "admit", false, "Preflight: exclude queries whose result isn't plan-invariant (determinism filter)")
+	compareCmd.Flags().IntVar(&compareAdmitReps, "admit-reps", regresql.DefaultAdmitReps, "Repetitions per perturbation in the --admit preflight")
 }
