@@ -257,17 +257,29 @@ func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[stri
 	eopts := DefaultExplainOptions()
 	eopts.Analyze = true
 	eopts.Buffers = true
-	var ex *ExplainOutput
-	for r := 0; r <= warmups; r++ { // warmups discarded + one measured (last)
-		ex, err = ExecuteExplainWithOptions(ctx, tx, sqlText, eopts, args...)
-		if isTimeoutError(err) {
-			return engineCapture{result: rs, timedOut: true}
-		}
-		if err != nil {
-			return engineCapture{result: rs, err: err}
-		}
+	ex, err := warmedExplain(warmups, func() (*ExplainOutput, error) {
+		return ExecuteExplainWithOptions(ctx, tx, sqlText, eopts, args...)
+	})
+	if isTimeoutError(err) {
+		return engineCapture{result: rs, timedOut: true}
+	}
+	if err != nil {
+		return engineCapture{result: rs, err: err}
 	}
 	return engineCapture{result: rs, explain: ex}
+}
+
+// warmedExplain runs explain (warmups+1) times and returns the last (measured)
+// result; a failing run stops early and returns its error.
+func warmedExplain(warmups int, explain func() (*ExplainOutput, error)) (*ExplainOutput, error) {
+	var ex *ExplainOutput
+	var err error
+	for r := 0; r <= warmups; r++ {
+		if ex, err = explain(); err != nil {
+			return ex, err
+		}
+	}
+	return ex, err
 }
 
 func compareCaptures(name, binding string, base, target engineCapture, sameVersion bool) QueryComparison {

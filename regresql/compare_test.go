@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -178,6 +179,52 @@ func TestScoreboardTotals(t *testing.T) {
 	}
 	if tot.QErrImproved != 1 || tot.QErrRegressed != 1 {
 		t.Errorf("q-error +%d/-%d, want +1/-1", tot.QErrImproved, tot.QErrRegressed)
+	}
+}
+
+// warmedExplain runs explain warmups+1 times (warmups discarded + one measured)
+// and returns the LAST result — the steady-state read that cancels cold-cache skew.
+func TestWarmedExplain_RunsAndKeepsLast(t *testing.T) {
+	cases := []struct{ warmups, wantRuns int }{
+		{0, 1}, // no warmup: a single measured run
+		{2, 3}, // 2 discarded + 1 measured
+		{4, 5},
+	}
+	for _, tc := range cases {
+		runs := 0
+		ex, err := warmedExplain(tc.warmups, func() (*ExplainOutput, error) {
+			runs++
+			// tag each run so we can prove the LAST one is returned, not the first
+			return &ExplainOutput{PlanningTime: float64(runs)}, nil
+		})
+		if err != nil {
+			t.Fatalf("warmups=%d: %v", tc.warmups, err)
+		}
+		if runs != tc.wantRuns {
+			t.Errorf("warmups=%d ran %d times, want %d", tc.warmups, runs, tc.wantRuns)
+		}
+		if ex.PlanningTime != float64(tc.wantRuns) {
+			t.Errorf("warmups=%d returned run %v, want the last (%d)", tc.warmups, ex.PlanningTime, tc.wantRuns)
+		}
+	}
+}
+
+// A failing run stops the warm loop early and surfaces its error (so a timeout on
+// a warm-up isn't masked by a later successful run).
+func TestWarmedExplain_StopsOnError(t *testing.T) {
+	runs := 0
+	_, err := warmedExplain(5, func() (*ExplainOutput, error) {
+		runs++
+		if runs == 2 {
+			return nil, errors.New("statement timeout")
+		}
+		return &ExplainOutput{}, nil
+	})
+	if err == nil {
+		t.Fatal("warmedExplain = nil error, want the run-2 error")
+	}
+	if runs != 2 {
+		t.Errorf("ran %d times, want it to stop at 2", runs)
 	}
 }
 

@@ -118,8 +118,7 @@ func Admit(opts AdmitOptions) int {
 	return 0
 }
 
-// admitBinding hashes the baseline result, then every perturbation reps times;
-// admitted iff every hash matches the baseline.
+// admitBinding hashes the query under each perturbation via the live connection.
 func admitBinding(ctx context.Context, db *sql.DB, q *Query, b bindingRef, reps int) AdmitResult {
 	res := AdmitResult{Name: q.Name, Binding: b.name}
 
@@ -129,26 +128,31 @@ func admitBinding(ctx context.Context, db *sql.DB, q *Query, b bindingRef, reps 
 		sqlText, args = q.Prepare(b.bindings)
 	}
 
-	base, err := canonicalResultHash(ctx, db, sqlText, args, nil)
+	res.Admitted, res.Reason = admitDecision(reps, func(sets []string) (string, error) {
+		return canonicalResultHash(ctx, db, sqlText, args, sets)
+	})
+	return res
+}
+
+// admitDecision hashes the baseline, then every perturbation reps times via hash;
+// admitted iff every hash matches the baseline. First divergence/error wins.
+func admitDecision(reps int, hash func(sets []string) (string, error)) (bool, string) {
+	base, err := hash(nil)
 	if err != nil {
-		res.Reason = "baseline error: " + admitOneline(err.Error())
-		return res
+		return false, "baseline error: " + admitOneline(err.Error())
 	}
 	for _, p := range admitPerturbations {
 		for r := 0; r < reps; r++ {
-			h, err := canonicalResultHash(ctx, db, sqlText, args, p.sets)
+			h, err := hash(p.sets)
 			if err != nil {
-				res.Reason = fmt.Sprintf("%s error: %s", p.name, admitOneline(err.Error()))
-				return res
+				return false, fmt.Sprintf("%s error: %s", p.name, admitOneline(err.Error()))
 			}
 			if h != base {
-				res.Reason = "result not invariant under " + p.name
-				return res
+				return false, "result not invariant under " + p.name
 			}
 		}
 	}
-	res.Admitted = true
-	return res
+	return true, ""
 }
 
 // canonicalResultHash returns an md5 of the result as a SORTED multiset, so mere
