@@ -100,24 +100,30 @@ func metamorphicCheck(ctx context.Context, db *sql.DB, q *Query, b bindingRef) M
 		sqlText, args = q.Prepare(b.bindings)
 	}
 
-	base, err := canonicalResultHash(ctx, db, sqlText, args, nil)
+	res.Bug, res.GUC, res.Reason = metamorphicDecision(func(sets []string) (string, error) {
+		return canonicalResultHash(ctx, db, sqlText, args, sets)
+	})
+	return res
+}
+
+// metamorphicDecision hashes the baseline, then flips each optimization off via
+// hash; a flipped result that differs from the baseline is a wrong-results bug.
+func metamorphicDecision(hash func(sets []string) (string, error)) (bug bool, guc, reason string) {
+	base, err := hash(nil)
 	if err != nil {
-		res.Reason = admitOneline(err.Error())
-		return res
+		return false, "", admitOneline(err.Error())
 	}
-	for _, guc := range metamorphicGUCs {
-		h, err := canonicalResultHash(ctx, db, sqlText, args, []string{"SET " + guc + "=off"})
+	for _, g := range metamorphicGUCs {
+		h, err := hash([]string{"SET " + g + "=off"})
 		if err != nil {
 			// GUC not known on this PG version, skip it
 			continue
 		}
 		if h != base {
-			res.Bug = true
-			res.GUC = guc
-			return res
+			return true, g, ""
 		}
 	}
-	return res
+	return false, "", ""
 }
 
 func renderMetamorphic(results []MetamorphicResult, format, outputPath string) {
