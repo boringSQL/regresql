@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // setsFor returns the SET overrides of a named perturbation, so a test can make a
@@ -78,12 +80,12 @@ func TestAdmitDecision_BaselineError(t *testing.T) {
 	}
 }
 
-// A hashing error under a perturbation is reported against that perturbation,
-// not swallowed as an admission.
+// A real (non-timeout) hashing error under a perturbation is reported against
+// that perturbation, not swallowed as an admission.
 func TestAdmitDecision_PerturbationError(t *testing.T) {
 	ok, reason := admitDecision(1, func(sets []string) (string, error) {
 		if len(sets) > 0 {
-			return "", errors.New("statement timeout")
+			return "", errors.New("out of memory")
 		}
 		return "base", nil
 	})
@@ -92,6 +94,24 @@ func TestAdmitDecision_PerturbationError(t *testing.T) {
 	}
 	if !strings.Contains(reason, "error") {
 		t.Errorf("reason = %q, want an error reason", reason)
+	}
+}
+
+// A perturbation that times out (a forced-bad plan too slow to run) is skipped,
+// not counted as nondeterminism — the query is still admitted on the rest. This
+// is the fix for the false-reject seen at 30M rows under no_hashagg.
+func TestAdmitDecision_TimeoutSkipped(t *testing.T) {
+	slow := setsFor("no_hashjoin")
+	hash := func(sets []string) (string, error) {
+		if len(sets) > 0 && sets[0] == slow[0] {
+			return "", &pgconn.PgError{Code: "57014"} // statement_timeout cancel
+		}
+		return "same", nil
+	}
+
+	ok, reason := admitDecision(2, hash)
+	if !ok {
+		t.Errorf("admitDecision = rejected (%q), want admitted despite the timeout", reason)
 	}
 }
 
