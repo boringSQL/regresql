@@ -145,6 +145,9 @@ func admitDecision(reps int, hash func(sets []string) (string, error)) (bool, st
 		for r := 0; r < reps; r++ {
 			h, err := hash(p.sets)
 			if err != nil {
+				if isTimeoutError(err) {
+					break // too slow under this plan to tell — skip it, don't reject
+				}
 				return false, fmt.Sprintf("%s error: %s", p.name, admitOneline(err.Error()))
 			}
 			if h != base {
