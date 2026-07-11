@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/boringsql/regresql/v2/regresql"
 	"github.com/spf13/cobra"
@@ -19,6 +20,7 @@ var (
 	compareAdmit     bool
 	compareAdmitReps int
 	compareSamples   int
+	compareTimeout   time.Duration
 
 	compareCmd = &cobra.Command{
 		Use:   "compare --base <uri> --target <uri>",
@@ -46,6 +48,7 @@ when the server versions differ. Emits a scoreboard for a patch cover letter.`,
 				Admit:      compareAdmit,
 				AdmitReps:  compareAdmitReps,
 				Samples:    compareSamples,
+				Timeout:    compareTimeout,
 			})
 			os.Exit(code)
 		},
@@ -65,4 +68,5 @@ func init() {
 	compareCmd.Flags().BoolVar(&compareAdmit, "admit", false, "Preflight: exclude queries whose result isn't plan-invariant (determinism filter)")
 	compareCmd.Flags().IntVar(&compareAdmitReps, "admit-reps", regresql.DefaultAdmitReps, "Repetitions per perturbation in the --admit preflight")
 	compareCmd.Flags().IntVar(&compareSamples, "samples", 0, "Interleaved timing runs per engine (0 = no timing; advisory, self-calibrated)")
+	compareCmd.Flags().DurationVar(&compareTimeout, "timeout", 0, "Per-query statement_timeout so a pathological plan can't stall the run (e.g. 60s; 0 = none)")
 }

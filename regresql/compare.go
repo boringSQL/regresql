@@ -19,9 +19,10 @@ type (
 		Format     string // console | markdown | json
 		OutputPath string
 		Warmups    int  // discarded EXPLAIN ANALYZE runs before the measured one
-		Admit      bool // preflight: exclude queries whose result isn't plan-invariant
-		AdmitReps  int  // repetitions per perturbation in the admit preflight
-		Samples    int  // interleaved timing runs per engine (0 = off)
+		Admit      bool          // preflight: exclude queries whose result isn't plan-invariant
+		AdmitReps  int           // repetitions per perturbation in the admit preflight
+		Samples    int           // interleaved timing runs per engine (0 = off)
+		Timeout    time.Duration // per-query statement_timeout cap (0 = none)
 	}
 
 	EngineInfo struct {
@@ -172,7 +173,7 @@ func Compare(opts CompareOptions) int {
 		if pq.Query.GetRegressQLOptions().NoTest {
 			continue
 		}
-		timeout := resolveTimeout(pq.Query)
+		timeout := resolveCompareTimeout(pq.Query, opts.Timeout)
 		for _, b := range iterateBindings(pq.Plan) {
 			// exclude plan-dependent queries: their diff would be a false signal
 			if opts.Admit {
@@ -210,6 +211,19 @@ func (b *Scoreboard) exitCode() int {
 		}
 	}
 	return 0
+}
+
+// resolveCompareTimeout: per-query metadata wins, then the --timeout flag, then
+// the project config default. 0 = unbounded. A timed-out query becomes an
+// incomplete divergence, not a stall.
+func resolveCompareTimeout(q *Query, cliTimeout time.Duration) time.Duration {
+	if opts := q.GetRegressQLOptions(); opts.Timeout > 0 {
+		return opts.Timeout
+	}
+	if cliTimeout > 0 {
+		return cliTimeout
+	}
+	return GetStatementTimeout()
 }
 
 type bindingRef struct {
