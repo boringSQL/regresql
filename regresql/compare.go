@@ -1,10 +1,13 @@
 package regresql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,17 +15,18 @@ import (
 
 type (
 	CompareOptions struct {
-		Root       string
-		BaseURI    string
-		TargetURI  string
-		RunFilter  string
-		Format     string // console | markdown | json
-		OutputPath string
-		Warmups    int  // discarded EXPLAIN ANALYZE runs before the measured one
-		Admit      bool          // preflight: exclude queries whose result isn't plan-invariant
-		AdmitReps  int           // repetitions per perturbation in the admit preflight
-		Samples    int           // interleaved timing runs per engine (0 = off)
-		Timeout    time.Duration // per-query statement_timeout cap (0 = none)
+		Root        string
+		BaseURI     string
+		TargetURI   string
+		RunFilter   string
+		Format      string // console | markdown | json
+		OutputPath  string
+		Warmups     int           // discarded EXPLAIN ANALYZE runs before the measured one
+		Admit       bool          // preflight: exclude queries whose result isn't plan-invariant
+		AdmitReps   int           // repetitions per perturbation in the admit preflight
+		Samples     int           // interleaved timing runs per engine (0 = off)
+		Timeout     time.Duration // per-query statement_timeout cap (0 = none)
+		InjectStats bool          // copy base stats into target so diffs are code, not ANALYZE noise
 	}
 
 	EngineInfo struct {
@@ -65,12 +69,13 @@ type (
 	}
 
 	Scoreboard struct {
-		Base        EngineInfo        `json:"base"`
-		Target      EngineInfo        `json:"target"`
-		SameVersion bool              `json:"same_version"`
-		GUCMismatch []GUCDiff         `json:"guc_mismatch,omitempty"`
-		Comparisons []QueryComparison `json:"comparisons"`
-		Excluded    []AdmitResult     `json:"excluded,omitempty"` // rejected by the --admit preflight
+		Base          EngineInfo        `json:"base"`
+		Target        EngineInfo        `json:"target"`
+		SameVersion   bool              `json:"same_version"`
+		StatsInjected bool              `json:"stats_injected,omitempty"` // base stats copied into target
+		GUCMismatch   []GUCDiff         `json:"guc_mismatch,omitempty"`
+		Comparisons   []QueryComparison `json:"comparisons"`
+		Excluded      []AdmitResult     `json:"excluded,omitempty"` // rejected by the --admit preflight
 	}
 
 	GUCDiff struct {
@@ -151,6 +156,16 @@ func Compare(opts CompareOptions) int {
 	}
 	board.SameVersion = board.Base.VersionNum == board.Target.VersionNum
 	board.GUCMismatch = comparePlannerGUCs(baseDB, targetDB)
+
+	// give both engines identical stats so a diff is code, not ANALYZE noise
+	if opts.InjectStats {
+		fmt.Fprintln(os.Stderr, "inject-stats: copying base statistics into target (overwrites target stats)…")
+		if err := injectStats(opts.BaseURI, opts.TargetURI); err != nil {
+			fmt.Fprintf(os.Stderr, "inject-stats: %s\n", err)
+			return 2
+		}
+		board.StatsInjected = true
+	}
 
 	plannedQueries, err := WalkPlans(opts.Root)
 	if err != nil {
@@ -402,6 +417,43 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 
 	c.Severity = sev
 	return c
+}
+
+// injectStats copies base stats into target (pg_dump --statistics-only | psql).
+// Needs pg_dump/psql on PATH; REGRESQL_PG_DUMP / REGRESQL_PSQL override.
+func injectStats(baseURI, targetURI string) error {
+	pgDump := envOr("REGRESQL_PG_DUMP", "pg_dump")
+	psql := envOr("REGRESQL_PSQL", "psql")
+
+	dump := exec.Command(pgDump, "--statistics-only", baseURI)
+	statsSQL, err := dump.Output()
+	if err != nil {
+		return fmt.Errorf("pg_dump --statistics-only: %w%s", err, exitStderr(err))
+	}
+
+	apply := exec.Command(psql, "-q", "-v", "ON_ERROR_STOP=1", targetURI)
+	apply.Stdin = bytes.NewReader(statsSQL)
+	var stderr bytes.Buffer
+	apply.Stderr = &stderr
+	if err := apply.Run(); err != nil {
+		return fmt.Errorf("applying stats via psql: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func exitStderr(err error) string {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+		return ": " + strings.TrimSpace(string(ee.Stderr))
+	}
+	return ""
 }
 
 func openCompareDB(uri string) (*sql.DB, error) {

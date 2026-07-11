@@ -177,6 +177,9 @@ func (b *Scoreboard) renderConsole(w io.Writer) error {
 	fmt.Fprintf(w, "  base:   %s (%d)\n", b.Base.Version, b.Base.VersionNum)
 	fmt.Fprintf(w, "  target: %s (%d)\n", b.Target.Version, b.Target.VersionNum)
 	fmt.Fprintf(w, "  %s\n", b.costLine())
+	if b.StatsInjected {
+		fmt.Fprintln(w, "  statistics: injected (identical on both — diffs are planner code, not ANALYZE noise)")
+	}
 	for _, g := range b.GUCMismatch {
 		fmt.Fprintf(w, "  GUC mismatch: %s base=%s target=%s\n", g.Name, g.Base, g.Target)
 	}
@@ -204,6 +207,9 @@ func (b *Scoreboard) renderMarkdown(w io.Writer) error {
 	fmt.Fprintf(w, "## regresql compare: `%s` → `%s`\n\n", b.Base.Version, b.Target.Version)
 	fmt.Fprintf(w, "**%s**\n\n", t.line())
 	fmt.Fprintf(w, "%s\n\n", b.costLine())
+	if b.StatsInjected {
+		fmt.Fprintf(w, "_statistics injected (identical on both — differences are planner code, not ANALYZE noise)_\n\n")
+	}
 
 	if len(b.GUCMismatch) > 0 {
 		fmt.Fprintln(w, "> GUC mismatches (comparison may be unfair):")

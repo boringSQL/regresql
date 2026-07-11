@@ -10,17 +10,18 @@ import (
 )
 
 var (
-	compareCwd       string
-	compareBaseURI   string
-	compareTargetURI string
-	compareRunFilter string
-	compareFormat    string
-	compareOutput    string
-	compareWarmups   int
-	compareAdmit     bool
-	compareAdmitReps int
-	compareSamples   int
-	compareTimeout   time.Duration
+	compareCwd         string
+	compareBaseURI     string
+	compareTargetURI   string
+	compareRunFilter   string
+	compareFormat      string
+	compareOutput      string
+	compareWarmups     int
+	compareAdmit       bool
+	compareAdmitReps   int
+	compareSamples     int
+	compareTimeout     time.Duration
+	compareInjectStats bool
 
 	compareCmd = &cobra.Command{
 		Use:   "compare --base <uri> --target <uri>",
@@ -38,17 +39,18 @@ when the server versions differ. Emits a scoreboard for a patch cover letter.`,
 				os.Exit(1)
 			}
 			code := regresql.Compare(regresql.CompareOptions{
-				Root:       compareCwd,
-				BaseURI:    compareBaseURI,
-				TargetURI:  compareTargetURI,
-				RunFilter:  compareRunFilter,
-				Format:     compareFormat,
-				OutputPath: compareOutput,
-				Warmups:    compareWarmups,
-				Admit:      compareAdmit,
-				AdmitReps:  compareAdmitReps,
-				Samples:    compareSamples,
-				Timeout:    compareTimeout,
+				Root:        compareCwd,
+				BaseURI:     compareBaseURI,
+				TargetURI:   compareTargetURI,
+				RunFilter:   compareRunFilter,
+				Format:      compareFormat,
+				OutputPath:  compareOutput,
+				Warmups:     compareWarmups,
+				Admit:       compareAdmit,
+				AdmitReps:   compareAdmitReps,
+				Samples:     compareSamples,
+				Timeout:     compareTimeout,
+				InjectStats: compareInjectStats,
 			})
 			os.Exit(code)
 		},
@@ -69,4 +71,5 @@ func init() {
 	compareCmd.Flags().IntVar(&compareAdmitReps, "admit-reps", regresql.DefaultAdmitReps, "Repetitions per perturbation in the --admit preflight")
 	compareCmd.Flags().IntVar(&compareSamples, "samples", 0, "Interleaved timing runs per engine (0 = no timing; advisory, self-calibrated)")
 	compareCmd.Flags().DurationVar(&compareTimeout, "timeout", 0, "Per-query statement_timeout so a pathological plan can't stall the run (e.g. 60s; 0 = none)")
+	compareCmd.Flags().BoolVar(&compareInjectStats, "inject-stats", false, "Copy base statistics into target first so diffs are planner code, not ANALYZE noise (needs pg_dump/psql; mutates target stats)")
 }
