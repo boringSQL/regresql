@@ -110,6 +110,19 @@ func (s *Suite) readConfig() (config, error) {
 
 // ReadConfig reads the configuration from the regress.yaml file
 func ReadConfig(root string) (config, error) {
+	cfg, err := ReadConfigFile(root)
+	if err != nil {
+		return cfg, err
+	}
+	if uri := os.Getenv("DATABASE_URL"); uri != "" {
+		cfg.PgUri = uri
+	}
+	return cfg, nil
+}
+
+// ReadConfigFile reads regress.yaml as written, without the DATABASE_URL
+// override. Use it for `config get`/`config set`, which operate on the file.
+func ReadConfigFile(root string) (config, error) {
 	return loadConfig(filepath.Join(root, "regresql", "regress.yaml"))
 }
 
@@ -141,7 +154,7 @@ func loadConfig(configFile string) (config, error) {
 func UpdateConfigField(root, key, value string) error {
 	configFile := filepath.Join(root, "regresql", "regress.yaml")
 
-	cfg, err := ReadConfig(root)
+	cfg, err := ReadConfigFile(root)
 	if err != nil {
 		return err
 	}
