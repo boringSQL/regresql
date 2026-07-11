@@ -15,18 +15,20 @@ import (
 
 type (
 	CompareOptions struct {
-		Root        string
-		BaseURI     string
-		TargetURI   string
-		RunFilter   string
-		Format      string // console | markdown | json
-		OutputPath  string
-		Warmups     int           // discarded EXPLAIN ANALYZE runs before the measured one
-		Admit       bool          // preflight: exclude queries whose result isn't plan-invariant
-		AdmitReps   int           // repetitions per perturbation in the admit preflight
-		Samples     int           // interleaved timing runs per engine (0 = off)
-		Timeout     time.Duration // per-query statement_timeout cap (0 = none)
-		InjectStats bool          // copy base stats into target so diffs are code, not ANALYZE noise
+		Root          string
+		BaseURI       string
+		TargetURI     string
+		RunFilter     string
+		Format        string // console | markdown | json
+		OutputPath    string
+		Warmups       int           // discarded EXPLAIN ANALYZE runs before the measured one
+		Admit         bool          // preflight: exclude queries whose result isn't plan-invariant
+		AdmitReps     int           // repetitions per perturbation in the admit preflight
+		Samples       int           // interleaved timing runs per engine (0 = off)
+		Timeout       time.Duration // per-query statement_timeout cap (0 = none)
+		InjectStats   bool          // copy base stats into target so diffs are code, not ANALYZE noise
+		Stability     bool          // preflight: exclude cost-tie queries whose plan swings on re-ANALYZE
+		StabilityReps int
 	}
 
 	EngineInfo struct {
@@ -76,6 +78,7 @@ type (
 		GUCMismatch   []GUCDiff         `json:"guc_mismatch,omitempty"`
 		Comparisons   []QueryComparison `json:"comparisons"`
 		Excluded      []AdmitResult     `json:"excluded,omitempty"` // rejected by the --admit preflight
+		CostTie       []AdmitResult     `json:"cost_tie,omitempty"` // excluded by the --stability preflight
 	}
 
 	GUCDiff struct {
@@ -157,6 +160,26 @@ func Compare(opts CompareOptions) int {
 	board.SameVersion = board.Base.VersionNum == board.Target.VersionNum
 	board.GUCMismatch = comparePlannerGUCs(baseDB, targetDB)
 
+	plannedQueries, err := WalkPlans(opts.Root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to walk plans: %s\n", err)
+		return 2
+	}
+
+	suite := Walk(opts.Root, nil)
+	suite.SetRunFilter(opts.RunFilter)
+
+	// preflight: drop cost-tie queries whose plan is decided by ANALYZE noise
+	var unstable map[string]string
+	if opts.Stability {
+		reps := opts.StabilityReps
+		if reps < 1 {
+			reps = DefaultStabilityReps
+		}
+		fmt.Fprintln(os.Stderr, "stability: re-ANALYZE preflight on base (excludes cost-tie queries)…")
+		unstable = stabilityPass(context.Background(), baseDB, plannedQueries, suite, reps)
+	}
+
 	// give both engines identical stats so a diff is code, not ANALYZE noise
 	if opts.InjectStats {
 		fmt.Fprintln(os.Stderr, "inject-stats: copying base statistics into target (overwrites target stats)…")
@@ -166,15 +189,6 @@ func Compare(opts CompareOptions) int {
 		}
 		board.StatsInjected = true
 	}
-
-	plannedQueries, err := WalkPlans(opts.Root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to walk plans: %s\n", err)
-		return 2
-	}
-
-	suite := Walk(opts.Root, nil)
-	suite.SetRunFilter(opts.RunFilter)
 
 	admitReps := opts.AdmitReps
 	if admitReps < 1 {
@@ -190,6 +204,11 @@ func Compare(opts CompareOptions) int {
 		}
 		timeout := resolveCompareTimeout(pq.Query, opts.Timeout)
 		for _, b := range iterateBindings(pq.Plan) {
+			// exclude cost-tie queries (plan decided by ANALYZE noise)
+			if reason, tie := unstable[bindingKey(pq.Query.Name, b.name)]; tie {
+				board.CostTie = append(board.CostTie, AdmitResult{Name: pq.Query.Name, Binding: b.name, Reason: reason})
+				continue
+			}
 			// exclude plan-dependent queries: their diff would be a false signal
 			if opts.Admit {
 				if ar := admitBinding(context.Background(), baseDB, pq.Query, b, admitReps); !ar.Admitted {

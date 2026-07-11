@@ -20,13 +20,14 @@ type scoreboardTotals struct {
 	Incomplete     int
 	Errors         int
 	Excluded       int
+	CostTie        int
 	TimingSlower   int
 	TimingFaster   int
 	TimingUnstable int
 }
 
 func (b *Scoreboard) totals() scoreboardTotals {
-	t := scoreboardTotals{Queries: len(b.Comparisons), Excluded: len(b.Excluded)}
+	t := scoreboardTotals{Queries: len(b.Comparisons), Excluded: len(b.Excluded), CostTie: len(b.CostTie)}
 	for _, c := range b.Comparisons {
 		switch {
 		case c.Severity == SevError:
@@ -72,6 +73,9 @@ func (t scoreboardTotals) line() string {
 		t.BufferRegress, t.Spill, t.Incomplete)
 	if t.Excluded > 0 {
 		s += fmt.Sprintf(" · %d excluded", t.Excluded)
+	}
+	if t.CostTie > 0 {
+		s += fmt.Sprintf(" · %d cost-tie", t.CostTie)
 	}
 	if t.TimingSlower+t.TimingFaster+t.TimingUnstable > 0 {
 		s += fmt.Sprintf(" · timing %d slower / %d faster (%d unstable)",
@@ -194,6 +198,9 @@ func (b *Scoreboard) renderConsole(w io.Writer) error {
 	for _, e := range b.Excluded {
 		fmt.Fprintf(w, "  ⊘ EXCL   %-28s %s\n", admitLabel(e), e.Reason)
 	}
+	for _, e := range b.CostTie {
+		fmt.Fprintf(w, "  ⊘ TIE    %-28s %s\n", admitLabel(e), e.Reason)
+	}
 
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  ── scoreboard ──")
@@ -230,6 +237,9 @@ func (b *Scoreboard) renderMarkdown(w io.Writer) error {
 	}
 	for _, e := range b.Excluded {
 		fmt.Fprintf(w, "| excluded | `%s` | %s |\n", admitLabel(e), e.Reason)
+	}
+	for _, e := range b.CostTie {
+		fmt.Fprintf(w, "| cost-tie | `%s` | %s |\n", admitLabel(e), e.Reason)
 	}
 	return nil
 }
