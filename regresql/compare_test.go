@@ -1,8 +1,11 @@
 package regresql
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -225,6 +228,57 @@ func TestWarmedExplain_StopsOnError(t *testing.T) {
 	}
 	if runs != 2 {
 		t.Errorf("ran %d times, want it to stop at 2", runs)
+	}
+}
+
+// envOr returns the override when the env var is set, else the default.
+func TestEnvOr(t *testing.T) {
+	if got := envOr("REGRESQL_UNSET_XYZ", "fallback"); got != "fallback" {
+		t.Errorf("envOr unset = %q, want fallback", got)
+	}
+	t.Setenv("REGRESQL_TEST_VAR", "custom")
+	if got := envOr("REGRESQL_TEST_VAR", "fallback"); got != "custom" {
+		t.Errorf("envOr set = %q, want custom", got)
+	}
+}
+
+// exitStderr surfaces a failed command's captured stderr (trimmed), and is empty
+// for any other error — so inject-stats can report why pg_dump/psql failed.
+func TestExitStderr(t *testing.T) {
+	if got := exitStderr(&exec.ExitError{Stderr: []byte("  pg_dump: boom\n")}); got != ": pg_dump: boom" {
+		t.Errorf("exitStderr(ExitError) = %q", got)
+	}
+	if got := exitStderr(errors.New("plain")); got != "" {
+		t.Errorf("exitStderr(plain) = %q, want empty", got)
+	}
+}
+
+// The scoreboard announces when stats were injected, so a reader knows the diffs
+// are planner code and not ANALYZE noise — and stays quiet when they weren't.
+func TestRenderScoreboard_StatsInjectedNote(t *testing.T) {
+	board := &Scoreboard{
+		Base:   EngineInfo{Version: "18.4", VersionNum: 180004},
+		Target: EngineInfo{Version: "19", VersionNum: 190000},
+	}
+	render := func(format string) string {
+		var buf bytes.Buffer
+		if format == "markdown" {
+			board.renderMarkdown(&buf)
+		} else {
+			board.renderConsole(&buf)
+		}
+		return buf.String()
+	}
+
+	for _, format := range []string{"console", "markdown"} {
+		board.StatsInjected = true
+		if !strings.Contains(render(format), "injected") {
+			t.Errorf("%s: injected note missing when StatsInjected=true", format)
+		}
+		board.StatsInjected = false
+		if strings.Contains(render(format), "injected") {
+			t.Errorf("%s: injected note present when StatsInjected=false", format)
+		}
 	}
 }
 
