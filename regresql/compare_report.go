@@ -10,16 +10,19 @@ import (
 
 // scoreboardTotals is the cover-letter summary the whole feature exists to emit.
 type scoreboardTotals struct {
-	Queries       int
-	Correctness   int
-	Shape         int
-	QErrImproved  int
-	QErrRegressed int
-	BufferRegress int
-	Spill         int
-	Incomplete    int
-	Errors        int
-	Excluded      int
+	Queries        int
+	Correctness    int
+	Shape          int
+	QErrImproved   int
+	QErrRegressed  int
+	BufferRegress  int
+	Spill          int
+	Incomplete     int
+	Errors         int
+	Excluded       int
+	TimingSlower   int
+	TimingFaster   int
+	TimingUnstable int
 }
 
 func (b *Scoreboard) totals() scoreboardTotals {
@@ -48,6 +51,16 @@ func (b *Scoreboard) totals() scoreboardTotals {
 		} else if c.BaseQError > 0 && c.TargetQError > 0 && c.TargetQError < c.BaseQError {
 			t.QErrImproved++
 		}
+		if c.Timing != nil {
+			switch c.Timing.Status {
+			case "slower":
+				t.TimingSlower++
+			case "faster":
+				t.TimingFaster++
+			case "unstable":
+				t.TimingUnstable++
+			}
+		}
 	}
 	return t
 }
@@ -59,6 +72,10 @@ func (t scoreboardTotals) line() string {
 		t.BufferRegress, t.Spill, t.Incomplete)
 	if t.Excluded > 0 {
 		s += fmt.Sprintf(" · %d excluded", t.Excluded)
+	}
+	if t.TimingSlower+t.TimingFaster+t.TimingUnstable > 0 {
+		s += fmt.Sprintf(" · timing %d slower / %d faster (%d unstable)",
+			t.TimingSlower, t.TimingFaster, t.TimingUnstable)
 	}
 	return s
 }
@@ -130,6 +147,16 @@ func compareDetail(c QueryComparison) string {
 		}
 		if len(c.Regressions) == 0 {
 			parts = append(parts, "plan changed")
+		}
+	}
+	if c.Timing != nil {
+		switch c.Timing.Status {
+		case "slower":
+			parts = append(parts, fmt.Sprintf("%.2fx slower", c.Timing.Ratio))
+		case "faster":
+			parts = append(parts, fmt.Sprintf("%.2fx faster", 1/c.Timing.Ratio))
+		case "unstable":
+			parts = append(parts, "timing unstable")
 		}
 	}
 	return strings.Join(parts, ", ")

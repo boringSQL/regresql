@@ -21,6 +21,7 @@ type (
 		Warmups    int  // discarded EXPLAIN ANALYZE runs before the measured one
 		Admit      bool // preflight: exclude queries whose result isn't plan-invariant
 		AdmitReps  int  // repetitions per perturbation in the admit preflight
+		Samples    int  // interleaved timing runs per engine (0 = off)
 	}
 
 	EngineInfo struct {
@@ -55,6 +56,8 @@ type (
 		CostComparable bool    `json:"cost_comparable"`
 		BaseCost       float64 `json:"base_cost"`
 		TargetCost     float64 `json:"target_cost"`
+
+		Timing *TimingResult `json:"timing,omitempty"` // advisory, only with --samples
 
 		Severity Severity `json:"severity"`
 		Note     string   `json:"note,omitempty"`
@@ -181,6 +184,12 @@ func Compare(opts CompareOptions) int {
 			base := captureBinding(context.Background(), baseDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			target := captureBinding(context.Background(), targetDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			cmp := compareCaptures(pq.Query.Name, b.name, base, target, board.SameVersion)
+			// timing is the softest tier, only for queries that ran both sides
+			if opts.Samples > 0 && cmp.Severity < SevIncomplete {
+				bt, tt := sampleTiming(context.Background(), baseDB, targetDB, pq.Query, b.bindings, timeout, opts.Samples)
+				tv := timingVerdict(bt, tt)
+				cmp.Timing = &tv
+			}
 			board.Comparisons = append(board.Comparisons, cmp)
 		}
 	}
@@ -267,6 +276,27 @@ func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[stri
 		return engineCapture{result: rs, err: err}
 	}
 	return engineCapture{result: rs, explain: ex}
+}
+
+// sampleTiming runs EXPLAIN ANALYZE `samples` times per engine, interleaved so
+// drift hits both equally. cache is already warm from the main captures
+func sampleTiming(ctx context.Context, baseDB, targetDB *sql.DB, q *Query, bindings map[string]any, timeout time.Duration, samples int) (baseTimes, targetTimes []float64) {
+	run := func(db *sql.DB) (float64, bool) {
+		c := captureBinding(ctx, db, q, bindings, timeout, 0)
+		if c.explain == nil {
+			return 0, false
+		}
+		return c.explain.ExecutionTime, true
+	}
+	for i := 0; i < samples; i++ {
+		if t, ok := run(baseDB); ok {
+			baseTimes = append(baseTimes, t)
+		}
+		if t, ok := run(targetDB); ok {
+			targetTimes = append(targetTimes, t)
+		}
+	}
+	return baseTimes, targetTimes
 }
 
 // warmedExplain runs explain (warmups+1) times and returns the last (measured)
