@@ -10,14 +10,26 @@ RegreSQL is a language-agnostic SQL regression testing tool for PostgreSQL. It f
 
 ## Installing
 
-### Homebrew (macOS)
+### Homebrew (macOS/Linux)
 
 ```bash
 brew tap boringsql/boringsql
 brew install regresql
 ```
 
-### Go
+### Prebuilt binaries
+
+Every release publishes static binaries for macOS and Linux (arm64 and x86_64) on the [releases page](https://github.com/boringSQL/regresql/releases). Download the tarball for your platform, unpack it, and put the binary on your PATH:
+
+```bash
+# Linux x86_64; swap the target for your platform
+curl -L https://github.com/boringSQL/regresql/releases/latest/download/regresql-x86_64-unknown-linux-gnu.tar.xz | tar -xJ
+sudo mv regresql /usr/local/bin/
+```
+
+Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`. Checksums are in `checksums.txt` on each release.
+
+### Go (from source)
 
 ```bash
 go install github.com/boringsql/regresql/v2@latest
