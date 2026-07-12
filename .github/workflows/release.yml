@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            goos: darwin
+            goarch: arm64
+          - target: x86_64-apple-darwin
+            goos: darwin
+            goarch: amd64
+          - target: aarch64-unknown-linux-gnu
+            goos: linux
+            goarch: arm64
+          - target: x86_64-unknown-linux-gnu
+            goos: linux
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build \
+            -ldflags "-s -w -X github.com/boringsql/regresql/v2/internal/cli.version=${GITHUB_REF_NAME}" \
+            -o regresql \
+            ./cmd/regresql
+      - name: Archive
+        run: tar -cJf regresql-${{ matrix.target }}.tar.xz regresql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tar-${{ matrix.target }}
+          path: regresql-${{ matrix.target }}.tar.xz
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tar-*
+          merge-multiple: true
+          path: dist/
+      - name: Checksums
+        run: cd dist && shasum -a 256 *.tar.xz > checksums.txt
+      - name: Publish release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*.tar.xz dist/checksums.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
