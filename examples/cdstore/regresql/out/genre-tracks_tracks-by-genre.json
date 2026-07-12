@@ -1,0 +1,48 @@
+{
+  "columns": [
+    "name",
+    "count"
+  ],
+  "rows": [
+    [
+      "Rock",
+      40
+    ],
+    [
+      "Alternative \u0026 Punk",
+      20
+    ],
+    [
+      "Metal",
+      14
+    ],
+    [
+      "Classical",
+      1
+    ],
+    [
+      "Blues",
+      1
+    ],
+    [
+      "Pop",
+      1
+    ],
+    [
+      "Reggae",
+      1
+    ],
+    [
+      "Latin",
+      1
+    ],
+    [
+      "Jazz",
+      1
+    ],
+    [
+      "Soundtrack",
+      1
+    ]
+  ]
+}

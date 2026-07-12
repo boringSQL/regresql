@@ -12,8 +12,6 @@ analyze:
   enabled: true
 
 plan_quality:
-  critical_tables:
-    - orders
   ignore_seqscan_tables:
-    - countries
-
+    - genre
+    - media_type

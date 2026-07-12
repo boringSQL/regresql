@@ -1,0 +1,63 @@
+{
+  "query": "top-artists-by-album",
+  "timestamp": "2026-07-12T13:37:05Z",
+  "plan": {
+    "plan_rows": 5,
+    "startup_cost": 3.4,
+    "total_cost": 3.41
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "Limit",
+      "Sort",
+      "Aggregate",
+      "Hash Join",
+      "Seq Scan",
+      "Hash",
+      "Seq Scan"
+    ],
+    "Relations": {
+      "album": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "artist": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      }
+    },
+    "IndexesUsed": null,
+    "HasSeqScan": true,
+    "HasSort": true,
+    "JoinTypes": [
+      "Hash Join"
+    ],
+    "JoinModes": [
+      "Right"
+    ],
+    "PartialModes": null
+  },
+  "analyze_mode": true,
+  "buffers": {
+    "shared_hit_blocks": 5,
+    "shared_read_blocks": 0,
+    "local_hit_blocks": 0,
+    "local_read_blocks": 0,
+    "total_buffers": 5,
+    "temp_read_blocks": 0,
+    "temp_written_blocks": 0,
+    "temp_buffers": 0
+  },
+  "actuals": {
+    "actual_rows": 5,
+    "plan_rows": 5,
+    "execution_time_ms": 0.054,
+    "total_tuples_processed": 124,
+    "worst_qerror": 4,
+    "worst_qerror_node": "Sort"
+  }
+}

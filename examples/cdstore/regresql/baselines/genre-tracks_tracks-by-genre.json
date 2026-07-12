@@ -1,0 +1,62 @@
+{
+  "query": "tracks-by-genre",
+  "timestamp": "2026-07-12T13:37:05Z",
+  "plan": {
+    "plan_rows": 10,
+    "startup_cost": 3.87,
+    "total_cost": 3.9
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "Sort",
+      "Aggregate",
+      "Hash Join",
+      "Seq Scan",
+      "Hash",
+      "Seq Scan"
+    ],
+    "Relations": {
+      "genre": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "track": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      }
+    },
+    "IndexesUsed": null,
+    "HasSeqScan": true,
+    "HasSort": true,
+    "JoinTypes": [
+      "Hash Join"
+    ],
+    "JoinModes": [
+      "Right"
+    ],
+    "PartialModes": null
+  },
+  "analyze_mode": true,
+  "buffers": {
+    "shared_hit_blocks": 2,
+    "shared_read_blocks": 0,
+    "local_hit_blocks": 0,
+    "local_read_blocks": 0,
+    "total_buffers": 2,
+    "temp_read_blocks": 0,
+    "temp_written_blocks": 0,
+    "temp_buffers": 0
+  },
+  "actuals": {
+    "actual_rows": 10,
+    "plan_rows": 10,
+    "execution_time_ms": 0.042,
+    "total_tuples_processed": 195,
+    "worst_qerror": 1.0945945945945945,
+    "worst_qerror_node": "Hash Join"
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "query": "genre-top-n",
+  "timestamp": "2026-07-12T13:37:05Z",
+  "plan": {
+    "plan_rows": 10,
+    "startup_cost": 20.8,
+    "total_cost": 20.82
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "Sort",
+      "Hash Join",
+      "Nested Loop",
+      "Seq Scan",
+      "Hash Join",
+      "Seq Scan",
+      "Hash",
+      "Subquery Scan",
+      "Limit",
+      "Sort",
+      "Aggregate",
+      "Hash Join",
+      "Seq Scan",
+      "Hash",
+      "Seq Scan",
+      "Hash",
+      "Seq Scan"
+    ],
+    "Relations": {
+      "album": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "artist": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "genre": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "playlist_track": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "track": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": "(track.genre_id = genre.genre_id)"
+      }
+    },
+    "IndexesUsed": null,
+    "HasSeqScan": true,
+    "HasSort": true,
+    "JoinTypes": [
+      "Hash Join",
+      "Nested Loop",
+      "Hash Join",
+      "Hash Join"
+    ],
+    "JoinModes": [
+      "Inner",
+      "Inner",
+      "Inner",
+      "Right"
+    ],
+    "PartialModes": null
+  },
+  "analyze_mode": true,
+  "buffers": {
+    "shared_hit_blocks": 18,
+    "shared_read_blocks": 0,
+    "local_hit_blocks": 0,
+    "local_read_blocks": 0,
+    "total_buffers": 18,
+    "temp_read_blocks": 0,
+    "temp_written_blocks": 0,
+    "temp_buffers": 0
+  },
+  "actuals": {
+    "actual_rows": 3,
+    "plan_rows": 10,
+    "execution_time_ms": 0.264,
+    "total_tuples_processed": 1319,
+    "worst_qerror": 25,
+    "worst_qerror_node": "Sort"
+  }
+}

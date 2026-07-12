@@ -1,0 +1,28 @@
+{
+  "columns": [
+    "name",
+    "albums"
+  ],
+  "rows": [
+    [
+      "AC/DC",
+      3
+    ],
+    [
+      "Led Zeppelin",
+      3
+    ],
+    [
+      "Metallica",
+      3
+    ],
+    [
+      "Foo Fighters",
+      2
+    ],
+    [
+      "Iron Maiden",
+      2
+    ]
+  ]
+}

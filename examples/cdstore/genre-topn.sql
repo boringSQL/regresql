@@ -23,7 +23,7 @@ select genre.name as genre,
                  left join playlist_track using (track_id)
            where track.genre_id = genre.genre_id
         group by track.track_id
-        order by count desc
+        order by count desc, track.name
            limit :n
        )
        /*
@@ -34,4 +34,4 @@ select genre.name as genre,
             ss(name, album_id, count) on true
        join album using(album_id)
        join artist using(artist_id)
-order by genre.name, ss.count desc;
+order by genre.name, ss.count desc, ss.name;

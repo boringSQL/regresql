@@ -105,7 +105,11 @@ func (s *Suite) setupConfig(pguri string) {
 }
 
 func (s *Suite) readConfig() (config, error) {
-	return loadConfig(s.getRegressConfigFile())
+	cfg, err := loadConfig(s.getRegressConfigFile())
+	if err != nil {
+		return cfg, err
+	}
+	return withEnvOverride(cfg), nil
 }
 
 // ReadConfig reads the configuration from the regress.yaml file
@@ -114,10 +118,15 @@ func ReadConfig(root string) (config, error) {
 	if err != nil {
 		return cfg, err
 	}
+	return withEnvOverride(cfg), nil
+}
+
+// withEnvOverride lets DATABASE_URL override the configured pguri at run time.
+func withEnvOverride(cfg config) config {
 	if uri := os.Getenv("DATABASE_URL"); uri != "" {
 		cfg.PgUri = uri
 	}
-	return cfg, nil
+	return cfg
 }
 
 // ReadConfigFile reads regress.yaml as written, without the DATABASE_URL

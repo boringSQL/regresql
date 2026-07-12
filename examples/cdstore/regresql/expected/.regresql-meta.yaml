@@ -1,0 +1,33 @@
+baselines:
+    album-by-artist_list-albums-by-artist.1.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.177203Z
+        updated: 2026-07-12T13:36:49.889916Z
+    album-by-artist_list-albums-by-artist.2.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.177383Z
+        updated: 2026-07-12T13:36:49.890335Z
+    album-tracks_list-tracks-by-albumid.1.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.178339Z
+        updated: 2026-07-12T13:36:49.892634Z
+    album-tracks_list-tracks-by-albumid.2.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.178465Z
+        updated: 2026-07-12T13:36:49.893022Z
+    artist_top-artists-by-album.1.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.179223Z
+        updated: 2026-07-12T13:36:49.894896Z
+    genre-topn_genre-top-n.top-1.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.180639Z
+        updated: 2026-07-12T13:36:49.897836Z
+    genre-topn_genre-top-n.top-3.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.181143Z
+        updated: 2026-07-12T13:36:49.898274Z
+    genre-tracks_tracks-by-genre.json:
+        snapshot_hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+        created: 2026-03-12T15:57:05.181863Z
+        updated: 2026-07-12T13:36:49.900488Z

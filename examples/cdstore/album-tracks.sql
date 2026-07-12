@@ -6,7 +6,7 @@
             * interval '1ms' as "begin",
           sum(milliseconds) over (order by track_id)
             * interval '1ms' as "end",
-          round(milliseconds / sum(milliseconds) over () * 100, 2) as pct
+          round(milliseconds * 100.0 / sum(milliseconds) over (), 2) as pct
     from track
    where album_id = :album_id
 order by track_id;

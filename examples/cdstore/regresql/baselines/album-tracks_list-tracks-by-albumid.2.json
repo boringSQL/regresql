@@ -1,0 +1,50 @@
+{
+  "query": "list-tracks-by-albumid",
+  "timestamp": "2026-07-12T13:37:05Z",
+  "plan": {
+    "plan_rows": 4,
+    "startup_cost": 2.06,
+    "total_cost": 2.21
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "WindowAgg",
+      "WindowAgg",
+      "Sort",
+      "Seq Scan"
+    ],
+    "Relations": {
+      "track": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": "(track.album_id = 1)"
+      }
+    },
+    "IndexesUsed": null,
+    "HasSeqScan": true,
+    "HasSort": true,
+    "JoinTypes": null,
+    "JoinModes": null,
+    "PartialModes": null
+  },
+  "analyze_mode": true,
+  "buffers": {
+    "shared_hit_blocks": 1,
+    "shared_read_blocks": 0,
+    "local_hit_blocks": 0,
+    "local_read_blocks": 0,
+    "total_buffers": 1,
+    "temp_read_blocks": 0,
+    "temp_written_blocks": 0,
+    "temp_buffers": 0
+  },
+  "actuals": {
+    "actual_rows": 4,
+    "plan_rows": 4,
+    "execution_time_ms": 0.039,
+    "total_tuples_processed": 86,
+    "worst_qerror": 1,
+    "worst_qerror_node": "WindowAgg"
+  }
+}

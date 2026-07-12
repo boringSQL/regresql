@@ -4,5 +4,5 @@
     from           artist
          left join album using(artist_id)
 group by artist.name
-order by albums asc
+order by albums desc, artist.name
    limit :n;

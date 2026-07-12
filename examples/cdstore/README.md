@@ -1,14 +1,10 @@
 # CD Store Example
 
-Complete working example demonstrating RegreSQL with the Chinook database (a sample music store database). This example is based on the queries from "The Art of PostgreSQL" book.
+A working RegreSQL project built on the Chinook music-store database. The queries come from "The Art of PostgreSQL" by Dimitri Fontaine.
 
 ## Overview
 
-This example demonstrates:
-- **Snapshot build pipeline** with schema + SQL fixtures
-- **Complex SQL queries** with window functions, lateral joins, and aggregations
-- **Test plans** with multiple parameter bindings
-- **Real-world schema** (artists, albums, tracks, genres, playlists)
+It covers the snapshot build pipeline (schema plus SQL fixtures), queries that use window functions, lateral joins and aggregations, test plans with multiple parameter bindings, and a schema of artists, albums, tracks, genres and playlists.
 
 ## Database Schema
 
@@ -61,7 +57,7 @@ regresql test               # run all tests
 select artist.name, count(*) as albums
   from artist left join album using(artist_id)
 group by artist.name
-order by albums desc
+order by albums desc, artist.name
 limit :n;
 ```
 
@@ -90,13 +86,13 @@ select name as title,
          * interval '1ms' as "begin",
        sum(milliseconds) over (order by track_id)
          * interval '1ms' as "end",
-       round(milliseconds / sum(milliseconds) over () * 100, 2) as pct
+       round(milliseconds * 100.0 / sum(milliseconds) over (), 2) as pct
   from track
  where album_id = :album_id
 order by track_id;
 ```
 
-**Features**: window functions (`sum() over`), interval arithmetic, percentage calculations
+Uses window functions (`sum() over`), interval arithmetic, and a per-track percentage of the album total.
 
 ### genre-tracks.sql - Track Count by Genre
 
@@ -124,10 +120,10 @@ select genre.name as genre,
        left join lateral (...) ss on true
        join album using(album_id)
        join artist using(artist_id)
-order by genre.name, ss.count desc;
+order by genre.name, ss.count desc, ss.name;
 ```
 
-**Features**: LATERAL joins for Top-N per group, playlist-based popularity weighting
+Uses a LATERAL join for Top-N per group, weighting tracks by how often they appear in a playlist.
 
 ## Try It
 
@@ -154,19 +150,19 @@ FAILING:
   MODIFIED ROWS (showing 5 of 5):
   Row #1:
     Expected: {name: "AC/DC", albums: 3}
-    Actual:   {name: "Pearl Jam", albums: 1}
-  Row #2:
-    Expected: {name: "Metallica", albums: 3}
-    Actual:   {name: "Jamiroquai", albums: 1}
-  Row #3:
-    Expected: {name: "Led Zeppelin", albums: 3}
     Actual:   {name: "Accept", albums: 1}
+  Row #2:
+    Expected: {name: "Led Zeppelin", albums: 3}
+    Actual:   {name: "Audioslave", albums: 1}
+  Row #3:
+    Expected: {name: "Metallica", albums: 3}
+    Actual:   {name: "Buddy Guy", albums: 1}
   Row #4:
-    Expected: {name: "Pink Floyd", albums: 2}
-    Actual:   {name: "Nirvana", albums: 1}
+    Expected: {name: "Foo Fighters", albums: 2}
+    Actual:   {name: "Creedence Clearwater Revival", albums: 1}
   Row #5:
-    Expected: {name: "Radiohead", albums: 2}
-    Actual:   {name: "Lenny Kravitz", albums: 1}
+    Expected: {name: "Iron Maiden", albums: 2}
+    Actual:   {name: "Deep Purple", albums: 1}
 
 To accept changes: regresql update <query-name>  
 ```
@@ -181,15 +177,16 @@ And follow up tests will pass again.
 
 ## Baselines
 
-In previous example `regresql test` catches content only changes. To also catch **query plan regressions**
-(a dropped index, a seq scan that used to be an index scan), all you need to do is capture baselines:
+`regresql test` on its own catches output changes. To also catch query plan
+changes, an index scan that turns into a sequential scan or a join method that
+flips, capture baselines:
 
 ```bash
 regresql baseline
 ```
 
-This runs `EXPLAIN` for every query and saves the plan signature — scan types,
-join methods, indexes used. Now try dropping an index:
+This runs `EXPLAIN` for every query and records the plan: scan types, join
+methods, indexes used. Now drop an index one of the queries relies on:
 
 ```sql
 DROP INDEX track_album_id_idx;
@@ -199,17 +196,22 @@ DROP INDEX track_album_id_idx;
 regresql test
 ```
 
-Despite all the tests passing, RegreSQL is able to detect sub-optimal plans.
+RegreSQL compares the new plan against the baseline and reports what changed,
+with the anti-patterns the change introduced:
 
 ```
+  ✗ Table 'track': Index Scan using track_album_id_idx → Seq Scan
+  ℹ️ Join strategy changed: [Nested Loop, Hash Join] → [Hash Join, Hash Join]
+
 WARNINGS:
-  genre-topn_genre-top-n.top-1.cost (20.82 <= 20.82 * 110%)
+  ⚠️  Multiple sequential scans detected on tables: album, playlist_track, track, artist
   ⚠️  Multiple sort operations detected (2 sorts)
-    Suggestion: Consider composite indexes for ORDER BY clauses to avoid sorting
-  genre-topn_genre-top-n.top-3.cost (21.79 <= 21.79 * 110%)
-  ⚠️  Multiple sort operations detected (2 sorts)
-    Suggestion: Consider composite indexes for ORDER BY clauses to avoid sorting
+  ⚠️  Nested loop join with sequential scan detected
 ```
+
+On a dataset this small a sequential scan is often cheaper than the index, so
+the signal here is the plan shape, not the timing. On production-sized data the
+same check is what catches a dropped index or a bad plan change before it ships.
 
 ## Running Tests
 

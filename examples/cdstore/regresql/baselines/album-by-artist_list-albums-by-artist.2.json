@@ -1,0 +1,74 @@
+{
+  "query": "list-albums-by-artist",
+  "timestamp": "2026-07-12T13:37:05Z",
+  "plan": {
+    "plan_rows": 3,
+    "startup_cost": 3.36,
+    "total_cost": 3.44
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "Aggregate",
+      "Sort",
+      "Nested Loop",
+      "Hash Join",
+      "Seq Scan",
+      "Hash",
+      "Seq Scan",
+      "Index Scan"
+    ],
+    "Relations": {
+      "album": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      },
+      "artist": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": "(artist.name = 'AC/DC'::text)"
+      },
+      "track": {
+        "ScanType": "Index Scan",
+        "IndexName": "track_album_id_idx",
+        "IndexCond": "(track.album_id = album.album_id)",
+        "Filter": ""
+      }
+    },
+    "IndexesUsed": [
+      "track_album_id_idx"
+    ],
+    "HasSeqScan": true,
+    "HasSort": true,
+    "JoinTypes": [
+      "Nested Loop",
+      "Hash Join"
+    ],
+    "JoinModes": [
+      "Left",
+      "Inner"
+    ],
+    "PartialModes": null
+  },
+  "analyze_mode": true,
+  "buffers": {
+    "shared_hit_blocks": 8,
+    "shared_read_blocks": 0,
+    "local_hit_blocks": 0,
+    "local_read_blocks": 0,
+    "total_buffers": 8,
+    "temp_read_blocks": 0,
+    "temp_written_blocks": 0,
+    "temp_buffers": 0
+  },
+  "actuals": {
+    "actual_rows": 3,
+    "plan_rows": 3,
+    "execution_time_ms": 0.056,
+    "total_tuples_processed": 79.99,
+    "worst_qerror": 3.3333333333333335,
+    "worst_qerror_node": "Sort"
+  }
+}

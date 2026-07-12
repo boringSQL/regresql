@@ -1,0 +1,54 @@
+{
+  "columns": [
+    "genre",
+    "track",
+    "artist"
+  ],
+  "rows": [
+    [
+      "Alternative \u0026 Punk",
+      "Everlong",
+      "Foo Fighters"
+    ],
+    [
+      "Alternative \u0026 Punk",
+      "Smells Like Tee…",
+      "Nirvana"
+    ],
+    [
+      "Alternative \u0026 Punk",
+      "Cochise",
+      "Audioslave"
+    ],
+    [
+      "Metal",
+      "Aces High",
+      "Iron Maiden"
+    ],
+    [
+      "Metal",
+      "Battery",
+      "Metallica"
+    ],
+    [
+      "Metal",
+      "Fade to Black",
+      "Metallica"
+    ],
+    [
+      "Rock",
+      "For Those About…",
+      "AC/DC"
+    ],
+    [
+      "Rock",
+      "Money",
+      "Pink Floyd"
+    ],
+    [
+      "Rock",
+      "Stairway to Hea…",
+      "Led Zeppelin"
+    ]
+  ]
+}

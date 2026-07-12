@@ -1,0 +1,19 @@
+{
+  "columns": [
+    "album",
+    "created_at",
+    "duration"
+  ],
+  "rows": [
+    [
+      "Blood Sugar Sex Magik",
+      "2025-11-20T01:00:00+01:00",
+      "00:23:14.741"
+    ],
+    [
+      "Californication",
+      "2025-11-21T01:00:00+01:00",
+      "00:17:12.161"
+    ]
+  ]
+}

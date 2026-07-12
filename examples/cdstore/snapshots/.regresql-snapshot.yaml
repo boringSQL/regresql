@@ -1,0 +1,28 @@
+current:
+    path: snapshots/default.dump
+    hash: sha256:59220368b335d9c728df9120446da22b0df62f788f6a965581db6b0d4cb75191
+    created: 2026-07-12T13:36:49.600952Z
+    size_bytes: 39982
+    format: custom
+    schema_path: db/schema.sql
+    schema_hash: sha256:ed01ec3b9063e8c0e407db9f7bc29f39a5f607eeb4522e05213d1ddced765176
+    fixtures_used:
+        - db/fixtures/01_base_data.sql
+        - db/fixtures/02_albums.sql
+        - db/fixtures/03_playlists.sql
+    server:
+        version: 18.4 (Debian 18.4-1.pgdg13+1)
+        version_num: 180004
+        planner_settings:
+            cpu_index_tuple_cost: "0.005"
+            cpu_operator_cost: "0.0025"
+            cpu_tuple_cost: "0.01"
+            effective_cache_size: 4GB
+            max_parallel_workers: "8"
+            max_parallel_workers_per_gather: "2"
+            min_parallel_table_scan_size: 8MB
+            parallel_setup_cost: "1000"
+            parallel_tuple_cost: "0.1"
+            random_page_cost: "4"
+            seq_page_cost: "1"
+            work_mem: 4MB
