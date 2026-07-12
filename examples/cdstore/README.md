@@ -40,13 +40,41 @@ regresql snapshot build
 
 This runs `db/schema.sql` then each file in `db/fixtures/` to create `snapshots/default.dump`.
 
-### 3. Restore and Test
+### 3. Generate Expected Output and Test
 
 ```bash
-regresql snapshot restore   # restore snapshot into test DB
-regresql update             # generate expected output files
-regresql test               # run all tests
+regresql update             # run every query, save its output as expected
+regresql test               # re-run and compare
 ```
+
+`update` runs each query and stores what it returns under `regresql/expected/`.
+`test` re-runs them and compares. Right now the output matches, so every check
+passes:
+
+```
+Running regression tests...
+
+RESULTS:
+  ✓ 15 passing
+  0.00s total
+```
+
+## Parameters
+
+Queries take values as `:name` placeholders. `artist.sql` ends in `limit :n`,
+`album-by-artist.sql` filters on `where artist.name = :name`. RegreSQL does not
+guess these, you set them in a plan file under `regresql/plans/`, one per query:
+
+```yaml
+# regresql/plans/artist_top-artists-by-album.yaml
+"1":
+  "n": "5"
+```
+
+Each top-level key is one binding. `"1"` runs the query with `n = 5` and saves
+its output to `expected/artist_top-artists-by-album.1.json`, which is where the
+`.1` in the test names comes from. Add a `"2":` block to run the same query with
+another value.
 
 ## Queries
 
@@ -125,15 +153,11 @@ order by genre.name, ss.count desc, ss.name;
 
 Uses a LATERAL join for Top-N per group, weighting tracks by how often they appear in a playlist.
 
-## Try It
+## Catching a change
 
-```bash
-regresql snapshot build     # create snapshot from schema + fixtures
-regresql update             # run every query, save expected output
-regresql test               # re-run and compare — all green
-```
-
-When using `update` only - RegreSQL tests **query output** only - every row and column must match exactly. Try changing `order by albums desc` to `asc` in `artist.sql` and re-test.
+`test` compares query output row for row. Change a query so it returns something
+different and it fails with the exact diff. Change `order by albums desc` to `asc`
+in `artist.sql` and re-run:
 
 `regresql test`
 
@@ -174,6 +198,8 @@ regresql update artist.sql
 ```
 
 And follow up tests will pass again.
+
+To use RegreSQL on your own database, run `regresql init postgres://…` in your project and follow the [main README](../../README.md).
 
 ## Baselines
 
