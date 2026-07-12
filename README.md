@@ -42,6 +42,8 @@ dnf install postgresql
 
 ## Quick Start
 
+New to RegreSQL? The [getting started guide](docs/getting-started.md) walks through this from scratch, including plan-regression and CI checks.
+
 ```bash
 # Initialize in your project
 regresql init postgres://localhost/mydb
@@ -65,6 +67,8 @@ regresql test
 `init` only writes a local `regresql/` directory and a config file. It doesn't touch your database.
 
 `update` is the step to be deliberate about. It captures whatever your queries return right now and stores that as the expected result, so run it against a database whose contents you trust. If you don't have one lying around, [Snapshots](#snapshots) below builds a reproducible one you can restore before every run.
+
+For a complete worked project to read and run, see the [cdstore example](examples/cdstore/README.md).
 
 ## Why RegreSQL
 
