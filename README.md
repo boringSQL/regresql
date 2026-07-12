@@ -4,7 +4,9 @@ SQL queries can break silently. Schema migrations, data changes, and index modif
 
 RegreSQL is a language-agnostic SQL regression testing tool for PostgreSQL. It finds your `*.sql` files, runs them against your database, compares output to known-good baselines, and tracks EXPLAIN plan changes.  Detect broken queries and performance regressions before production.
 
-`RegreSQL` is part of the [boringSQL](https://boringsql.com) stack alongside [Fixturize](https://github.com/boringSQL/fixturize) and [dryrun](https://github.com/boringSQL/dryrun). See the [project page](https://boringsql.com/products/regresql/) for the full overview.
+2.0 also adds cross-version testing: running the same queries against two PostgreSQL builds and comparing how each one plans them. That's a separate workflow for planner work and version upgrades, in its own section below. If you're here to test your application's queries, the everyday path is the rest of this README.
+
+`RegreSQL` is part of the [boringSQL](https://boringsql.com) stack alongside [qshape](https://github.com/boringSQL/qshape), [Fixturize](https://github.com/boringSQL/fixturize) and [dryrun](https://github.com/boringSQL/dryrun). See the [project page](https://boringsql.com/products/regresql/) for the full overview.
 
 ## Installing
 
@@ -60,14 +62,25 @@ regresql update
 regresql test
 ```
 
+`init` only writes a local `regresql/` directory and a config file. It doesn't touch your database.
+
+`update` is the step to be deliberate about. It captures whatever your queries return right now and stores that as the expected result, so run it against a database whose contents you trust. If you don't have one lying around, [Snapshots](#snapshots) below builds a reproducible one you can restore before every run.
+
 ## Why RegreSQL
 
 - **Language-agnostic** — works with any `.sql` file, no specific language, ORM, or database extension required
 - **Snapshot testing for SQL** — expected results committed as fixtures, diff when something changes
+- **Migration testing** — run queries before and after a migration, see exactly what changed
 - **EXPLAIN plan baselines** — track query costs over time, detect performance regressions automatically
 - **Sequential scan detection** — catch missing indexes before they hit production
 - **CI/CD ready** — JUnit, GitHub Actions, pgTAP, and JSON output formats
-- **Migration testing** — run queries before and after a migration, see exactly what changed
+
+For planner work and version upgrades (2.0):
+
+- **Cross-version planner A/B** — run the same queries against two PostgreSQL builds and compare plans, buffers, and results (`compare --base --target`)
+- **Trust filter** — inject identical statistics and skip cost-tie queries, so differences come from the planner and not from ANALYZE sampling
+- **Severity policies** — re-map warning and error severities per table, and turn seq scans on critical tables into failures
+- **Production-stats plan testing** — inject real statistics with `--stats` and the `pg_regresql` extension to reproduce production plans on a small local database
 
 ## Core Commands
 
@@ -133,10 +146,83 @@ Output formats: `console` (default), `pgtap`, `junit`, `json`, `github-actions`
 
 Tracks EXPLAIN cost estimates/I/O buffers over time. When a schema change or migration causes a query plan regression. Cost spikes, sequential scans on large tables — you'll catch it in CI before it reaches production.
 
+In analyze mode it also checks cardinality error (q-error), disk spills, and rows processed.
+
 ```bash
 regresql baseline
 regresql baseline --analyze          # include actual timing
 ```
+
+## Continuous integration
+
+The point of all this is catching a broken query in a pull request instead of in production. `regresql test` exits non-zero when a result or plan check fails, so any CI runner will fail the build on it. `--format github-actions` turns each failure into an inline PR annotation.
+
+Here's a full GitHub Actions job. It spins up a Postgres, points regresql at it, restores the snapshot, and runs the tests:
+
+```yaml
+# .github/workflows/regresql.yml
+name: regresql
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # overrides pguri from the committed regress.yaml
+      DATABASE_URL: postgres://postgres:postgres@localhost/postgres
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - run: go install github.com/boringsql/regresql/v2@latest
+      - run: regresql snapshot restore
+      - run: regresql test --format github-actions
+```
+
+`DATABASE_URL`, when set, overrides the `pguri` in `regress.yaml` for every command. That's how you point a CI run (or a one-off local run) at a different database without editing the committed config.
+
+The `snapshot restore` step assumes you've committed a snapshot (see below). Without one, drop that line and load your schema and data however the rest of your test suite does before `regresql test`.
+
+## Cross-version and planner testing
+
+These commands are for testing PostgreSQL itself or a version upgrade, not your application's queries. Skip this section if you're here for the everyday path above.
+
+### `regresql compare --base <uri> --target <uri>`
+
+Runs the corpus against two PostgreSQL builds and prints a scoreboard of the differences. Cost is suppressed across versions. `--stability` and `--inject-stats` filter out ANALYZE noise; `--samples` adds timing.
+
+### `regresql admit`
+
+Keeps only queries whose result stays the same across different plans. Ambiguous ones (like a `LIMIT` over ties) are dropped.
+
+### `regresql metamorphic`
+
+Turns off optimizations that should not change results and checks the rows stay the same. Finds optimizer bugs on one database, without a baseline.
+
+### `regresql coverage --taxonomy <file>`
+
+Reports which planner-feature cells the corpus covers and which it misses.
+
+## Using an ORM (no .sql files)
+
+RegreSQL tests `.sql` files, so if your queries come out of an ORM (ActiveRecord, SQLAlchemy, Prisma, Sequelize) you have nothing to point it at. [qshape](https://github.com/boringSQL/qshape) fills that gap. It reads `pg_stat_statements` from your running app, collapses the many per-ORM variants of each query into one canonical shape, and generates the RegreSQL `sql/` and `plans/` skeletons:
+
+```bash
+qshape capture "$DATABASE_URL" > clusters.json
+qshape regresql-stub --in clusters.json --out .
+```
+
+You get one `.sql` file per query shape and a plan YAML with placeholder test cases to fill in. From there it's the normal loop above. Run `qshape attribute` first to have the plans filled with real sampled values instead of placeholders.
 
 ## SQL Query Files
 
@@ -158,9 +244,9 @@ Named (`:param`) and positional (`$1`) parameters are supported. Set values in p
 
 ```yaml
 # regresql/plans/src/sql/users.yaml
-"1":
+"1":            # test case 1
   id: 42
-"2":
+"2":            # test case 2
   id: 100
 ```
 
@@ -176,7 +262,9 @@ Control test behavior per-query:
 SELECT ...
 ```
 
-Options: `notest`, `nobaseline`, `noseqscanwarn`, `difffloattolerance:0.01`
+Options: `notest`, `nobaseline`, `noseqscanwarn`, `difffloattolerance:0.01`, `timeout:5s`
+
+Result comparison can ignore named columns, ignore row order, tolerate float differences, and compare JSONB by value.
 
 ## Snapshots
 
@@ -262,6 +350,8 @@ snapshot:
   migrations: db/migrations/
   fixtures: [users, products]
 ```
+
+Set the `DATABASE_URL` environment variable to override `pguri` at run time — useful for CI or pointing a run at a different database without touching the committed file.
 
 ## File Structure
 
