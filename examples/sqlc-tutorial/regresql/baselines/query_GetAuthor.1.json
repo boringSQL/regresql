@@ -1,0 +1,29 @@
+{
+  "query": "GetAuthor",
+  "timestamp": "2026-07-12T15:26:46Z",
+  "plan": {
+    "plan_rows": 1,
+    "startup_cost": 0,
+    "total_cost": 1.04
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "Limit",
+      "Seq Scan"
+    ],
+    "Relations": {
+      "authors": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": "(authors.id = '1'::bigint)"
+      }
+    },
+    "IndexesUsed": null,
+    "HasSeqScan": true,
+    "HasSort": false,
+    "JoinTypes": null,
+    "JoinModes": null,
+    "PartialModes": null
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "columns": [
+    "id",
+    "name",
+    "bio"
+  ],
+  "rows": [
+    [
+      3,
+      "Octavia E. Butler",
+      null
+    ],
+    [
+      2,
+      "Terry Pratchett",
+      "Author of the Discworld series"
+    ],
+    [
+      1,
+      "Ursula K. Le Guin",
+      "Author of the Earthsea and Hainish cycles"
+    ]
+  ]
+}

@@ -1,0 +1,9 @@
+baselines:
+    query_GetAuthor.1.json:
+        snapshot_hash: sha256:f467ab0c9154b127a45f28d76195589d93995e8a2651b0afd7865ce87bb36f0c
+        created: 2026-07-12T15:26:36.527942Z
+        updated: 2026-07-12T15:26:36.527942Z
+    query_ListAuthors.json:
+        snapshot_hash: sha256:f467ab0c9154b127a45f28d76195589d93995e8a2651b0afd7865ce87bb36f0c
+        created: 2026-07-12T15:26:36.529139Z
+        updated: 2026-07-12T15:26:36.529139Z

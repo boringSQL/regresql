@@ -1,0 +1,29 @@
+{
+  "query": "ListAuthors",
+  "timestamp": "2026-07-12T15:26:46Z",
+  "plan": {
+    "plan_rows": 3,
+    "startup_cost": 1.05,
+    "total_cost": 1.06
+  },
+  "plan_signature": {
+    "NodeTypes": [
+      "Sort",
+      "Seq Scan"
+    ],
+    "Relations": {
+      "authors": {
+        "ScanType": "Seq Scan",
+        "IndexName": "",
+        "IndexCond": "",
+        "Filter": ""
+      }
+    },
+    "IndexesUsed": null,
+    "HasSeqScan": true,
+    "HasSort": true,
+    "JoinTypes": null,
+    "JoinModes": null,
+    "PartialModes": null
+  }
+}

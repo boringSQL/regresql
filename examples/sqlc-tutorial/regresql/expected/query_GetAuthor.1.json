@@ -1,0 +1,14 @@
+{
+  "columns": [
+    "id",
+    "name",
+    "bio"
+  ],
+  "rows": [
+    [
+      1,
+      "Ursula K. Le Guin",
+      "Author of the Earthsea and Hainish cycles"
+    ]
+  ]
+}

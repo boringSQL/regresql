@@ -1,0 +1,8 @@
+root: .
+pguri: postgres://localhost/sqlc_test?sslmode=disable
+
+snapshot:
+  schema: schema.sql
+  fixtures:
+    - db/seed.sql
+  path: snapshots/default.dump

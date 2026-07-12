@@ -1,0 +1,26 @@
+current:
+    path: snapshots/default.dump
+    hash: sha256:f467ab0c9154b127a45f28d76195589d93995e8a2651b0afd7865ce87bb36f0c
+    created: 2026-07-12T15:26:36.402521Z
+    size_bytes: 4806
+    format: custom
+    schema_path: schema.sql
+    schema_hash: sha256:a57fdfd877d184efcb9d1bd7a212be513394a892b3656d4c1a7c86e506dc7c6a
+    fixtures_used:
+        - db/seed.sql
+    server:
+        version: 18.4 (Debian 18.4-1.pgdg13+1)
+        version_num: 180004
+        planner_settings:
+            cpu_index_tuple_cost: "0.005"
+            cpu_operator_cost: "0.0025"
+            cpu_tuple_cost: "0.01"
+            effective_cache_size: 4GB
+            max_parallel_workers: "8"
+            max_parallel_workers_per_gather: "2"
+            min_parallel_table_scan_size: 8MB
+            parallel_setup_cost: "1000"
+            parallel_tuple_cost: "0.1"
+            random_page_cost: "4"
+            seq_page_cost: "1"
+            work_mem: 4MB
