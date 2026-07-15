@@ -12,10 +12,15 @@ RegreSQL is a language-agnostic SQL regression testing tool for PostgreSQL. It f
 
 ### Homebrew (macOS/Linux)
 
+Homebrew 6.0 requires third-party taps to be trusted before their formulae can load:
+
 ```bash
 brew tap boringsql/boringsql
+brew trust --tap boringsql/boringsql
 brew install regresql
 ```
+
+On Homebrew 5.x and older, skip the `brew trust` step. If you'd rather not trust the whole tap, trust just the formula with `brew trust --formula boringsql/boringsql/regresql`.
 
 ### Prebuilt binaries
 
