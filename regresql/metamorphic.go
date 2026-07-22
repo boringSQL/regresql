@@ -106,20 +106,24 @@ func metamorphicCheck(ctx context.Context, db *sql.DB, q *Query, b bindingRef) M
 	return res
 }
 
-// metamorphicDecision hashes the baseline, then flips each optimization off via
-// hash; a flipped result that differs from the baseline is a wrong-results bug.
+// metamorphicDecision forces each result-preserving optimization both off and on
+// via hash; if a query's result differs between the two, that optimization is a
+// wrong-results bug and its GUC is named.
 func metamorphicDecision(hash func(sets []string) (string, error)) (bug bool, guc, reason string) {
-	base, err := hash(nil)
-	if err != nil {
+	if _, err := hash(nil); err != nil { // surface a query error up front
 		return false, "", admitOneline(err.Error())
 	}
+	// Both directions: testing only =off never exercises off-by-default optimizations.
 	for _, g := range metamorphicGUCs {
-		h, err := hash([]string{"SET " + g + "=off"})
+		off, err := hash([]string{"SET " + g + "=off"})
 		if err != nil {
-			// GUC not known on this PG version, skip it
+			continue // GUC not known on this PG version
+		}
+		on, err := hash([]string{"SET " + g + "=on"})
+		if err != nil {
 			continue
 		}
-		if h != base {
+		if off != on {
 			return true, g, ""
 		}
 	}
