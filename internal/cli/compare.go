@@ -10,20 +10,22 @@ import (
 )
 
 var (
-	compareCwd           string
-	compareBaseURI       string
-	compareTargetURI     string
-	compareRunFilter     string
-	compareFormat        string
-	compareOutput        string
-	compareWarmups       int
-	compareAdmit         bool
-	compareAdmitReps     int
-	compareSamples       int
-	compareTimeout       time.Duration
-	compareInjectStats   bool
-	compareStability     bool
-	compareStabilityReps int
+	compareCwd            string
+	compareBaseURI        string
+	compareTargetURI      string
+	compareRunFilter      string
+	compareFormat         string
+	compareOutput         string
+	compareWarmups        int
+	compareAdmit          bool
+	compareAdmitReps      int
+	compareSamples        int
+	compareTimeout        time.Duration
+	compareInjectStats    bool
+	compareStability      bool
+	compareStabilityReps  int
+	compareSelfControl    bool
+	compareSelfControlURI string
 
 	compareCmd = &cobra.Command{
 		Use:   "compare --base <uri> --target <uri>",
@@ -41,20 +43,22 @@ when the server versions differ. Emits a scoreboard for a patch cover letter.`,
 				os.Exit(1)
 			}
 			code := regresql.Compare(regresql.CompareOptions{
-				Root:          compareCwd,
-				BaseURI:       compareBaseURI,
-				TargetURI:     compareTargetURI,
-				RunFilter:     compareRunFilter,
-				Format:        compareFormat,
-				OutputPath:    compareOutput,
-				Warmups:       compareWarmups,
-				Admit:         compareAdmit,
-				AdmitReps:     compareAdmitReps,
-				Samples:       compareSamples,
-				Timeout:       compareTimeout,
-				InjectStats:   compareInjectStats,
-				Stability:     compareStability,
-				StabilityReps: compareStabilityReps,
+				Root:           compareCwd,
+				BaseURI:        compareBaseURI,
+				TargetURI:      compareTargetURI,
+				RunFilter:      compareRunFilter,
+				Format:         compareFormat,
+				OutputPath:     compareOutput,
+				Warmups:        compareWarmups,
+				Admit:          compareAdmit,
+				AdmitReps:      compareAdmitReps,
+				Samples:        compareSamples,
+				Timeout:        compareTimeout,
+				InjectStats:    compareInjectStats,
+				Stability:      compareStability,
+				StabilityReps:  compareStabilityReps,
+				SelfControl:    compareSelfControl,
+				SelfControlURI: compareSelfControlURI,
 			})
 			os.Exit(code)
 		},
@@ -78,4 +82,6 @@ func init() {
 	compareCmd.Flags().BoolVar(&compareInjectStats, "inject-stats", false, "Copy base statistics into target first so diffs are planner code, not ANALYZE noise (needs pg_dump/psql; mutates target stats)")
 	compareCmd.Flags().BoolVar(&compareStability, "stability", false, "Exclude cost-tie queries whose plan swings on re-ANALYZE (mutates base stats)")
 	compareCmd.Flags().IntVar(&compareStabilityReps, "stability-reps", regresql.DefaultStabilityReps, "Re-ANALYZE repetitions for the --stability preflight")
+	compareCmd.Flags().BoolVar(&compareSelfControl, "self-control", false, "Calibrate: diff base against itself and suppress tiers that flag there (tiebreak/cache noise floor)")
+	compareCmd.Flags().StringVar(&compareSelfControlURI, "self-control-uri", "", "Second base instance for --self-control (default: --base, same instance)")
 }

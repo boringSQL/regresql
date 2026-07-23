@@ -15,21 +15,28 @@ import (
 
 type (
 	CompareOptions struct {
-		Root          string
-		BaseURI       string
-		TargetURI     string
-		RunFilter     string
-		Format        string // console | markdown | json
-		OutputPath    string
-		Warmups       int           // discarded EXPLAIN ANALYZE runs before the measured one
-		Admit         bool          // preflight: exclude queries whose result isn't plan-invariant
-		AdmitReps     int           // repetitions per perturbation in the admit preflight
-		Samples       int           // interleaved timing runs per engine (0 = off)
-		Timeout       time.Duration // per-query statement_timeout cap (0 = none)
-		InjectStats   bool          // copy base stats into target so diffs are code, not ANALYZE noise
-		Stability     bool          // preflight: exclude cost-tie queries whose plan swings on re-ANALYZE
-		StabilityReps int
+		Root           string
+		BaseURI        string
+		TargetURI      string
+		RunFilter      string
+		Format         string // console | markdown | json
+		OutputPath     string
+		Warmups        int           // discarded EXPLAIN ANALYZE runs before the measured one
+		Admit          bool          // preflight: exclude queries whose result isn't plan-invariant
+		AdmitReps      int           // repetitions per perturbation in the admit preflight
+		Samples        int           // interleaved timing runs per engine (0 = off)
+		Timeout        time.Duration // per-query statement_timeout cap (0 = none)
+		InjectStats    bool          // copy base stats into target so diffs are code, not ANALYZE noise
+		Stability      bool          // preflight: exclude cost-tie queries whose plan swings on re-ANALYZE
+		StabilityReps  int
+		SelfControl    bool   // calibrate against base-vs-base, suppress tiers that flag there
+		SelfControlURI string // second base instance (default: BaseURI)
 	}
+
+	// Tiers that flagged base-against-base, i.e. noise. Correctness is never
+	// floored — a base-vs-base result diff is non-determinism, which --admit
+	// excludes visibly.
+	noiseTiers struct{ buffer, spill, qerror, shape bool }
 
 	EngineInfo struct {
 		Version    string `json:"version"`
@@ -77,8 +84,9 @@ type (
 		StatsInjected bool              `json:"stats_injected,omitempty"` // base stats copied into target
 		GUCMismatch   []GUCDiff         `json:"guc_mismatch,omitempty"`
 		Comparisons   []QueryComparison `json:"comparisons"`
-		Excluded      []AdmitResult     `json:"excluded,omitempty"` // rejected by the --admit preflight
-		CostTie       []AdmitResult     `json:"cost_tie,omitempty"` // excluded by the --stability preflight
+		Excluded      []AdmitResult     `json:"excluded,omitempty"`     // rejected by the --admit preflight
+		CostTie       []AdmitResult     `json:"cost_tie,omitempty"`     // excluded by the --stability preflight
+		SelfFloored   int               `json:"self_floored,omitempty"` // bindings with a tier suppressed by --self-control
 	}
 
 	GUCDiff struct {
@@ -195,7 +203,49 @@ func Compare(opts CompareOptions) int {
 		admitReps = DefaultAdmitReps
 	}
 
-	for _, pq := range plannedQueries {
+	var floor map[string]noiseTiers
+	if opts.SelfControl {
+		scURI := opts.SelfControlURI
+		if scURI == "" {
+			scURI = opts.BaseURI
+		}
+		scDB, err := openCompareDB(scURI)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "self-control: %s\n", err)
+			return 2
+		}
+		defer scDB.Close()
+		if scURI == opts.BaseURI {
+			// one instance shares cache/OIDs/plancache, so the cross-instance floor won't appear
+			fmt.Fprintln(os.Stderr, "self-control: WARNING calibrating against the same instance — floor will be weak; use --self-control-uri")
+		}
+		if opts.InjectStats && scURI != opts.BaseURI {
+			if err := injectStats(opts.BaseURI, scURI); err != nil {
+				fmt.Fprintf(os.Stderr, "self-control inject-stats: %s\n", err)
+				return 2
+			}
+		}
+		fmt.Fprintln(os.Stderr, "self-control: diffing base against itself to establish the noise floor…")
+		cal, _, _ := opts.comparePass(baseDB, scDB, plannedQueries, suite, board.SameVersion, unstable, false, admitReps, false, nil)
+		floor = buildFloor(cal)
+		board.SelfFloored = len(floor)
+	}
+
+	board.Comparisons, board.Excluded, board.CostTie =
+		opts.comparePass(baseDB, targetDB, plannedQueries, suite, board.SameVersion, unstable, opts.Admit, admitReps, opts.Samples > 0, floor)
+
+	if err := renderScoreboard(board, opts.Format, opts.OutputPath); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		return 2
+	}
+	return board.exitCode()
+}
+
+// comparePass diffs every admitted binding of base against target; floor is nil
+// in the calibration pass.
+func (opts CompareOptions) comparePass(baseDB, targetDB *sql.DB, pqs []*PlannedQuery, suite *Suite, sameVersion bool, unstable map[string]string, admit bool, admitReps int, doTiming bool, floor map[string]noiseTiers) (cmps []QueryComparison, excluded, costtie []AdmitResult) {
+	ctx := context.Background()
+	for _, pq := range pqs {
 		if !suite.matchesRunFilter(filepath.Base(pq.SQLPath), pq.Query.Name) {
 			continue
 		}
@@ -204,36 +254,45 @@ func Compare(opts CompareOptions) int {
 		}
 		timeout := resolveCompareTimeout(pq.Query, opts.Timeout)
 		for _, b := range iterateBindings(pq.Plan) {
-			// exclude cost-tie queries (plan decided by ANALYZE noise)
-			if reason, tie := unstable[bindingKey(pq.Query.Name, b.name)]; tie {
-				board.CostTie = append(board.CostTie, AdmitResult{Name: pq.Query.Name, Binding: b.name, Reason: reason})
+			key := bindingKey(pq.Query.Name, b.name)
+			if reason, tie := unstable[key]; tie {
+				costtie = append(costtie, AdmitResult{Name: pq.Query.Name, Binding: b.name, Reason: reason})
 				continue
 			}
-			// exclude plan-dependent queries: their diff would be a false signal
-			if opts.Admit {
-				if ar := admitBinding(context.Background(), baseDB, pq.Query, b, admitReps); !ar.Admitted {
-					board.Excluded = append(board.Excluded, ar)
+			if admit {
+				if ar := admitBinding(ctx, baseDB, pq.Query, b, admitReps); !ar.Admitted {
+					excluded = append(excluded, ar)
 					continue
 				}
 			}
-			base := captureBinding(context.Background(), baseDB, pq.Query, b.bindings, timeout, opts.Warmups)
-			target := captureBinding(context.Background(), targetDB, pq.Query, b.bindings, timeout, opts.Warmups)
-			cmp := compareCaptures(pq.Query.Name, b.name, base, target, board.SameVersion)
-			// timing is the softest tier, only for queries that ran both sides
-			if opts.Samples > 0 && cmp.Severity < SevIncomplete {
-				bt, tt := sampleTiming(context.Background(), baseDB, targetDB, pq.Query, b.bindings, timeout, opts.Samples)
+			base := captureBinding(ctx, baseDB, pq.Query, b.bindings, timeout, opts.Warmups)
+			target := captureBinding(ctx, targetDB, pq.Query, b.bindings, timeout, opts.Warmups)
+			cmp := compareCaptures(pq.Query.Name, b.name, base, target, sameVersion, floor[key])
+			if doTiming && cmp.Severity < SevIncomplete {
+				bt, tt := sampleTiming(ctx, baseDB, targetDB, pq.Query, b.bindings, timeout, opts.Samples)
 				tv := timingVerdict(bt, tt)
 				cmp.Timing = &tv
 			}
-			board.Comparisons = append(board.Comparisons, cmp)
+			cmps = append(cmps, cmp)
 		}
 	}
+	return cmps, excluded, costtie
+}
 
-	if err := renderScoreboard(board, opts.Format, opts.OutputPath); err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err)
-		return 2
+func buildFloor(cal []QueryComparison) map[string]noiseTiers {
+	floor := make(map[string]noiseTiers)
+	for _, c := range cal {
+		nt := noiseTiers{
+			buffer: c.BufferDelta > GetBufferThreshold(),
+			spill:  c.SpillRegress,
+			qerror: c.QErrorWorse,
+			shape:  c.PlanChanged,
+		}
+		if nt.buffer || nt.spill || nt.qerror || nt.shape {
+			floor[bindingKey(c.Name, c.Binding)] = nt
+		}
 	}
-	return board.exitCode()
+	return floor
 }
 
 // exitCode fails on the gating signals: wrong results, perf/spill regressions,
@@ -360,7 +419,7 @@ func warmedExplain(warmups int, explain func() (*ExplainOutput, error)) (*Explai
 	return ex, err
 }
 
-func compareCaptures(name, binding string, base, target engineCapture, sameVersion bool) QueryComparison {
+func compareCaptures(name, binding string, base, target engineCapture, sameVersion bool, suppress noiseTiers) QueryComparison {
 	c := QueryComparison{Name: name, Binding: binding}
 
 	switch {
@@ -392,11 +451,18 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 	// measured actuals: target vs base
 	c.BaseBuffers = rootBuffers(base.explain)
 	c.TargetBuffers = rootBuffers(target.explain)
-	bufferOk, delta := CompareBuffers(c.TargetBuffers, c.BaseBuffers, GetBufferThreshold())
-	c.BufferDelta = delta
-	c.SpillRegress = IsSpillRegression(rootTemp(target.explain), rootTemp(base.explain), GetBufferThreshold())
-	if !bufferOk || c.SpillRegress {
-		sev = maxSev(sev, SevPerf)
+	if !suppress.buffer {
+		ok, delta := CompareBuffers(c.TargetBuffers, c.BaseBuffers, GetBufferThreshold())
+		c.BufferDelta = delta
+		if !ok {
+			sev = maxSev(sev, SevPerf)
+		}
+	}
+	if !suppress.spill {
+		c.SpillRegress = IsSpillRegression(rootTemp(target.explain), rootTemp(base.explain), GetBufferThreshold())
+		if c.SpillRegress {
+			sev = maxSev(sev, SevPerf)
+		}
 	}
 
 	c.BaseTuples = SumTuplesProcessed(&base.explain.Plan)
@@ -404,28 +470,32 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 	_, c.TupleDelta = CompareTuples(c.TargetTuples, c.BaseTuples, GetBufferThreshold())
 
 	// estimation quality
-	if w := WorstQError(&base.explain.Plan); w != nil {
-		c.BaseQError = w.QError
-	}
-	if w := WorstQError(&target.explain.Plan); w != nil {
-		c.TargetQError = w.QError
-		c.QErrorNode = qErrorNodeLabel(w)
-	}
-	if IsQErrorRegression(c.TargetQError, c.BaseQError, GetQErrorRatio(), GetQErrorFloor()) {
-		c.QErrorWorse = true
-		sev = maxSev(sev, SevEstimation)
+	if !suppress.qerror {
+		if w := WorstQError(&base.explain.Plan); w != nil {
+			c.BaseQError = w.QError
+		}
+		if w := WorstQError(&target.explain.Plan); w != nil {
+			c.TargetQError = w.QError
+			c.QErrorNode = qErrorNodeLabel(w)
+		}
+		if IsQErrorRegression(c.TargetQError, c.BaseQError, GetQErrorRatio(), GetQErrorFloor()) {
+			c.QErrorWorse = true
+			sev = maxSev(sev, SevEstimation)
+		}
 	}
 
 	// plan shape
-	baseSig := ExtractPlanSignatureFromNode(&base.explain.Plan)
-	targetSig := ExtractPlanSignatureFromNode(&target.explain.Plan)
-	if HasPlanChanged(baseSig, targetSig) {
-		c.PlanChanged = true
-		c.Regressions = DetectPlanRegressions(baseSig, targetSig)
-		if hasCriticalRegression(c.Regressions) {
-			sev = maxSev(sev, SevPerf)
-		} else {
-			sev = maxSev(sev, SevShape)
+	if !suppress.shape {
+		baseSig := ExtractPlanSignatureFromNode(&base.explain.Plan)
+		targetSig := ExtractPlanSignatureFromNode(&target.explain.Plan)
+		if HasPlanChanged(baseSig, targetSig) {
+			c.PlanChanged = true
+			c.Regressions = DetectPlanRegressions(baseSig, targetSig)
+			if hasCriticalRegression(c.Regressions) {
+				sev = maxSev(sev, SevPerf)
+			} else {
+				sev = maxSev(sev, SevShape)
+			}
 		}
 	}
 

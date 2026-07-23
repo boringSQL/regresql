@@ -30,7 +30,7 @@ func TestCompareCaptures_Equal(t *testing.T) {
 	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
 	target := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
 
-	c := compareCaptures("q", "", base, target, true)
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if c.Severity != SevEqual {
 		t.Errorf("severity = %v, want equal", c.Severity)
 	}
@@ -48,7 +48,7 @@ func TestCompareCaptures_CorrectnessWins(t *testing.T) {
 		`{"Plan":{"Node Type":"Seq Scan","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":99999}}`,
 		[]string{"n"}, [][]any{{int64(2)}})
 
-	c := compareCaptures("q", "", base, target, true)
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if !c.ResultDiffer {
 		t.Error("ResultDiffer = false, want true")
 	}
@@ -65,7 +65,7 @@ func TestCompareCaptures_BufferRegression(t *testing.T) {
 		`{"Plan":{"Node Type":"Seq Scan","Relation Name":"t","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":1000}}`,
 		[]string{"n"}, [][]any{{int64(1)}})
 
-	c := compareCaptures("q", "", base, target, true)
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if c.Severity != SevPerf {
 		t.Errorf("severity = %v, want perf", c.Severity)
 	}
@@ -82,7 +82,7 @@ func TestCompareCaptures_SpillRegression(t *testing.T) {
 		`{"Plan":{"Node Type":"Sort","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":10,"Temp Written Blocks":500}}`,
 		[]string{"n"}, [][]any{{int64(1)}})
 
-	c := compareCaptures("q", "", base, target, true)
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if !c.SpillRegress {
 		t.Error("SpillRegress = false, want true")
 	}
@@ -101,7 +101,7 @@ func TestCompareCaptures_QErrorRegression(t *testing.T) {
 		`{"Plan":{"Node Type":"Seq Scan","Relation Name":"t","Plan Rows":1,"Actual Rows":1000,"Actual Loops":1,"Shared Hit Blocks":10}}`,
 		[]string{"n"}, [][]any{{int64(1)}})
 
-	c := compareCaptures("q", "", base, target, true)
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if !c.QErrorWorse {
 		t.Errorf("QErrorWorse = false; base=%.0f target=%.0f", c.BaseQError, c.TargetQError)
 	}
@@ -115,7 +115,7 @@ func TestCompareCaptures_OneSidedTimeout(t *testing.T) {
 	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
 	target := engineCapture{timedOut: true}
 
-	c := compareCaptures("q", "", base, target, true)
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if c.Severity != SevIncomplete {
 		t.Errorf("severity = %v, want incomplete", c.Severity)
 	}
@@ -127,11 +127,11 @@ func TestCompareCaptures_CostSuppressedAcrossVersions(t *testing.T) {
 	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
 	target := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
 
-	same := compareCaptures("q", "", base, target, true)
+	same := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if !same.CostComparable {
 		t.Error("CostComparable = false for same version, want true")
 	}
-	cross := compareCaptures("q", "", base, target, false)
+	cross := compareCaptures("q", "", base, target, false, noiseTiers{})
 	if cross.CostComparable {
 		t.Error("CostComparable = true across versions, want false")
 	}

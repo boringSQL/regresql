@@ -160,7 +160,7 @@ func renderMetamorphic(results []MetamorphicResult, format, outputPath string) {
 		}
 		switch {
 		case r.Bug:
-			fmt.Fprintf(w, "  BUG     %-28s result changed with %s=off\n", label, r.GUC)
+			fmt.Fprintf(w, "  BUG     %-28s result changed under %s\n", label, r.GUC)
 		case r.Reason != "":
 			fmt.Fprintf(w, "  error   %-28s %s\n", label, r.Reason)
 		default:

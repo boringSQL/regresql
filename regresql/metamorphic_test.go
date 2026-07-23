@@ -20,8 +20,8 @@ func TestMetamorphicDecision_Clean(t *testing.T) {
 // bug and the offending GUC is named.
 func TestMetamorphicDecision_FindsBug(t *testing.T) {
 	hash := func(sets []string) (string, error) {
-		if len(sets) > 0 && strings.Contains(sets[0], "enable_memoize") {
-			return "different", nil // this optimization changed the rows
+		if len(sets) > 0 && sets[0] == "SET enable_memoize=on" {
+			return "different", nil // memoize changes rows when ON
 		}
 		return "base", nil
 	}
@@ -46,8 +46,8 @@ func TestMetamorphicDecision_SkipsUnknownGUC(t *testing.T) {
 			return "base", nil
 		case sets[0] == firstOff:
 			return "", errors.New("unrecognized configuration parameter")
-		case strings.Contains(sets[0], last):
-			return "moved", nil
+		case sets[0] == "SET "+last+"=on":
+			return "moved", nil // changes rows when ON
 		default:
 			return "base", nil
 		}

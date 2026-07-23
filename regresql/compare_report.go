@@ -21,13 +21,14 @@ type scoreboardTotals struct {
 	Errors         int
 	Excluded       int
 	CostTie        int
+	SelfFloored    int
 	TimingSlower   int
 	TimingFaster   int
 	TimingUnstable int
 }
 
 func (b *Scoreboard) totals() scoreboardTotals {
-	t := scoreboardTotals{Queries: len(b.Comparisons), Excluded: len(b.Excluded), CostTie: len(b.CostTie)}
+	t := scoreboardTotals{Queries: len(b.Comparisons), Excluded: len(b.Excluded), CostTie: len(b.CostTie), SelfFloored: b.SelfFloored}
 	for _, c := range b.Comparisons {
 		switch {
 		case c.Severity == SevError:
@@ -76,6 +77,9 @@ func (t scoreboardTotals) line() string {
 	}
 	if t.CostTie > 0 {
 		s += fmt.Sprintf(" · %d cost-tie", t.CostTie)
+	}
+	if t.SelfFloored > 0 {
+		s += fmt.Sprintf(" · %d self-control-floored", t.SelfFloored)
 	}
 	if t.TimingSlower+t.TimingFaster+t.TimingUnstable > 0 {
 		s += fmt.Sprintf(" · timing %d slower / %d faster (%d unstable)",
