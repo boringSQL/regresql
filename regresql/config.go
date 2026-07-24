@@ -260,7 +260,7 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 		result.BufferThreshold = 2.0
 	}
 	if result.BufferFloor == 0 {
-		result.BufferFloor = 100
+		result.BufferFloor = 1000
 	}
 	if result.CostThreshold == 0 {
 		result.CostThreshold = 10.0
