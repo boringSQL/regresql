@@ -464,8 +464,10 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 		}
 	}
 	if !suppress.spill {
-		c.SpillRegress = IsSpillRegression(rootTemp(target.explain), rootTemp(base.explain), GetBufferThreshold())
-		if c.SpillRegress {
+		bt, tt := rootTemp(base.explain), rootTemp(target.explain)
+		// % gate + block floor, as with buffers
+		if IsSpillRegression(tt, bt, GetBufferThreshold()) && tt-bt >= GetBufferFloor() {
+			c.SpillRegress = true
 			sev = maxSev(sev, SevPerf)
 		}
 	}
@@ -489,28 +491,45 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 		}
 	}
 
-	// plan shape
-	if !suppress.shape {
-		baseSig := ExtractPlanSignatureFromNode(&base.explain.Plan)
-		targetSig := ExtractPlanSignatureFromNode(&target.explain.Plan)
-		if HasPlanChanged(baseSig, targetSig) {
-			c.PlanChanged = true
-			c.Regressions = DetectPlanRegressions(baseSig, targetSig)
-			if hasCriticalRegression(c.Regressions) {
-				sev = maxSev(sev, SevPerf)
-			} else {
-				sev = maxSev(sev, SevShape)
-			}
-		}
-	}
-
-	// cost: shown only when the versions match (cost model changes between releases)
+	// cost: comparable only within a version
 	c.CostComparable = sameVersion
 	c.BaseCost = base.explain.Plan.TotalCost
 	c.TargetCost = target.explain.Plan.TotalCost
 
+	// plan shape; a diff at equal cost is a tiebreak, not a change (measured tiers still gate)
+	if !suppress.shape {
+		baseSig := ExtractPlanSignatureFromNode(&base.explain.Plan)
+		targetSig := ExtractPlanSignatureFromNode(&target.explain.Plan)
+		if HasPlanChanged(baseSig, targetSig) {
+			if c.costTie() {
+				c.Note = "plan differs at equal cost (tiebreak)"
+			} else {
+				c.PlanChanged = true
+				c.Regressions = DetectPlanRegressions(baseSig, targetSig)
+				if hasCriticalRegression(c.Regressions) {
+					sev = maxSev(sev, SevPerf)
+				} else {
+					sev = maxSev(sev, SevShape)
+				}
+			}
+		}
+	}
+
 	c.Severity = sev
 	return c
+}
+
+const costTieTolerance = 0.01 // within 1% estimated cost = a tie
+
+func (c QueryComparison) costTie() bool {
+	if !c.CostComparable || c.BaseCost <= 0 {
+		return false
+	}
+	d := c.TargetCost - c.BaseCost
+	if d < 0 {
+		d = -d
+	}
+	return d/c.BaseCost <= costTieTolerance
 }
 
 // injectStats copies base stats into target (pg_dump --statistics-only | psql).

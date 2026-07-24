@@ -61,16 +61,17 @@ func TestCompareCaptures_CorrectnessWins(t *testing.T) {
 // gates the run.
 func TestCompareCaptures_BufferRegression(t *testing.T) {
 	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
+	// well above both the % threshold and the absolute block floor
 	target := rowsCapture(
-		`{"Plan":{"Node Type":"Seq Scan","Relation Name":"t","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":1000}}`,
+		`{"Plan":{"Node Type":"Seq Scan","Relation Name":"t","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":5000}}`,
 		[]string{"n"}, [][]any{{int64(1)}})
 
 	c := compareCaptures("q", "", base, target, true, noiseTiers{})
 	if c.Severity != SevPerf {
 		t.Errorf("severity = %v, want perf", c.Severity)
 	}
-	if c.BufferDelta <= GetBufferThreshold() {
-		t.Errorf("BufferDelta = %.1f, want a large increase", c.BufferDelta)
+	if !c.bufferRegressed() {
+		t.Errorf("bufferRegressed = false; delta=%.1f%% blocks=%d", c.BufferDelta, c.TargetBuffers-c.BaseBuffers)
 	}
 }
 
@@ -79,7 +80,7 @@ func TestCompareCaptures_BufferRegression(t *testing.T) {
 func TestCompareCaptures_SpillRegression(t *testing.T) {
 	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
 	target := rowsCapture(
-		`{"Plan":{"Node Type":"Sort","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":10,"Temp Written Blocks":500}}`,
+		`{"Plan":{"Node Type":"Sort","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":10,"Temp Written Blocks":5000}}`,
 		[]string{"n"}, [][]any{{int64(1)}})
 
 	c := compareCaptures("q", "", base, target, true, noiseTiers{})
@@ -297,6 +298,30 @@ func TestCompareDSN(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := compareDSN(tc.in); got != tc.want {
 				t.Errorf("compareDSN(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// bufferRegressed: % threshold AND absolute floor; base=0 gates on floor alone.
+func TestBufferRegressed(t *testing.T) {
+	cases := []struct {
+		name      string
+		base, tgt int64
+		delta     float64
+		want      bool
+	}{
+		{"sub-floor spike suppressed", 1, 50, 4900, false}, // huge %, 49 blocks
+		{"above floor fires", 100, 5000, 4900, true},
+		{"below threshold quiet", 100000, 101000, 1.0, false},
+		{"base zero fires on floor", 0, 5000, 0, true},
+		{"base zero below floor quiet", 0, 50, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := QueryComparison{BaseBuffers: tc.base, TargetBuffers: tc.tgt, BufferDelta: tc.delta}
+			if got := c.bufferRegressed(); got != tc.want {
+				t.Errorf("bufferRegressed = %v, want %v", got, tc.want)
 			}
 		})
 	}
