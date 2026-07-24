@@ -591,7 +591,7 @@ func (c QueryComparison) bufferRegressed() bool {
 	if c.BaseBuffers == 0 { // percentage is undefined; gate on the floor alone
 		return c.TargetBuffers >= GetBufferFloor()
 	}
-	return c.BufferDelta > GetBufferThreshold() && c.TargetBuffers-c.BaseBuffers > GetBufferFloor()
+	return c.BufferDelta > GetBufferThreshold() && c.TargetBuffers-c.BaseBuffers >= GetBufferFloor()
 }
 
 func rootBuffers(e *ExplainOutput) int64 {
