@@ -283,7 +283,7 @@ func buildFloor(cal []QueryComparison) map[string]noiseTiers {
 	floor := make(map[string]noiseTiers)
 	for _, c := range cal {
 		nt := noiseTiers{
-			buffer: c.BufferDelta > GetBufferThreshold(),
+			buffer: c.bufferRegressed(),
 			spill:  c.SpillRegress,
 			qerror: c.QErrorWorse,
 			shape:  c.PlanChanged,
@@ -452,9 +452,8 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 	c.BaseBuffers = rootBuffers(base.explain)
 	c.TargetBuffers = rootBuffers(target.explain)
 	if !suppress.buffer {
-		ok, delta := CompareBuffers(c.TargetBuffers, c.BaseBuffers, GetBufferThreshold())
-		c.BufferDelta = delta
-		if !ok {
+		_, c.BufferDelta = CompareBuffers(c.TargetBuffers, c.BaseBuffers, GetBufferThreshold())
+		if c.bufferRegressed() {
 			sev = maxSev(sev, SevPerf)
 		}
 	}
@@ -584,6 +583,15 @@ func comparePlannerGUCs(baseDB, targetDB *sql.DB) []GUCDiff {
 		}
 	}
 	return diffs
+}
+
+// bufferRegressed gates on percentage AND an absolute block floor, so a tiny
+// diff on a cheap query (a few blocks) can't post a huge percentage.
+func (c QueryComparison) bufferRegressed() bool {
+	if c.BaseBuffers == 0 { // percentage is undefined; gate on the floor alone
+		return c.TargetBuffers >= GetBufferFloor()
+	}
+	return c.BufferDelta > GetBufferThreshold() && c.TargetBuffers-c.BaseBuffers > GetBufferFloor()
 }
 
 func rootBuffers(e *ExplainOutput) int64 {

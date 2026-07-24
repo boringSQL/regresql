@@ -45,7 +45,7 @@ func (b *Scoreboard) totals() scoreboardTotals {
 		if c.SpillRegress {
 			t.Spill++
 		}
-		if c.BufferDelta > GetBufferThreshold() {
+		if c.bufferRegressed() {
 			t.BufferRegress++
 		}
 		if c.QErrorWorse {
@@ -143,8 +143,12 @@ func compareDetail(c QueryComparison) string {
 	if c.SpillRegress {
 		parts = append(parts, "spill")
 	}
-	if c.BufferDelta > GetBufferThreshold() {
-		parts = append(parts, fmt.Sprintf("buffers +%.1f%%", c.BufferDelta))
+	if c.bufferRegressed() {
+		if c.BaseBuffers == 0 {
+			parts = append(parts, fmt.Sprintf("buffers 0→%d blocks", c.TargetBuffers))
+		} else {
+			parts = append(parts, fmt.Sprintf("buffers +%.1f%%", c.BufferDelta))
+		}
 	}
 	if c.QErrorWorse {
 		parts = append(parts, fmt.Sprintf("q-error %.0fx→%.0fx (%s)", c.BaseQError, c.TargetQError, c.QErrorNode))
