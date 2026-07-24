@@ -7,20 +7,31 @@ import (
 	"strings"
 )
 
-// DefaultStabilityReps: >1 needed to see a plan flip.
-const DefaultStabilityReps = 3
+const (
+	// DefaultStabilityReps is the MINIMUM number of re-ANALYZE rounds
+	DefaultStabilityReps = 3
+
+	// stabilityQuietRounds: rounds with no new tie before the set is called final.
+	stabilityQuietRounds = 3
+	// stabilityMaxRounds limits the number of loop iterations if ties continue to happen
+	stabilityMaxRounds = 30
+)
 
 func bindingKey(queryName, bindingName string) string {
 	return queryName + "\x00" + bindingName
 }
 
-// stabilityPass re-ANALYZEs base `reps` times and re-plans each query (EXPLAIN,
-// no execution); a query whose plan isn't constant is a cost tie. Mutates base stats.
+// stabilityPass re-ANALYZEs base and re-plans each query; a plan that isn't
+// constant is a cost tie. Runs `reps` rounds, then until the tie set stops
+// growing, so the exclusions are a fixed point, not a function of reps.
+// Mutates base stats.
 func stabilityPass(ctx context.Context, db *sql.DB, pqs []*PlannedQuery, suite *Suite, reps int) map[string]string {
 	first := map[string]string{}
 	unstable := map[string]string{}
+	quiet := 0
 
-	for r := 0; r < reps; r++ {
+	for r := 0; r < stabilityMaxRounds && (r < reps || quiet < stabilityQuietRounds); r++ {
+		found := len(unstable)
 		if _, err := db.ExecContext(ctx, "ANALYZE"); err != nil {
 			return unstable // can't resample; leave everything untested
 		}
@@ -46,6 +57,11 @@ func stabilityPass(ctx context.Context, db *sql.DB, pqs []*PlannedQuery, suite *
 					unstable[key] = "plan unstable across re-ANALYZE (cost tie)"
 				}
 			}
+		}
+		if len(unstable) == found {
+			quiet++
+		} else {
+			quiet = 0
 		}
 	}
 	return unstable
