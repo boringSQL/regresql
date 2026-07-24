@@ -442,10 +442,16 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 
 	sev := SevEqual
 
-	// result correctness (base is the reference)
+	// result correctness (base is the reference). A different order with an
+	// identical multiset is tied rows under a non-total ORDER BY, not a wrong
+	// result. report it, but never as a correctness break
 	if diff := CompareResultSets(base.result, target.result, GetDiffConfig()); !diff.Identical {
-		c.ResultDiffer = true
-		sev = SevCorrectness
+		if diff.Type == DiffTypeOrdering {
+			c.Note = "row order differs (tied rows); multiset identical"
+		} else {
+			c.ResultDiffer = true
+			sev = SevCorrectness
+		}
 	}
 
 	// measured actuals: target vs base
