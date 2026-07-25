@@ -1,11 +1,14 @@
 package regresql
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 // scoreboardTotals is the cover-letter summary the whole feature exists to emit.
@@ -107,22 +110,32 @@ func (b *Scoreboard) sortedComparisons() []QueryComparison {
 }
 
 func renderScoreboard(b *Scoreboard, format, outputPath string) error {
-	w, closeFn, err := getWriter(outputPath)
+	b.Generated = time.Now().UTC().Format(time.RFC3339)
+	// render fully before writing so a failed render can't leave a stale file
+	var buf bytes.Buffer
+	var err error
+	switch format {
+	case "json":
+		enc := json.NewEncoder(&buf)
+		enc.SetIndent("", "  ")
+		err = enc.Encode(b)
+	case "markdown":
+		err = b.renderMarkdown(&buf)
+	default:
+		err = b.renderConsole(&buf)
+	}
 	if err != nil {
 		return err
 	}
-	defer closeFn()
-
-	switch format {
-	case "json":
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(b)
-	case "markdown":
-		return b.renderMarkdown(w)
-	default:
-		return b.renderConsole(w)
+	if outputPath == "" {
+		_, err = os.Stdout.Write(buf.Bytes())
+		return err
 	}
+	tmp := outputPath + ".tmp"
+	if err := os.WriteFile(tmp, buf.Bytes(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, outputPath) // atomic: no partial file survives a crash
 }
 
 func compareLabel(c QueryComparison) string {
@@ -185,7 +198,7 @@ var severityIcon = map[Severity]string{
 }
 
 func (b *Scoreboard) renderConsole(w io.Writer) error {
-	fmt.Fprintln(w, "regresql compare")
+	fmt.Fprintf(w, "regresql compare  (generated %s)\n", b.Generated)
 	fmt.Fprintf(w, "  base:   %s (%d)\n", b.Base.Version, b.Base.VersionNum)
 	fmt.Fprintf(w, "  target: %s (%d)\n", b.Target.Version, b.Target.VersionNum)
 	fmt.Fprintf(w, "  %s\n", b.costLine())
@@ -220,6 +233,7 @@ func (b *Scoreboard) renderConsole(w io.Writer) error {
 func (b *Scoreboard) renderMarkdown(w io.Writer) error {
 	t := b.totals()
 	fmt.Fprintf(w, "## regresql compare: `%s` → `%s`\n\n", b.Base.Version, b.Target.Version)
+	fmt.Fprintf(w, "_generated %s_\n\n", b.Generated)
 	fmt.Fprintf(w, "**%s**\n\n", t.line())
 	fmt.Fprintf(w, "%s\n\n", b.costLine())
 	if b.StatsInjected {

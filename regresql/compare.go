@@ -78,6 +78,7 @@ type (
 	}
 
 	Scoreboard struct {
+		Generated     string            `json:"generated"` // UTC stamp; lets a consumer reject a stale file
 		Base          EngineInfo        `json:"base"`
 		Target        EngineInfo        `json:"target"`
 		SameVersion   bool              `json:"same_version"`
