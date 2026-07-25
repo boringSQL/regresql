@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -325,4 +327,148 @@ func TestBufferRegressed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- coverage for the recent gate/plumbing fixes ---
+
+// costTie: same-version plans within the cost tolerance are a tiebreak; cross-version
+// (cost not comparable) or a real cost gap are not.
+func TestCostTie(t *testing.T) {
+	cases := []struct {
+		name       string
+		comparable bool
+		base, tgt  float64
+		want       bool
+	}{
+		{"within tolerance", true, 1000, 1005, true},
+		{"exact", true, 1000, 1000, true},
+		{"above tolerance", true, 1000, 1200, false},
+		{"cross-version not comparable", false, 1000, 1000, false},
+		{"zero base", true, 0, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := QueryComparison{CostComparable: tc.comparable, BaseCost: tc.base, TargetCost: tc.tgt}
+			if got := c.costTie(); got != tc.want {
+				t.Errorf("costTie = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// A plan that changes shape at equal cost is a tiebreak, not a shape finding.
+func TestCompareCaptures_EqualCostTiebreak(t *testing.T) {
+	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
+	// different node type, identical cost/rows/buffers
+	sameCost := rowsCapture(
+		`{"Plan":{"Node Type":"Index Scan","Relation Name":"t","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":10,"Total Cost":5}}`,
+		[]string{"n"}, [][]any{{int64(1)}})
+	c := compareCaptures("q", "", base, sameCost, true, noiseTiers{})
+	if c.PlanChanged || c.Severity != SevEqual {
+		t.Errorf("equal-cost plan diff should be a tiebreak: PlanChanged=%v sev=%v", c.PlanChanged, c.Severity)
+	}
+	if !strings.Contains(c.Note, "tiebreak") {
+		t.Errorf("note = %q, want a tiebreak note", c.Note)
+	}
+
+	// a real cost gap on the same shape diff IS a shape change
+	diffCost := rowsCapture(
+		`{"Plan":{"Node Type":"Index Scan","Relation Name":"t","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":10,"Total Cost":500}}`,
+		[]string{"n"}, [][]any{{int64(1)}})
+	if c := compareCaptures("q", "", base, diffCost, true, noiseTiers{}); !c.PlanChanged || c.Severity != SevShape {
+		t.Errorf("unequal-cost plan diff should be a shape change: PlanChanged=%v sev=%v", c.PlanChanged, c.Severity)
+	}
+}
+
+// Same rows in a different order (tied ORDER BY) is not a correctness break.
+func TestCompareCaptures_OrderingNotCorrectness(t *testing.T) {
+	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}, {int64(2)}})
+	target := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(2)}, {int64(1)}})
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
+	if c.ResultDiffer || c.Severity == SevCorrectness {
+		t.Errorf("ordering-only diff flagged as correctness: differ=%v sev=%v", c.ResultDiffer, c.Severity)
+	}
+	if !strings.Contains(c.Note, "order") {
+		t.Errorf("note = %q, want an ordering note", c.Note)
+	}
+}
+
+// A spill smaller than the block floor is noise, not a regression.
+func TestCompareCaptures_SpillBelowFloor(t *testing.T) {
+	sortPlan := func(temp int) string {
+		return `{"Plan":{"Node Type":"Sort","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":10,"Temp Written Blocks":` +
+			itoa(temp) + `}}`
+	}
+	base := rowsCapture(sortPlan(0), []string{"n"}, [][]any{{int64(1)}})
+	target := rowsCapture(sortPlan(500), []string{"n"}, [][]any{{int64(1)}}) // 500 < 1000 floor
+	c := compareCaptures("q", "", base, target, true, noiseTiers{})
+	if c.SpillRegress || c.Severity != SevEqual {
+		t.Errorf("sub-floor spill flagged: spill=%v sev=%v", c.SpillRegress, c.Severity)
+	}
+}
+
+// buildFloor keys the tiers that flagged base-vs-base; a clean query is absent.
+func TestBuildFloor(t *testing.T) {
+	floor := buildFloor([]QueryComparison{
+		{Name: "noisy", PlanChanged: true, BaseBuffers: 100, TargetBuffers: 5000, BufferDelta: 4900},
+		{Name: "clean"},
+	})
+	if _, ok := floor[bindingKey("clean", "")]; ok {
+		t.Error("clean query should not be in the floor")
+	}
+	nt, ok := floor[bindingKey("noisy", "")]
+	if !ok || !nt.shape || !nt.buffer {
+		t.Errorf("noisy floor = %+v, want shape+buffer", nt)
+	}
+}
+
+// A tier marked noisy by --self-control is suppressed and reports nothing.
+func TestCompareCaptures_SelfControlSuppressesBuffer(t *testing.T) {
+	base := rowsCapture(cleanPlan, []string{"n"}, [][]any{{int64(1)}})
+	target := rowsCapture(
+		`{"Plan":{"Node Type":"Seq Scan","Relation Name":"t","Plan Rows":100,"Actual Rows":100,"Actual Loops":1,"Shared Hit Blocks":5000}}`,
+		[]string{"n"}, [][]any{{int64(1)}})
+	c := compareCaptures("q", "", base, target, true, noiseTiers{buffer: true})
+	if c.BufferDelta != 0 || c.Severity != SevEqual {
+		t.Errorf("suppressed buffer tier still fired: delta=%.1f sev=%v", c.BufferDelta, c.Severity)
+	}
+}
+
+// renderScoreboard stamps a generation time and writes the file atomically
+// (no leftover temp file, valid complete output).
+func TestRenderScoreboard_StampAndAtomicWrite(t *testing.T) {
+	board := &Scoreboard{Base: EngineInfo{Version: "x"}, Target: EngineInfo{Version: "y"}}
+	path := filepath.Join(t.TempDir(), "sb.json")
+	if err := renderScoreboard(board, "json", path); err != nil {
+		t.Fatal(err)
+	}
+	if board.Generated == "" {
+		t.Error("Generated not stamped")
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file left behind — write was not atomic")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Scoreboard
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("output is not valid json: %v", err)
+	}
+	if got.Generated == "" {
+		t.Error("generated stamp missing from written scoreboard")
+	}
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
 }
