@@ -31,6 +31,8 @@ const (
 	SortAdded          RegressionType = "sort_added"
 	IndexChanged       RegressionType = "index_changed"
 	TableAccessChanged RegressionType = "table_access_changed"
+	NodeCountChanged   RegressionType = "node_count_changed"
+	SubplansRemovedChg RegressionType = "subplans_removed_changed"
 )
 
 func DetectPlanRegressions(baseline, current *PlanSignature) []PlanRegression {
@@ -71,7 +73,38 @@ func DetectPlanRegressions(baseline, current *PlanSignature) []PlanRegression {
 		})
 	}
 
+	if msg := nodeCountDelta(baseline.NodeTypes, current.NodeTypes); msg != "" {
+		regressions = append(regressions, PlanRegression{
+			Type: NodeCountChanged, Severity: "info", Message: "Plan node counts changed: " + msg,
+		})
+	}
+	if baseline.SubplansRemoved != current.SubplansRemoved {
+		regressions = append(regressions, PlanRegression{
+			Type: SubplansRemovedChg, Severity: "info",
+			Message: fmt.Sprintf("Runtime partition pruning changed: %d → %d subplans removed",
+				baseline.SubplansRemoved, current.SubplansRemoved),
+		})
+	}
+
 	return regressions
+}
+
+// nodeCountDelta describes which shape-defining node types changed count.
+func nodeCountDelta(base, cur []string) string {
+	bc, cc := nodeTypeCounts(base), nodeTypeCounts(cur)
+	seen := map[string]bool{}
+	var parts []string
+	for _, t := range append(append([]string(nil), base...), cur...) {
+		if incidentalNodes[t] || seen[t] {
+			continue
+		}
+		seen[t] = true
+		if bc[t] != cc[t] {
+			parts = append(parts, fmt.Sprintf("%s %d→%d", t, bc[t], cc[t]))
+		}
+	}
+	slices.Sort(parts)
+	return strings.Join(parts, ", ")
 }
 
 func compareScanMethods(tableName string, baseline, current ScanInfo) *PlanRegression {

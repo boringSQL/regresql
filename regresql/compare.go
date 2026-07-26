@@ -83,6 +83,7 @@ type (
 		Target        EngineInfo        `json:"target"`
 		SameVersion   bool              `json:"same_version"`
 		StatsInjected bool              `json:"stats_injected,omitempty"` // base stats copied into target
+		StatsWarnings int               `json:"stats_warnings,omitempty"` // pg_restore_*_stats() warning count
 		GUCMismatch   []GUCDiff         `json:"guc_mismatch,omitempty"`
 		Comparisons   []QueryComparison `json:"comparisons"`
 		Excluded      []AdmitResult     `json:"excluded,omitempty"`     // rejected by the --admit preflight
@@ -136,6 +137,15 @@ var plannerGUCs = []string{
 	"max_parallel_workers_per_gather", "jit",
 	"enable_hashjoin", "enable_mergejoin", "enable_nestloop",
 	"enable_seqscan", "enable_indexscan", "enable_material", "enable_memoize",
+	// partition planning
+	"enable_partitionwise_join", "enable_partitionwise_aggregate",
+	"enable_partition_pruning", "enable_parallel_append",
+	"plan_cache_mode", "constraint_exclusion",
+	// parallelism + join order
+	"min_parallel_table_scan_size", "min_parallel_index_scan_size",
+	"parallel_setup_cost", "parallel_tuple_cost", "max_parallel_workers",
+	"join_collapse_limit", "from_collapse_limit", "geqo", "geqo_threshold",
+	"enable_incremental_sort", "enable_hashagg", "hash_mem_multiplier",
 }
 
 func Compare(opts CompareOptions) int {
@@ -192,11 +202,13 @@ func Compare(opts CompareOptions) int {
 	// give both engines identical stats so a diff is code, not ANALYZE noise
 	if opts.InjectStats {
 		fmt.Fprintln(os.Stderr, "inject-stats: copying base statistics into target (overwrites target stats)…")
-		if err := injectStats(opts.BaseURI, opts.TargetURI); err != nil {
+		n, err := injectStats(opts.BaseURI, opts.TargetURI)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "inject-stats: %s\n", err)
 			return 2
 		}
 		board.StatsInjected = true
+		board.StatsWarnings = n
 	}
 
 	admitReps := opts.AdmitReps
@@ -221,7 +233,7 @@ func Compare(opts CompareOptions) int {
 			fmt.Fprintln(os.Stderr, "self-control: WARNING calibrating against the same instance — floor will be weak; use --self-control-uri")
 		}
 		if opts.InjectStats && scURI != opts.BaseURI {
-			if err := injectStats(opts.BaseURI, scURI); err != nil {
+			if _, err := injectStats(opts.BaseURI, scURI); err != nil {
 				fmt.Fprintf(os.Stderr, "self-control inject-stats: %s\n", err)
 				return 2
 			}
@@ -535,24 +547,33 @@ func (c QueryComparison) costTie() bool {
 
 // injectStats copies base stats into target (pg_dump --statistics-only | psql).
 // Needs pg_dump/psql on PATH; REGRESQL_PG_DUMP / REGRESQL_PSQL override.
-func injectStats(baseURI, targetURI string) error {
+// Returns the stats-restore warning count (0 on a clean run).
+func injectStats(baseURI, targetURI string) (int, error) {
 	pgDump := envOr("REGRESQL_PG_DUMP", "pg_dump")
 	psql := envOr("REGRESQL_PSQL", "psql")
+	cEnv := append(os.Environ(), "LC_ALL=C")
 
 	dump := exec.Command(pgDump, "--statistics-only", baseURI)
+	dump.Env = cEnv
 	statsSQL, err := dump.Output()
 	if err != nil {
-		return fmt.Errorf("pg_dump --statistics-only: %w%s", err, exitStderr(err))
+		return 0, fmt.Errorf("pg_dump --statistics-only: %w%s", err, exitStderr(err))
 	}
 
-	apply := exec.Command(psql, "-q", "-v", "ON_ERROR_STOP=1", targetURI)
+	apply := exec.Command(psql, "-X", "-q", "-v", "ON_ERROR_STOP=1", targetURI)
+	apply.Env = cEnv
 	apply.Stdin = bytes.NewReader(statsSQL)
 	var stderr bytes.Buffer
 	apply.Stderr = &stderr
 	if err := apply.Run(); err != nil {
-		return fmt.Errorf("applying stats via psql: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return 0, fmt.Errorf("applying stats via psql: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
-	return nil
+	// pg_restore_*_stats() warns (doesn't error) on unknown relation/attribute
+	n := strings.Count(stderr.String(), "WARNING")
+	if n > 0 {
+		fmt.Fprintf(os.Stderr, "inject-stats: %d stats-restore warning(s) — target may be missing relations/columns present in base\n", n)
+	}
+	return n, nil
 }
 
 func envOr(key, def string) string {
@@ -560,6 +581,13 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func derefOr(s *string, def string) string {
+	if s == nil {
+		return def
+	}
+	return *s
 }
 
 func exitStderr(err error) string {
@@ -597,15 +625,17 @@ func queryEngineInfo(db *sql.DB) (EngineInfo, error) {
 func comparePlannerGUCs(baseDB, targetDB *sql.DB) []GUCDiff {
 	var diffs []GUCDiff
 	for _, name := range plannerGUCs {
-		var b, t string
-		if baseDB.QueryRow("SELECT current_setting($1)", name).Scan(&b) != nil {
+		// true = missing_ok, so a GUC absent on one build reads as NULL not error
+		var b, t *string
+		if baseDB.QueryRow("SELECT current_setting($1, true)", name).Scan(&b) != nil {
 			continue
 		}
-		if targetDB.QueryRow("SELECT current_setting($1)", name).Scan(&t) != nil {
+		if targetDB.QueryRow("SELECT current_setting($1, true)", name).Scan(&t) != nil {
 			continue
 		}
-		if b != t {
-			diffs = append(diffs, GUCDiff{Name: name, Base: b, Target: t})
+		bv, tv := derefOr(b, "(absent)"), derefOr(t, "(absent)")
+		if bv != tv {
+			diffs = append(diffs, GUCDiff{Name: name, Base: bv, Target: tv})
 		}
 	}
 	return diffs

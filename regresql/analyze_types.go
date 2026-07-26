@@ -263,28 +263,38 @@ type QErrorResult struct {
 // WorstQError returns the worst per-node q-error: max(est/act, act/est), clamped to >= 1.
 // PlanRows and ActualRows are both per-loop; never-executed nodes are skipped.
 func WorstQError(node *PlanNode) *QErrorResult {
-	var worst *QErrorResult
-	walkQError(node, &worst)
-	return worst
+	var floored, any *QErrorResult
+	walkQError(node, &floored, &any)
+	if floored != nil {
+		return floored
+	}
+	return any
 }
 
-func walkQError(node *PlanNode, worst **QErrorResult) {
+// qErrorCandidateFloor: skip tiny/empty nodes so a clamp artifact doesn't win the argmax.
+const qErrorCandidateFloor = 100
+
+func walkQError(node *PlanNode, floored, any **QErrorResult) {
 	if node.ActualLoops > 0 {
 		est := math.Max(node.PlanRows, 1)
 		act := math.Max(node.ActualRows, 1)
 		q := math.Max(est/act, act/est)
-		if *worst == nil || q > (*worst).QError {
-			*worst = &QErrorResult{
-				QError:       q,
-				NodeType:     node.NodeType,
-				RelationName: node.RelationName,
-				PlanRows:     node.PlanRows,
-				ActualRows:   node.ActualRows,
-			}
+		res := &QErrorResult{
+			QError:       q,
+			NodeType:     node.NodeType,
+			RelationName: node.RelationName,
+			PlanRows:     node.PlanRows,
+			ActualRows:   node.ActualRows,
+		}
+		if *any == nil || q > (*any).QError {
+			*any = res
+		}
+		if math.Max(node.PlanRows, node.ActualRows) >= qErrorCandidateFloor && (*floored == nil || q > (*floored).QError) {
+			*floored = res
 		}
 	}
 	for i := range node.Plans {
-		walkQError(&node.Plans[i], worst)
+		walkQError(&node.Plans[i], floored, any)
 	}
 }
 

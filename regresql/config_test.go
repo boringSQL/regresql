@@ -134,3 +134,19 @@ func TestUpdateConfigFieldIgnoresEnvOverride(t *testing.T) {
 		t.Errorf("persisted PgUri = %q, want %q (env must not leak in)", raw.PgUri, newURI)
 	}
 }
+
+// Suite.readConfig is the test/update/baseline path; same override applies.
+func TestSuiteReadConfigDatabaseURLOverride(t *testing.T) {
+	const fileURI = "postgres://file@localhost/filedb"
+	const envURI = "postgres://env@localhost/envdb"
+	tmpDir := writeTestConfig(t, fileURI)
+
+	t.Setenv("DATABASE_URL", envURI)
+	cfg, err := Walk(tmpDir, nil).readConfig()
+	if err != nil {
+		t.Fatalf("readConfig() error = %v", err)
+	}
+	if cfg.PgUri != envURI {
+		t.Errorf("PgUri = %q, want env override %q", cfg.PgUri, envURI)
+	}
+}

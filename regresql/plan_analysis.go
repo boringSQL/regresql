@@ -9,14 +9,15 @@ import (
 
 type (
 	PlanSignature struct {
-		NodeTypes    []string
-		Relations    map[string]ScanInfo
-		IndexesUsed  []string
-		HasSeqScan   bool
-		HasSort      bool
-		JoinTypes    []string
-		JoinModes    []string // Join Type qualifier, parallel to JoinTypes
-		PartialModes []string // "Partial"/"Finalize"
+		NodeTypes       []string
+		Relations       map[string]ScanInfo
+		IndexesUsed     []string
+		HasSeqScan      bool
+		HasSort         bool
+		JoinTypes       []string
+		JoinModes       []string // Join Type qualifier, parallel to JoinTypes
+		PartialModes    []string // "Partial"/"Finalize"
+		SubplansRemoved int      // runtime partition pruning ("Subplans Removed") summed
 	}
 
 	ScanInfo struct {
@@ -69,6 +70,7 @@ func extractFromTypedNode(node *PlanNode, sig *PlanSignature) {
 		if node.PartialMode == "Partial" || node.PartialMode == "Finalize" {
 			sig.PartialModes = append(sig.PartialModes, node.PartialMode)
 		}
+		sig.SubplansRemoved += node.SubplansRemoved
 	}
 
 	if node.RelationName != "" {
@@ -146,6 +148,7 @@ func extractFromNode(node map[string]any, sig *PlanSignature) {
 		if pm := getString(node, "Partial Mode"); pm == "Partial" || pm == "Finalize" {
 			sig.PartialModes = append(sig.PartialModes, pm)
 		}
+		sig.SubplansRemoved += getInt(node, "Subplans Removed")
 	}
 
 	if relationName := getString(node, "Relation Name"); relationName != "" {
@@ -208,6 +211,45 @@ func getString(m map[string]any, key string) string {
 	return ""
 }
 
+func getInt(m map[string]any, key string) int {
+	switch v := m[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return 0
+}
+
+// incidentalNodes churn on cost-tie replans without a real shape change; excluded from the multiset.
+var incidentalNodes = map[string]bool{
+	"Hash": true, "Materialize": true, "Memoize": true, "Result": true,
+}
+
+// nodeTypeCounts: reorder-invariant multiset of shape-defining node types.
+func nodeTypeCounts(types []string) map[string]int {
+	m := make(map[string]int, len(types))
+	for _, t := range types {
+		if incidentalNodes[t] {
+			continue
+		}
+		m[t]++
+	}
+	return m
+}
+
+func mapsEqual(a, b map[string]int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 func ExtractSimpleColumn(indexCond string) string {
 	if matches := simpleColumnPattern.FindStringSubmatch(indexCond); len(matches) > 1 {
 		return matches[1]
@@ -251,6 +293,15 @@ func HasPlanChanged(baseline, current *PlanSignature) bool {
 	}
 
 	if !slices.Equal(baseline.PartialModes, current.PartialModes) {
+		return true
+	}
+
+	if baseline.SubplansRemoved != current.SubplansRemoved {
+		return true
+	}
+
+	// TODO: still piggybacking pruning on the multiset check, give it its own field
+	if !mapsEqual(nodeTypeCounts(baseline.NodeTypes), nodeTypeCounts(current.NodeTypes)) {
 		return true
 	}
 
