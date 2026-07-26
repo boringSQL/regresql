@@ -172,6 +172,7 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 	}
 
 	if useAnalyze && fullExplainPlan != nil {
+		tr, tw := SumTempBlocks(&fullExplainPlan.Plan)
 		baseline.AnalyzeMode = true
 		baseline.Buffers = &BufferBaseline{
 			SharedHitBlocks:   fullExplainPlan.Plan.SharedHitBlocks,
@@ -179,9 +180,9 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 			LocalHitBlocks:    fullExplainPlan.Plan.LocalHitBlocks,
 			LocalReadBlocks:   fullExplainPlan.Plan.LocalReadBlocks,
 			TotalBuffers:      fullExplainPlan.Plan.SharedHitBlocks + fullExplainPlan.Plan.SharedReadBlocks + fullExplainPlan.Plan.LocalHitBlocks + fullExplainPlan.Plan.LocalReadBlocks,
-			TempReadBlocks:    fullExplainPlan.Plan.TempReadBlocks,
-			TempWrittenBlocks: fullExplainPlan.Plan.TempWrittenBlocks,
-			TempBuffers:       fullExplainPlan.Plan.TempReadBlocks + fullExplainPlan.Plan.TempWrittenBlocks,
+			TempReadBlocks:    tr,
+			TempWrittenBlocks: tw,
+			TempBuffers:       tr + tw,
 		}
 		baseline.Actuals = &ActualBaseline{
 			ActualRows:           fullExplainPlan.Plan.ActualRows,

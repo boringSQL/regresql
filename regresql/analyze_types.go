@@ -236,6 +236,18 @@ func collectNodeRowEstimates(node *PlanNode, analysis *RowEstimateAnalysis) {
 	}
 }
 
+// SumTempBlocks sums temp read/written blocks over the whole plan tree (not just root).
+// Not loop-scaled: per-node temp counters are already totals.
+func SumTempBlocks(node *PlanNode) (read, written int64) {
+	read, written = node.TempReadBlocks, node.TempWrittenBlocks
+	for i := range node.Plans {
+		r, w := SumTempBlocks(&node.Plans[i])
+		read += r
+		written += w
+	}
+	return read, written
+}
+
 // SumTuplesProcessed sums (emitted + removed) rows times loops over all nodes (CPU-work proxy)
 func SumTuplesProcessed(node *PlanNode) float64 {
 	loops := node.ActualLoops

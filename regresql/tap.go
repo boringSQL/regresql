@@ -243,7 +243,8 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		bufferOk = isOk
 
 		// spill fails the check even when shared buffers pass
-		actualTemp := explainPlan.Plan.TempReadBlocks + explainPlan.Plan.TempWrittenBlocks
+		tr, tw := SumTempBlocks(&explainPlan.Plan)
+		actualTemp := tr + tw
 		baselineTemp := baseline.Buffers.TempBuffers
 		if IsSpillRegression(actualTemp, baselineTemp, bufferThreshold) {
 			result.SpillRegression = true

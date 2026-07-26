@@ -20,6 +20,24 @@ func TestExtractMetrics_CapturesTempBlocks(t *testing.T) {
 	}
 }
 
+// spilling child under a non-spilling root must still count
+func TestSumTempBlocks_ChildNodeSpill(t *testing.T) {
+	raw := `{"Plan":{"Node Type":"Nested Loop","Temp Read Blocks":0,"Temp Written Blocks":0,"Plans":[
+		{"Node Type":"Sort","Temp Read Blocks":40,"Temp Written Blocks":48},
+		{"Node Type":"Seq Scan","Temp Read Blocks":0,"Temp Written Blocks":0}
+	]}}`
+
+	var out ExplainOutput
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	read, written := SumTempBlocks(&out.Plan)
+	if read != 40 || written != 48 {
+		t.Errorf("SumTempBlocks = %d/%d, want 40/48 (root-only read would give 0/0)", read, written)
+	}
+}
+
 func TestIsSpillRegression(t *testing.T) {
 	cases := []struct {
 		name             string

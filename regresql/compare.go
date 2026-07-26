@@ -477,7 +477,9 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 		}
 	}
 	if !suppress.spill {
-		bt, tt := rootTemp(base.explain), rootTemp(target.explain)
+		br, bw := SumTempBlocks(&base.explain.Plan)
+		tr, tw := SumTempBlocks(&target.explain.Plan)
+		bt, tt := br+bw, tr+tw
 		// % gate + block floor, as with buffers
 		if IsSpillRegression(tt, bt, GetBufferThreshold()) && tt-bt >= GetBufferFloor() {
 			c.SpillRegress = true
@@ -653,10 +655,6 @@ func (c QueryComparison) bufferRegressed() bool {
 func rootBuffers(e *ExplainOutput) int64 {
 	p := e.Plan
 	return p.SharedHitBlocks + p.SharedReadBlocks + p.LocalHitBlocks + p.LocalReadBlocks
-}
-
-func rootTemp(e *ExplainOutput) int64 {
-	return e.Plan.TempReadBlocks + e.Plan.TempWrittenBlocks
 }
 
 func maxSev(a, b Severity) Severity {
