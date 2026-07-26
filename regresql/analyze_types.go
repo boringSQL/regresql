@@ -325,16 +325,3 @@ func IsQErrorRegression(actual, baseline, ratioThreshold, absFloor float64) bool
 	}
 	return actual >= baseline*ratioThreshold && actual >= absFloor
 }
-
-func toInt64(v any) int64 {
-	switch val := v.(type) {
-	case float64:
-		return int64(val)
-	case int64:
-		return val
-	case int:
-		return int64(val)
-	default:
-		return 0
-	}
-}

@@ -84,12 +84,6 @@ func loadResultSet(filename string) (*ResultSet, error) {
 	return &rs, nil
 }
 
-func parseFloatOption(value string) float64 {
-	var f float64
-	fmt.Sscanf(value, "%f", &f)
-	return f
-}
-
 func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []TestResult {
 	results := make([]TestResult, 0, len(p.ResultSets))
 	diffConfig := GetDiffConfig()
@@ -374,14 +368,6 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	}
 
 	return result
-}
-
-func (p *Plan) runExplain(ctx context.Context, q Querier, bindings map[string]any) (*ExplainOutput, error) {
-	if bindings == nil {
-		return ExecuteExplain(ctx, q, p.Query.OrdinalQuery)
-	}
-	sql, args := p.Query.Prepare(bindings)
-	return ExecuteExplain(ctx, q, sql, args...)
 }
 
 func (p *Plan) runExplainWithMode(ctx context.Context, q Querier, bindings map[string]any, useAnalyze bool) (*ExplainOutput, error) {
