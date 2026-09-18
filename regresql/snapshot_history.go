@@ -61,37 +61,6 @@ func TagSnapshot(snapshotsDir, tag, note, archivePath string) error {
 	return WriteSnapshotMetadataFull(snapshotsDir, metadata)
 }
 
-// AddToHistory moves current snapshot to history (for use before overwriting)
-func AddToHistory(snapshotsDir, archivePath string) error {
-	metadata, err := ReadSnapshotMetadata(snapshotsDir)
-	if err != nil {
-		return nil // No metadata yet, nothing to archive
-	}
-
-	if metadata.Current == nil {
-		return nil // No current snapshot to archive
-	}
-
-	// Only archive if current has a tag
-	if metadata.Current.Tag == "" {
-		return nil // Untagged snapshots don't go to history
-	}
-
-	// Copy snapshot file if archive path provided
-	if archivePath != "" {
-		if err := copyFile(metadata.Current.Path, archivePath); err != nil {
-			return fmt.Errorf("failed to archive snapshot: %w", err)
-		}
-		metadata.Current.Path = archivePath
-	}
-
-	// Prepend current to history (newest first)
-	metadata.History = append([]*SnapshotInfo{metadata.Current}, metadata.History...)
-	metadata.Current = nil
-
-	return WriteSnapshotMetadataFull(snapshotsDir, metadata)
-}
-
 // GetSnapshotByTag returns snapshot info for a given tag
 func GetSnapshotByTag(metadata *SnapshotMetadata, tag string) (*SnapshotInfo, error) {
 	if metadata.Current != nil && metadata.Current.Tag == tag {

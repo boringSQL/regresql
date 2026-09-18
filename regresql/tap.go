@@ -8,52 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/mndrix/tap-go"
 )
-
-func (p *Plan) CompareResultSets(regressDir, expectedDir string, t *tap.T) {
-	for _, r := range p.CompareResultSetsToResults(regressDir, expectedDir) {
-		outputResultToTAP(r, t)
-	}
-}
-
-func (p *Plan) CompareBaselines(ctx context.Context, baselineDir string, q Querier, t *tap.T, thresholdPercent float64) {
-	for _, r := range p.CompareBaselinesToResults(ctx, baselineDir, q, thresholdPercent) {
-		outputResultToTAP(r, t)
-	}
-}
-
-func outputResultToTAP(r TestResult, t *tap.T) {
-	if r.Status == "failed" {
-		if r.Type == "output" {
-			t.Diagnostic(fmt.Sprintf(`Query File: '%s'
-Bindings File: '%s'
-Bindings Name: '%s'
-Query Parameters: '%v'
-
-%s`, r.QueryFile, r.BindingsFile, r.BindingName, r.Parameters, r.Diff))
-		} else if r.Type == "cost" {
-			t.Diagnostic(fmt.Sprintf("Cost increased by %.1f%% (threshold: %.0f%%)",
-				r.PercentIncrease, r.Threshold))
-		}
-	}
-
-	if r.Error != "" {
-		t.Diagnostic(r.Error)
-	}
-
-	switch r.Status {
-	case "passed":
-		t.Ok(true, r.Name)
-	case "failed":
-		t.Ok(false, r.Name)
-	case "skipped":
-		t.Skip(1, r.Name)
-	case "pending":
-		t.Todo().Ok(false, r.Name)
-	}
-}
 
 func toFloat64(val any) float64 {
 	switch v := val.(type) {

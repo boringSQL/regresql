@@ -85,23 +85,6 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 	return plan, nil
 }
 
-// GetPlan instantiates a Plan from a Query, parsing a set of actual
-// parameters when it exists.
-func (q *Query) GetPlan(planDir string) (*Plan, error) {
-	pfile := getPlanPath(q, planDir)
-
-	if _, err := os.Stat(pfile); os.IsNotExist(err) {
-		return nil, fmt.Errorf("query '%s' not added (no plan file at %s)", q.Name, pfile)
-	}
-
-	data, err := os.ReadFile(pfile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file '%s': %w", pfile, err)
-	}
-
-	return parseYAMLPlan(data, pfile, q)
-}
-
 func parseYAMLPlan(data []byte, pfile string, q *Query) (*Plan, error) {
 	trimmed := strings.TrimSpace(string(data))
 	if len(trimmed) == 0 || trimmed == "{}" {

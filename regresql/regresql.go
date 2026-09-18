@@ -62,48 +62,6 @@ func Init(root string, pguri string) {
 	fmt.Println(`Use 'regresql add <path/to/query.sql>' to add queries to the test suite.`)
 }
 
-// PlanQueries create query plans for queries found in the root repository
-func PlanQueries(root string, runFilter string) {
-	config, err := ReadConfig(root)
-	ignorePatterns := []string{}
-	if err == nil {
-		ignorePatterns = config.Ignore
-	}
-
-	suite := Walk(root, ignorePatterns)
-	suite.SetRunFilter(runFilter)
-	config, err = suite.readConfig()
-	if err != nil {
-		fmt.Print(err.Error())
-		os.Exit(3)
-	}
-
-	if err := TestConnectionString(config.PgUri); err != nil {
-		fmt.Print(err.Error())
-		os.Exit(2)
-	}
-
-	if err := suite.initRegressHierarchy(); err != nil {
-		fmt.Print(err.Error())
-		os.Exit(11)
-	}
-
-	fmt.Println("")
-	fmt.Println("The RegreSQL Test Suite now contains:")
-	suite.Println()
-
-	fmt.Println("")
-	fmt.Printf(`Empty test plans have been created.
-Edit the plans to add query binding values, then run
-
-  regresql update
-
-to create the expected regression files for your test plans. Plans are
-simple YAML files containing multiple set of query parameter bindings. The
-default plan files contain a single entry named "1", you can rename the test
-case and add a value for each parameter. `)
-}
-
 /*
 Update updates the expected files from the queries and their parameters.
 Each query runs in its own transaction that rolls back (unless commit is true).

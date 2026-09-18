@@ -24,15 +24,14 @@ for our endeavours, we maintain a fixed two-levels data structure. The
 Printf() method dipatched on a Suite method is callable from the main
 command and shows our structure organisation:
 
-    $ regresql list
-    .
-      src/sql/
-        album-by-artist.sql
-        album-tracks.sql
-        artist.sql
-        genre-topn.sql
-        genre-tracks.sql
-
+	$ regresql list
+	.
+	  src/sql/
+	    album-by-artist.sql
+	    album-tracks.sql
+	    artist.sql
+	    genre-topn.sql
+	    genre-tracks.sql
 */
 type (
 	Suite struct {
@@ -254,47 +253,6 @@ func (s *Suite) Println() {
 			}
 		}
 	}
-}
-
-// initRegressHierarchy walks a Suite instance s and creates the regresql
-// plans directories for the queries found in s, copying the directory
-// structure in its own space.
-func (s *Suite) initRegressHierarchy() error {
-	for _, folder := range s.Dirs {
-		rdir := &lazyDir{path: filepath.Join(s.PlanDir, folder.Dir)}
-
-		for _, name := range folder.Files {
-			qfile := filepath.Join(s.Root, folder.Dir, name)
-
-			queries, err := parseQueryFile(qfile)
-			if err != nil {
-				return err
-			}
-
-			for _, q := range queries {
-				// Skip if the query doesn't match the run filter
-				if !s.matchesRunFilter(name, q.Name) {
-					continue
-				}
-
-				// Skip queries with notest option
-				opts := q.GetRegressQLOptions()
-				if opts.NoTest {
-					fmt.Printf("Skipping query '%s' (notest)\n", q.Name)
-					continue
-				}
-
-				if err := rdir.Ensure(); err != nil {
-					return fmt.Errorf("Failed to create test plans directory: %s", err)
-				}
-
-				if _, err := q.CreateEmptyPlan(rdir.path); err != nil {
-					fmt.Println("Skipping:", err)
-				}
-			}
-		}
-	}
-	return nil
 }
 
 // createExpectedResults walks plan files and runs their queries, storing results in expected files

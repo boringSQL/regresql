@@ -98,25 +98,6 @@ func RecordBaselineUpdate(expectedDir, baselinePath string, snapshot *SnapshotIn
 	return SaveBaselineMetadata(expectedDir, meta)
 }
 
-func GetBaselineInfo(expectedDir, baselinePath string) (*BaselineInfo, error) {
-	meta, err := LoadBaselineMetadata(expectedDir)
-	if err != nil {
-		return nil, err
-	}
-
-	relPath, err := filepath.Rel(expectedDir, baselinePath)
-	if err != nil {
-		relPath = baselinePath
-	}
-
-	info, exists := meta.Baselines[relPath]
-	if !exists {
-		return nil, nil
-	}
-
-	return info, nil
-}
-
 func GroupBaselinesBySnapshot(meta *BaselineMetadata) map[string][]string {
 	groups := make(map[string][]string)
 

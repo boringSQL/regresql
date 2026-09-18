@@ -122,42 +122,6 @@ func ExecuteExplainWithOptions(ctx context.Context, q Querier, query string, opt
 	return &plans[0], nil
 }
 
-func (q *Query) CreateBaseline(ctx context.Context, baselineDir string, planDir string, db *sql.DB, useAnalyze bool) error {
-	var plan *Plan
-	var err error
-
-	if len(q.Args) == 0 {
-		plan = NewPlan(q, []TestCase{{Name: ""}})
-	} else {
-		plan, err = q.GetPlan(planDir)
-		if err != nil {
-			return fmt.Errorf("failed to load plan for query %s: %w (run 'regresql plan' first)", q.Name, err)
-		}
-		if len(plan.Bindings) == 0 {
-			fmt.Printf("  Skipping '%s': no bindings in plan\n", q.Name)
-			return nil
-		}
-	}
-
-	baselines, fullPlans, err := plan.CreateBaselines(ctx, db, useAnalyze)
-	if err != nil {
-		return err
-	}
-
-	for i, baseline := range baselines {
-		baselinePath := getBaselinePath(q, baselineDir, plan.Names[i])
-		var fullPlan *ExplainOutput
-		if i < len(fullPlans) {
-			fullPlan = fullPlans[i]
-		}
-		if err := writeBaselineFile(baseline.Query, baselinePath, baseline.Plan, fullPlan, useAnalyze); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]any, fullExplainPlan *ExplainOutput, useAnalyze bool) error {
 	var planSignature *PlanSignature
 	if fullExplainPlan != nil {

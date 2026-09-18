@@ -307,10 +307,3 @@ func HasPlanChanged(baseline, current *PlanSignature) bool {
 
 	return false
 }
-
-func FormatIndexesUsed(indexes []string) string {
-	if len(indexes) == 0 {
-		return "none"
-	}
-	return strings.Join(indexes, ", ")
-}
