@@ -22,6 +22,16 @@ type (
 	}
 )
 
+// SearchPath is its own metadata key because a `regresql:` option value is
+// comma-split and a search_path is itself a comma-separated list.
+func (q *Query) GetSearchPath() string {
+	v, ok := q.GetMetadata("searchpath")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
 func (q *Query) GetRegressQLOptions() RegressQLOptions {
 	opts := RegressQLOptions{}
 	metadata, ok := q.GetMetadata("regresql")

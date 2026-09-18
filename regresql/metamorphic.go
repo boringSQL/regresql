@@ -101,7 +101,7 @@ func metamorphicCheck(ctx context.Context, db *sql.DB, q *Query, b bindingRef) M
 	}
 
 	res.Bug, res.GUC, res.Reason = metamorphicDecision(func(sets []string) (string, error) {
-		return canonicalResultHash(ctx, db, sqlText, args, sets)
+		return canonicalResultHash(ctx, db, sqlText, args, sets, q.GetSearchPath(), q.GetGUCs())
 	})
 	return res
 }

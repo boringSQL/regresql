@@ -129,7 +129,7 @@ func admitBinding(ctx context.Context, db *sql.DB, q *Query, b bindingRef, reps 
 	}
 
 	res.Admitted, res.Reason = admitDecision(reps, func(sets []string) (string, error) {
-		return canonicalResultHash(ctx, db, sqlText, args, sets)
+		return canonicalResultHash(ctx, db, sqlText, args, sets, q.GetSearchPath(), q.GetGUCs())
 	})
 	return res
 }
@@ -160,17 +160,29 @@ func admitDecision(reps int, hash func(sets []string) (string, error)) (bool, st
 
 // canonicalResultHash returns an md5 of the result as a SORTED multiset, so mere
 // row reordering hashes identically; only a content change moves it.
-func canonicalResultHash(ctx context.Context, db *sql.DB, sqlText string, args []any, sets []string) (string, error) {
+func canonicalResultHash(ctx context.Context, db *sql.DB, sqlText string, args []any, sets []string, searchPath string, gucs []GUC) (string, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer conn.Close()
 
-	for _, s := range append(append([]string(nil), admitPrelude...), sets...) {
+	for _, s := range admitPrelude {
 		if _, err := conn.ExecContext(ctx, s); err != nil {
 			return "", fmt.Errorf("%s: %w", s, err)
 		}
+	}
+	// applyGUCsConn before sets: where the two overlap the perturbation must win.
+	applyGUCsConn(ctx, conn, gucs)
+	for _, s := range sets {
+		if _, err := conn.ExecContext(ctx, s); err != nil {
+			return "", fmt.Errorf("%s: %w", s, err)
+		}
+	}
+	// After the prelude: it opens with RESET ALL, which would throw the
+	// search_path away again.
+	if err := applySearchPath(ctx, conn, searchPath, false); err != nil {
+		return "", err
 	}
 
 	inner := strings.TrimRight(strings.TrimSpace(sqlText), ";")

@@ -2,8 +2,10 @@ package regresql
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,6 +32,33 @@ func applyStatementTimeout(ctx context.Context, q Querier, d time.Duration) erro
 	}
 	return nil
 }
+
+// applySearchPath sets the per-query search_path, SET LOCAL inside a
+// transaction so it cannot leak into the next query on a pooled connection.
+// execer is narrower than Querier on purpose: the admit path holds a *sql.Conn.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func applySearchPath(ctx context.Context, q execer, sp string, local bool) error {
+	if sp == "" {
+		return nil
+	}
+	if !searchPathRx.MatchString(sp) {
+		return fmt.Errorf("refusing malformed search_path %q", sp)
+	}
+	kw := "SET"
+	if local {
+		kw = "SET LOCAL"
+	}
+	if _, err := q.ExecContext(ctx, kw+" search_path = "+sp); err != nil {
+		return fmt.Errorf("failed to set search_path: %w", err)
+	}
+	return nil
+}
+
+// identifiers, commas and spaces only
+var searchPathRx = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*(\s*,\s*[A-Za-z_][A-Za-z0-9_$]*)*$`)
 
 func isTimeoutError(err error) bool {
 	var pgErr *pgconn.PgError
