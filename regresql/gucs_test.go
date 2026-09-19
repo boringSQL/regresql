@@ -100,3 +100,16 @@ func TestGUCSkipNoteIsEmptyOnlyWhenNothingSkipped(t *testing.T) {
 		t.Errorf("note does not name the skipped GUCs: %q", n)
 	}
 }
+
+// assignment kept only the last observation, so a skipped GUC vanished as soon
+// as the row was also a cost-tie
+func TestAddNoteAppends(t *testing.T) {
+	var c QueryComparison
+	c.addNote("")
+	c.addNote("first")
+	c.addNote("")
+	c.addNote("second")
+	if c.Note != "first; second" {
+		t.Errorf("Note = %q, want %q", c.Note, "first; second")
+	}
+}

@@ -23,8 +23,11 @@ func bindingKey(queryName, bindingName string) string {
 
 // stabilityPass re-ANALYZEs base and re-plans each query; a plan that isn't
 // constant is a cost tie. Runs `reps` rounds, then until the tie set stops
-// growing, so the exclusions are a fixed point, not a function of reps.
+// growing, so the result is a fixed point, not a function of reps.
 // Mutates base stats.
+//
+// Returns the tie set only; the caller decides whether to exclude or annotate
+// it (annotate under --self-control, which measures divergence directly).
 func stabilityPass(ctx context.Context, db *sql.DB, pqs []*PlannedQuery, suite *Suite, reps int) map[string]string {
 	first := map[string]string{}
 	unstable := map[string]string{}
@@ -75,7 +78,18 @@ func planFingerprintOf(ctx context.Context, db *sql.DB, q *Query, bindings map[s
 	if len(q.Args) > 0 {
 		sqlText, args = q.Prepare(bindings)
 	}
-	ex, err := ExecuteExplain(ctx, db, sqlText, args...)
+	// a transaction, so SET LOCAL search_path can't leak onto the pool
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return ""
+	}
+	defer tx.Rollback() //nolint:errcheck // read-only probe
+	if err := applySearchPath(ctx, tx, q.GetSearchPath(), true); err != nil {
+		return ""
+	}
+	// must match the planner state the comparison uses
+	applyGUCsTx(ctx, tx, q.GetGUCs())
+	ex, err := ExecuteExplain(ctx, tx, sqlText, args...)
 	if err != nil {
 		return ""
 	}

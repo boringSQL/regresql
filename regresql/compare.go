@@ -29,8 +29,9 @@ type (
 		InjectStats    bool          // copy base stats into target so diffs are code, not ANALYZE noise
 		Stability      bool          // preflight: exclude cost-tie queries whose plan swings on re-ANALYZE
 		StabilityReps  int
-		SelfControl    bool   // calibrate against base-vs-base, suppress tiers that flag there
-		SelfControlURI string // second base instance (default: BaseURI)
+		TieMargin      float64 // preflight: exclude queries whose runner-up plan is within this % (deterministic)
+		SelfControl    bool    // calibrate against base-vs-base, suppress tiers that flag there
+		SelfControlURI string  // second base instance (default: BaseURI)
 	}
 
 	// Tiers that flagged base-against-base, i.e. noise. Correctness is never
@@ -49,6 +50,7 @@ type (
 		Binding string `json:"binding,omitempty"`
 
 		ResultDiffer bool `json:"result_differ"`
+		CriticalPlan bool `json:"critical_plan,omitempty"` // shape change of a kind that usually matters (advisory)
 
 		PlanChanged bool             `json:"plan_changed"`
 		Regressions []PlanRegression `json:"regressions,omitempty"`
@@ -86,9 +88,11 @@ type (
 		StatsWarnings int               `json:"stats_warnings,omitempty"` // pg_restore_*_stats() warning count
 		GUCMismatch   []GUCDiff         `json:"guc_mismatch,omitempty"`
 		Comparisons   []QueryComparison `json:"comparisons"`
-		Excluded      []AdmitResult     `json:"excluded,omitempty"`     // rejected by the --admit preflight
-		CostTie       []AdmitResult     `json:"cost_tie,omitempty"`     // excluded by the --stability preflight
-		SelfFloored   int               `json:"self_floored,omitempty"` // bindings with a tier suppressed by --self-control
+		Excluded      []AdmitResult     `json:"excluded,omitempty"` // rejected by the --admit preflight
+		CostTie       []AdmitResult     `json:"cost_tie,omitempty"` // EXCLUDED as cost-ties (no --self-control)
+
+		CostTieAnnotated int `json:"cost_tie_annotated,omitempty"` // flagged noise-decided but still compared
+		SelfFloored      int `json:"self_floored,omitempty"`       // bindings with a tier suppressed by --self-control
 	}
 
 	GUCDiff struct {
@@ -190,14 +194,40 @@ func Compare(opts CompareOptions) int {
 
 	// preflight: drop cost-tie queries whose plan is decided by ANALYZE noise
 	var unstable map[string]string
+	var tieNotes map[string]string
+	// deterministic cost-tie classifier: flag queries whose runner-up plan is
+	// priced within a margin. Under --self-control, annotate rather than exclude
+	// -- "the choice isn't cost-driven" is not "base and target disagree", which
+	// --self-control measures directly.
+	if opts.TieMargin > 0 {
+		fmt.Fprintf(os.Stderr, "tie-margin: pricing runner-up plans on base (margin %.2f%%)…\n", opts.TieMargin)
+		ties := costMarginPass(context.Background(), baseDB, plannedQueries, suite, opts.TieMargin)
+		if opts.SelfControl {
+			tieNotes = mergeNotes(tieNotes, ties)
+			fmt.Fprintf(os.Stderr, "tie-margin: %d cost-tie(s) annotated, not excluded "+
+				"(--self-control measures divergence directly)\n", len(ties))
+		} else {
+			unstable = mergeNotes(unstable, ties)
+		}
+	}
 	if opts.Stability {
 		reps := opts.StabilityReps
 		if reps < 1 {
 			reps = DefaultStabilityReps
 		}
-		fmt.Fprintln(os.Stderr, "stability: re-ANALYZE preflight on base (excludes cost-tie queries)…")
-		unstable = stabilityPass(context.Background(), baseDB, plannedQueries, suite, reps)
+		fmt.Fprintln(os.Stderr, "stability: re-ANALYZE preflight on base…")
+		sampled := stabilityPass(context.Background(), baseDB, plannedQueries, suite, reps)
+		// same argument as above: an unstable plan on base says the CHOICE is
+		// noise-decided, not that base and target diverge.
+		if opts.SelfControl {
+			tieNotes = mergeNotes(tieNotes, sampled)
+			fmt.Fprintf(os.Stderr, "stability: %d unstable plan(s) annotated, not excluded "+
+				"(--self-control measures divergence directly)\n", len(sampled))
+		} else {
+			unstable = mergeNotes(unstable, sampled)
+		}
 	}
+	board.CostTieAnnotated = len(tieNotes)
 
 	// give both engines identical stats so a diff is code, not ANALYZE noise
 	if opts.InjectStats {
@@ -239,13 +269,13 @@ func Compare(opts CompareOptions) int {
 			}
 		}
 		fmt.Fprintln(os.Stderr, "self-control: diffing base against itself to establish the noise floor…")
-		cal, _, _ := opts.comparePass(baseDB, scDB, plannedQueries, suite, board.SameVersion, unstable, false, admitReps, false, nil)
+		cal, _, _ := opts.comparePass(baseDB, scDB, plannedQueries, suite, board.SameVersion, unstable, false, admitReps, false, nil, tieNotes)
 		floor = buildFloor(cal)
 		board.SelfFloored = len(floor)
 	}
 
 	board.Comparisons, board.Excluded, board.CostTie =
-		opts.comparePass(baseDB, targetDB, plannedQueries, suite, board.SameVersion, unstable, opts.Admit, admitReps, opts.Samples > 0, floor)
+		opts.comparePass(baseDB, targetDB, plannedQueries, suite, board.SameVersion, unstable, opts.Admit, admitReps, opts.Samples > 0, floor, tieNotes)
 
 	if err := renderScoreboard(board, opts.Format, opts.OutputPath); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
@@ -256,7 +286,7 @@ func Compare(opts CompareOptions) int {
 
 // comparePass diffs every admitted binding of base against target; floor is nil
 // in the calibration pass.
-func (opts CompareOptions) comparePass(baseDB, targetDB *sql.DB, pqs []*PlannedQuery, suite *Suite, sameVersion bool, unstable map[string]string, admit bool, admitReps int, doTiming bool, floor map[string]noiseTiers) (cmps []QueryComparison, excluded, costtie []AdmitResult) {
+func (opts CompareOptions) comparePass(baseDB, targetDB *sql.DB, pqs []*PlannedQuery, suite *Suite, sameVersion bool, unstable map[string]string, admit bool, admitReps int, doTiming bool, floor map[string]noiseTiers, tieNotes map[string]string) (cmps []QueryComparison, excluded, costtie []AdmitResult) {
 	ctx := context.Background()
 	for _, pq := range pqs {
 		if !suite.matchesRunFilter(filepath.Base(pq.SQLPath), pq.Query.Name) {
@@ -281,6 +311,9 @@ func (opts CompareOptions) comparePass(baseDB, targetDB *sql.DB, pqs []*PlannedQ
 			base := captureBinding(ctx, baseDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			target := captureBinding(ctx, targetDB, pq.Query, b.bindings, timeout, opts.Warmups)
 			cmp := compareCaptures(pq.Query.Name, b.name, base, target, sameVersion, floor[key])
+			if note, ok := tieNotes[key]; ok {
+				cmp.addNote(note) // report the tie, don't suppress the row
+			}
 			if doTiming && cmp.Severity < SevIncomplete {
 				bt, tt := sampleTiming(ctx, baseDB, targetDB, pq.Query, b.bindings, timeout, opts.Samples)
 				tv := timingVerdict(bt, tt)
@@ -290,6 +323,23 @@ func (opts CompareOptions) comparePass(baseDB, targetDB *sql.DB, pqs []*PlannedQ
 		}
 	}
 	return cmps, excluded, costtie
+}
+
+// mergeNotes folds src into dst without overwriting an existing note,
+// allocating dst when nil. Either preflight can feed either map.
+func mergeNotes(dst, src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]string, len(src))
+	}
+	for k, v := range src {
+		if _, dup := dst[k]; !dup {
+			dst[k] = v
+		}
+	}
+	return dst
 }
 
 func buildFloor(cal []QueryComparison) map[string]noiseTiers {
@@ -349,10 +399,11 @@ func iterateBindings(p *Plan) []bindingRef {
 }
 
 type engineCapture struct {
-	result   *ResultSet
-	explain  *ExplainOutput
-	timedOut bool
-	err      error
+	result      *ResultSet
+	explain     *ExplainOutput
+	timedOut    bool
+	err         error
+	gucsSkipped []string // surfaced as a note so a dropped GUC reaches the scoreboard
 }
 
 // captureBinding runs the query for its result set plus EXPLAIN ANALYZE for its
@@ -368,6 +419,12 @@ func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[stri
 	if err := applyStatementTimeout(ctx, tx, timeout); err != nil {
 		return engineCapture{err: err}
 	}
+	// before both the query and the EXPLAIN below, so they resolve names and
+	// planner state identically
+	if err := applySearchPath(ctx, tx, q.GetSearchPath(), true); err != nil {
+		return engineCapture{err: err}
+	}
+	gucsSkipped := applyGUCsTx(ctx, tx, q.GetGUCs())
 
 	sqlText := q.OrdinalQuery
 	var args []any
@@ -377,10 +434,10 @@ func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[stri
 
 	rs, err := RunQuery(ctx, tx, sqlText, args...)
 	if isTimeoutError(err) {
-		return engineCapture{timedOut: true}
+		return engineCapture{timedOut: true, gucsSkipped: gucsSkipped}
 	}
 	if err != nil {
-		return engineCapture{err: err}
+		return engineCapture{err: err, gucsSkipped: gucsSkipped}
 	}
 
 	eopts := DefaultExplainOptions()
@@ -390,12 +447,12 @@ func captureBinding(ctx context.Context, db *sql.DB, q *Query, bindings map[stri
 		return ExecuteExplainWithOptions(ctx, tx, sqlText, eopts, args...)
 	})
 	if isTimeoutError(err) {
-		return engineCapture{result: rs, timedOut: true}
+		return engineCapture{result: rs, timedOut: true, gucsSkipped: gucsSkipped}
 	}
 	if err != nil {
-		return engineCapture{result: rs, err: err}
+		return engineCapture{result: rs, err: err, gucsSkipped: gucsSkipped}
 	}
-	return engineCapture{result: rs, explain: ex}
+	return engineCapture{result: rs, explain: ex, gucsSkipped: gucsSkipped}
 }
 
 // sampleTiming runs EXPLAIN ANALYZE `samples` times per engine, interleaved so
@@ -455,12 +512,15 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 
 	sev := SevEqual
 
+	// a dropped GUC means the query isn't planned the way its source intended
+	c.addNote(gucSkipNote(base.gucsSkipped))
+
 	// result correctness (base is the reference). A different order with an
 	// identical multiset is tied rows under a non-total ORDER BY, not a wrong
 	// result. report it, but never as a correctness break
 	if diff := CompareResultSets(base.result, target.result, GetDiffConfig()); !diff.Identical {
 		if diff.Type == DiffTypeOrdering {
-			c.Note = "row order differs (tied rows); multiset identical"
+			c.addNote("row order differs (tied rows); multiset identical")
 		} else {
 			c.ResultDiffer = true
 			sev = SevCorrectness
@@ -517,12 +577,15 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 		targetSig := ExtractPlanSignatureFromNode(&target.explain.Plan)
 		if HasPlanChanged(baseSig, targetSig) {
 			if c.costTie() {
-				c.Note = "plan differs at equal cost (tiebreak)"
+				c.addNote("plan differs at equal cost (tiebreak)")
 			} else {
 				c.PlanChanged = true
 				c.Regressions = DetectPlanRegressions(baseSig, targetSig)
 				if hasCriticalRegression(c.Regressions) {
-					sev = maxSev(sev, SevPerf)
+					// shape is advisory until ties are classified reliably; flag
+					// it but leave the gated tiers to correctness/buffer/spill
+					c.CriticalPlan = true
+					sev = maxSev(sev, SevShape)
 				} else {
 					sev = maxSev(sev, SevShape)
 				}
@@ -532,6 +595,17 @@ func compareCaptures(name, binding string, base, target engineCapture, sameVersi
 
 	c.Severity = sev
 	return c
+}
+
+// addNote appends rather than assigns; a row can carry several observations.
+func (c *QueryComparison) addNote(s string) {
+	if s == "" {
+		return
+	}
+	if c.Note != "" {
+		c.Note += "; "
+	}
+	c.Note += s
 }
 
 const costTieTolerance = 0.01 // within 1% estimated cost = a tie
