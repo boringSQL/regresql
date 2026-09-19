@@ -257,8 +257,22 @@ func valuesEqual(a, b any, floatTolerance float64) bool {
 
 	// Always try numeric comparison when both values are numeric types
 	// This handles cases like int64 vs float64 regardless of tolerance setting
-	if aNum, aOk := tryToFloat64(a); aOk {
-		if bNum, bOk := tryToFloat64(b); bOk {
+	aVal, bVal := a, b
+	if f, ok := nonFiniteFromString(aVal); ok {
+		aVal = f
+	}
+	if f, ok := nonFiniteFromString(bVal); ok {
+		bVal = f
+	}
+
+	if aNum, aOk := tryToFloat64(aVal); aOk {
+		if bNum, bOk := tryToFloat64(bVal); bOk {
+			if math.IsNaN(aNum) || math.IsNaN(bNum) {
+				return math.IsNaN(aNum) && math.IsNaN(bNum)
+			}
+			if math.IsInf(aNum, 0) || math.IsInf(bNum, 0) {
+				return aNum == bNum
+			}
 			if floatTolerance > 0 {
 				return math.Abs(aNum-bNum) <= floatTolerance
 			}
@@ -274,6 +288,18 @@ func valuesEqual(a, b any, floatTolerance float64) bool {
 	}
 
 	return reflect.DeepEqual(a, b)
+}
+
+func nonFiniteFromString(v any) (float64, bool) {
+	switch v {
+	case "NaN":
+		return math.NaN(), true
+	case "Infinity":
+		return math.Inf(1), true
+	case "-Infinity":
+		return math.Inf(-1), true
+	}
+	return 0, false
 }
 
 // tryToFloat64 attempts to convert a value to float64

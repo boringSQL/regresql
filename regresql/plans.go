@@ -285,8 +285,16 @@ func (p *Plan) ComputeDiffForInteractive(expectedDir string) string {
 		}
 
 		// Quick check if content differs (compare JSON representations)
-		expectedJSON := expected.ToJSON()
-		actualJSON := rs.ToJSON()
+		expectedJSON, err := expected.ToJSON()
+		if err != nil {
+			diffs = append(diffs, fmt.Sprintf("  [ERROR] %s: %v", filepath.Base(expectedPath), err))
+			continue
+		}
+		actualJSON, err := rs.ToJSON()
+		if err != nil {
+			diffs = append(diffs, fmt.Sprintf("  [ERROR] %s: %v", filepath.Base(expectedPath), err))
+			continue
+		}
 		if expectedJSON != actualJSON {
 			diffs = append(diffs, fmt.Sprintf("  [CHANGED] %s: content differs", filepath.Base(expectedPath)))
 		}

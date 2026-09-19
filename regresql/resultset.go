@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -145,6 +146,56 @@ func (r *ResultSet) PrettyPrint() string {
 	return b.String()
 }
 
+func nonFiniteToken(v any) (string, bool) {
+	var f float64
+	switch n := v.(type) {
+	case float64:
+		f = n
+	case float32:
+		f = float64(n)
+	default:
+		return "", false
+	}
+	switch {
+	case math.IsNaN(f):
+		return "NaN", true
+	case math.IsInf(f, 1):
+		return "Infinity", true
+	case math.IsInf(f, -1):
+		return "-Infinity", true
+	}
+	return "", false
+}
+
+func (r ResultSet) MarshalJSON() ([]byte, error) {
+	type alias ResultSet // shed the method set so this does not recurse
+
+	rows := r.Rows
+	if hasNonFinite(rows) {
+		rows = make([][]any, len(r.Rows))
+		for i, row := range r.Rows {
+			rows[i] = append([]any(nil), row...)
+			for j, v := range rows[i] {
+				if tok, ok := nonFiniteToken(v); ok {
+					rows[i][j] = tok
+				}
+			}
+		}
+	}
+	return json.Marshal(alias{Cols: r.Cols, Rows: rows})
+}
+
+func hasNonFinite(rows [][]any) bool {
+	for _, row := range rows {
+		for _, v := range row {
+			if _, ok := nonFiniteToken(v); ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Writes the Result Set r to filename, overwriting it if already exists
 // when overwrite is true
 func (r *ResultSet) Write(filename string, overwrite bool) error {
@@ -180,13 +231,13 @@ func LoadResultSet(filename string) (*ResultSet, error) {
 	return &rs, nil
 }
 
-// ToJSON returns the JSON representation of the ResultSet as a string
-func (r *ResultSet) ToJSON() string {
+// ToJSON returns the JSON representation of the ResultSet.
+func (r *ResultSet) ToJSON() (string, error) {
 	jsonBytes, err := json.Marshal(r)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return string(jsonBytes)
+	return string(jsonBytes), nil
 }
 
 // valueToString is an helper function for the Pretty Printer

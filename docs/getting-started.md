@@ -114,6 +114,21 @@ This runs the query and saves what it returns as the expected result:
 }
 ```
 
+Floating-point values that JSON cannot represent — `NaN`, `Infinity`,
+`-Infinity` — are stored as the strings PostgreSQL itself prints for them:
+
+```json
+{
+  "columns": ["ratio"],
+  "rows": [["NaN"], ["Infinity"], [1.5]]
+}
+```
+
+They are compared as the numbers they stand for, so a stored `"NaN"` matches a
+live `NaN` (PostgreSQL defines `NaN = NaN` as true, unlike IEEE 754). The
+consequence is that a *text* column whose value is literally `NaN` is
+indistinguishable from the float on disk, and the two compare equal.
+
 Commit that file. It's the known-good answer. Now run the tests:
 
 ```bash
