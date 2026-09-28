@@ -63,6 +63,10 @@ func Metamorphic(opts MetamorphicOptions) int {
 	}
 	suite := Walk(opts.Root, nil)
 	suite.SetRunFilter(opts.RunFilter)
+	if err := suite.checkUnfilled(plannedQueries); err != nil {
+		fmt.Fprint(os.Stderr, err)
+		return 2
+	}
 
 	var results []MetamorphicResult
 	for _, pq := range plannedQueries {

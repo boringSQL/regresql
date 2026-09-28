@@ -32,6 +32,29 @@ type (
 	}
 )
 
+// requiredPlaceholder marks a binding `add` could not fill
+const requiredPlaceholder = "REQUIRED"
+
+var placeholders = map[string]bool{requiredPlaceholder: true, "REPLACE_ME": true}
+
+// unfilledBindings lists "<case>.<param>" for unfilled bindings
+func (p *Plan) unfilledBindings() []string {
+	var unfilled []string
+	for i, bindings := range p.Bindings {
+		keys := make([]string, 0, len(bindings))
+		for k, v := range bindings {
+			if s, ok := v.(string); ok && placeholders[s] {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			unfilled = append(unfilled, p.Names[i]+"."+k)
+		}
+	}
+	return unfilled
+}
+
 func NewPlan(query *Query, testCases []TestCase) *Plan {
 	names := make([]string, len(testCases))
 	bindings := make([]map[string]any, len(testCases))
@@ -66,7 +89,7 @@ func (q *Query) CreateEmptyPlan(dir string) (*Plan, error) {
 		names[0] = "1"
 		bindings[0] = make(map[string]any)
 		for _, namedArg := range q.NamedArgs {
-			bindings[0][namedArg.Name] = ""
+			bindings[0][namedArg.Name] = requiredPlaceholder
 		}
 	} else {
 		names = []string{}
@@ -132,17 +155,18 @@ func parseYAMLPlan(data []byte, pfile string, q *Query) (*Plan, error) {
 	}
 
 	// Remaining keys are bindings - extract and sort them for consistent ordering
-	var names []string
-	for name := range raw {
-		names = append(names, name)
+	var keys []string
+	for key := range raw {
+		keys = append(keys, key)
 	}
-	sort.Strings(names)
+	sort.Strings(keys)
 
-	// Build bindings array from sorted names
-	bindings := make([]map[string]any, 0, len(names))
-	for _, name := range names {
-		bindingData := raw[name]
-		if bindingMap, ok := bindingData.(map[string]any); ok {
+	// drop keys without a map body so names and bindings stay aligned
+	var names []string
+	bindings := make([]map[string]any, 0, len(keys))
+	for _, key := range keys {
+		if bindingMap, ok := raw[key].(map[string]any); ok {
+			names = append(names, key)
 			bindings = append(bindings, bindingMap)
 		}
 	}

@@ -234,6 +234,10 @@ func BaselineQueries(opts BaselineOptions) {
 	suite := Walk(opts.Root, ignorePatterns)
 	suite.SetRunFilter(opts.RunFilter)
 	suite.SetPathFilters(opts.Paths)
+	if err := suite.checkUnfilled(plannedQueries); err != nil {
+		fmt.Print(err)
+		os.Exit(11)
+	}
 
 	baselineDirs := make(map[string]*lazyDir)
 

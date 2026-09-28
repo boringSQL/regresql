@@ -204,7 +204,7 @@ func AddQueries(opts AddOptions) error {
 		return fmt.Errorf("failed to resolve root path: %w", err)
 	}
 
-	var addedCount, skippedCount int
+	var addedCount, skippedCount, placeholderCount int
 
 	for _, sqlFile := range sqlFiles {
 		relPath, _ := filepath.Rel(absRoot, sqlFile)
@@ -247,6 +247,9 @@ func AddQueries(opts AddOptions) error {
 				return fmt.Errorf("failed to create plan for %s: %w", q.Name, err)
 			}
 			addedCount++
+			if len(q.NamedArgs) > 0 {
+				placeholderCount++
+			}
 		}
 	}
 
@@ -258,8 +261,10 @@ func AddQueries(opts AddOptions) error {
 
 	if addedCount > 0 {
 		fmt.Println("\nNext steps:")
-		fmt.Println("  1. Edit plan files to add parameter values")
-		fmt.Println("  2. Run 'regresql update' to generate expected outputs")
+		if placeholderCount > 0 {
+			fmt.Printf("  - Replace %s in %d plan file(s) with parameter values\n", requiredPlaceholder, placeholderCount)
+		}
+		fmt.Println("  - Run 'regresql update' to generate expected outputs")
 	}
 
 	return nil

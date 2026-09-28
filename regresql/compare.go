@@ -191,6 +191,10 @@ func Compare(opts CompareOptions) int {
 
 	suite := Walk(opts.Root, nil)
 	suite.SetRunFilter(opts.RunFilter)
+	if err := suite.checkUnfilled(plannedQueries); err != nil {
+		fmt.Fprint(os.Stderr, err)
+		return 2
+	}
 
 	// preflight: drop cost-tie queries whose plan is decided by ANALYZE noise
 	var unstable map[string]string

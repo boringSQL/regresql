@@ -46,6 +46,27 @@ func WalkPlans(root string) ([]*PlannedQuery, error) {
 	return results, err
 }
 
+// checkUnfilled refuses to run when a selected plan still holds placeholder bindings
+func (s *Suite) checkUnfilled(pqs []*PlannedQuery) error {
+	var unfilled []string
+	for _, pq := range pqs {
+		if !s.matchesRunFilter(filepath.Base(pq.SQLPath), pq.Query.Name) || !s.matchesPathFilter(pq.RelPath) {
+			continue
+		}
+		if pq.Query.GetRegressQLOptions().NoTest {
+			continue
+		}
+		for _, key := range pq.Plan.unfilledBindings() {
+			unfilled = append(unfilled, fmt.Sprintf("  %s: %s", pq.PlanPath, key))
+		}
+	}
+	if len(unfilled) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d unfilled binding(s), set a value in the plan file:\n%s\n",
+		len(unfilled), strings.Join(unfilled, "\n"))
+}
+
 func loadPlannedQuery(root, planPath string) (*PlannedQuery, error) {
 	planDir := filepath.Join(root, "regresql", "plans")
 

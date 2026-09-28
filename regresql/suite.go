@@ -277,6 +277,9 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 	if err != nil {
 		return fmt.Errorf("failed to walk plans: %w", err)
 	}
+	if err := s.checkUnfilled(plannedQueries); err != nil {
+		return err
+	}
 
 	expectedDirs := make(map[string]*lazyDir)
 
@@ -435,6 +438,9 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk plans: %w", err)
 	}
+	if err := s.checkUnfilled(plannedQueries); err != nil {
+		return nil, err
+	}
 
 	outDirs := make(map[string]*lazyDir)
 
@@ -558,6 +564,9 @@ func (s *Suite) executeAllQueries(pguri, outputDir string, verbose bool) (int, e
 	plannedQueries, err := WalkPlans(s.Root)
 	if err != nil {
 		return 0, fmt.Errorf("failed to walk plans: %w", err)
+	}
+	if err := s.checkUnfilled(plannedQueries); err != nil {
+		return 0, err
 	}
 
 	count := 0

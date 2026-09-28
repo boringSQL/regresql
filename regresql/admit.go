@@ -90,6 +90,10 @@ func Admit(opts AdmitOptions) int {
 	}
 	suite := Walk(opts.Root, nil)
 	suite.SetRunFilter(opts.RunFilter)
+	if err := suite.checkUnfilled(plannedQueries); err != nil {
+		fmt.Fprint(os.Stderr, err)
+		return 2
+	}
 
 	var results []AdmitResult
 	for _, pq := range plannedQueries {
