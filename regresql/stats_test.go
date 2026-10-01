@@ -37,3 +37,27 @@ func TestApplyStatistics_FileNotFound(t *testing.T) {
 	// This tests the file reading error path
 	t.Skip("requires database connection for full test")
 }
+
+func TestEstimateMatchesInjected(t *testing.T) {
+	tests := []struct {
+		name      string
+		est       float64
+		reltuples float64
+		want      bool
+	}{
+		{"exact", 1000000, 1000000, true},
+		{"within tolerance", 700000, 1000000, true},
+		{"tracks physical file", 1, 1000000, false},
+		{"at the edge", 499999, 1000000, true},
+		{"just outside", 499998, 1000000, false},
+		{"zero reltuples, clamped to one row", 1, 0, true},
+		{"zero reltuples, real estimate", 100, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := estimateMatchesInjected(tt.est, tt.reltuples); got != tt.want {
+				t.Errorf("estimateMatchesInjected(%v, %v) = %v, want %v", tt.est, tt.reltuples, got, tt.want)
+			}
+		})
+	}
+}

@@ -177,6 +177,7 @@ the regresql update command again to reset the expected output files.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
 // statsFile is a SQL stats file to apply instead of ANALYZE. Empty means use config default or ANALYZE.
 func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, statsFile string) {
+	sf := useStatsFile(cfg, root, statsFile)
 	if noRestore {
 		return
 	}
@@ -214,27 +215,11 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 	}
 
 	// Run ANALYZE or apply external stats after restore
-	db, err := OpenDB(cfg.PgUri)
+	db, err := openSessionDB(cfg.PgUri)
 	if err != nil {
 		fmt.Printf("Warning: failed to connect: %s\n", err)
 	} else {
 		defer db.Close()
-
-		// Resolve stats file: flag > config default
-		sf := statsFile
-		if sf == "" && cfg.Stats != nil && cfg.Stats.Default != "" {
-			sf = cfg.Stats.Default
-			if !filepath.IsAbs(sf) {
-				sf = filepath.Join(root, "regresql", sf)
-			}
-		}
-
-		if sf != "" {
-			if _, err := os.Stat(sf); os.IsNotExist(err) {
-				fmt.Printf("Warning: stats file not found: %s (falling back to ANALYZE)\n", sf)
-				sf = ""
-			}
-		}
 
 		if sf != "" {
 			if err := ApplyStatistics(db, sf); err != nil {
@@ -250,6 +235,26 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 	}
 
 	fmt.Printf("Restored in %.1fs\n\n", time.Since(start).Seconds())
+}
+
+// useStatsFile resolves the stats file (flag > config default) and records
+// whether injection is in use.
+func useStatsFile(cfg config, root, flag string) string {
+	sf := flag
+	if sf == "" && cfg.Stats != nil && cfg.Stats.Default != "" {
+		sf = cfg.Stats.Default
+		if !filepath.IsAbs(sf) {
+			sf = filepath.Join(root, "regresql", sf)
+		}
+	}
+	if sf != "" {
+		if _, err := os.Stat(sf); os.IsNotExist(err) {
+			fmt.Printf("Warning: stats file not found: %s; not injecting\n", sf)
+			sf = ""
+		}
+	}
+	injectedStats = sf != ""
+	return sf
 }
 
 func validateServerSettings(cfg config, root string) error {

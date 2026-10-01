@@ -191,6 +191,7 @@ func BaselineQueries(opts BaselineOptions) {
 		os.Exit(3)
 	}
 	SetGlobalConfig(config)
+	useStatsFile(config, opts.Root, "")
 	useAnalyze := opts.Analyze || IsAnalyzeEnabled()
 
 	if err := TestConnectionString(config.PgUri); err != nil {
@@ -198,12 +199,19 @@ func BaselineQueries(opts BaselineOptions) {
 		os.Exit(2)
 	}
 
-	db, err := sql.Open("pgx", config.PgUri)
+	db, err := openSessionDB(config.PgUri)
 	if err != nil {
 		fmt.Printf("Failed to open database connection: %s\n", err.Error())
 		os.Exit(2)
 	}
 	defer db.Close()
+
+	if injectedStats {
+		if err := VerifyInjection(db); err != nil {
+			fmt.Print(err.Error())
+			os.Exit(2)
+		}
+	}
 
 	baselineDir := filepath.Join(opts.Root, "regresql", "baselines")
 

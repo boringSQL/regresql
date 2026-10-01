@@ -257,11 +257,16 @@ func (s *Suite) Println() {
 
 // createExpectedResults walks plan files and runs their queries, storing results in expected files
 func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) error {
-	db, err := sql.Open("pgx", pguri)
+	db, err := openSessionDB(pguri)
 	if err != nil {
 		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
+	if injectedStats {
+		if err := VerifyInjection(db); err != nil {
+			return err
+		}
+	}
 
 	var dryRunSummary []string
 	var prompter *InteractivePrompter
@@ -417,11 +422,16 @@ func fileExists(path string) bool {
 
 // testQueries walks plan files, executes queries, and compares results to expected output
 func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) (*TestSummary, error) {
-	db, err := sql.Open("pgx", pguri)
+	db, err := openSessionDB(pguri)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
 	}
 	defer db.Close()
+	if injectedStats {
+		if err := VerifyInjection(db); err != nil {
+			return nil, err
+		}
+	}
 
 	w, close, err := getWriter(outputPath)
 	if err != nil {
