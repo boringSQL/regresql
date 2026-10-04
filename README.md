@@ -95,11 +95,6 @@ For a complete worked project to read and run, see the [cdstore example](example
 - **EXPLAIN plan baselines** — track query costs over time, detect performance regressions automatically
 - **Sequential scan detection** — catch missing indexes before they hit production
 - **CI/CD ready** — JUnit, GitHub Actions, pgTAP, and JSON output formats
-
-For planner work and version upgrades (2.0):
-
-- **Cross-version planner A/B** — run the same queries against two PostgreSQL builds and compare plans, buffers, and results (`compare --base --target`)
-- **Trust filter** — inject identical statistics and skip cost-tie queries, so differences come from the planner and not from ANALYZE sampling
 - **Severity policies** — re-map warning and error severities per table, and turn seq scans on critical tables into failures
 - **Production-stats plan testing** — inject real statistics with `--stats` and the `pg_regresql` extension to reproduce production plans on a small local database
 
@@ -213,26 +208,6 @@ jobs:
 `DATABASE_URL`, when set, overrides the `pguri` in `regress.yaml` for every command. That's how you point a CI run (or a one-off local run) at a different database without editing the committed config.
 
 The `snapshot restore` step assumes you've committed a snapshot (see below). Without one, drop that line and load your schema and data however the rest of your test suite does before `regresql test`.
-
-## Cross-version and planner testing
-
-These commands are for testing PostgreSQL itself or a version upgrade, not your application's queries. Skip this section if you're here for the everyday path above.
-
-### `regresql compare --base <uri> --target <uri>`
-
-Runs the corpus against two PostgreSQL builds and prints a scoreboard of the differences. Cost is suppressed across versions. `--stability` and `--inject-stats` filter out ANALYZE noise; `--samples` adds timing.
-
-### `regresql admit`
-
-Keeps only queries whose result stays the same across different plans. Ambiguous ones (like a `LIMIT` over ties) are dropped.
-
-### `regresql metamorphic`
-
-Turns off optimizations that should not change results and checks the rows stay the same. Finds optimizer bugs on one database, without a baseline.
-
-### `regresql coverage --taxonomy <file>`
-
-Reports which planner-feature cells the corpus covers and which it misses.
 
 ## Using an ORM (no .sql files)
 

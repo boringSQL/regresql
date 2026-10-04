@@ -32,7 +32,6 @@ type (
 		Enabled              bool    `yaml:"enabled"`
 		Comparison           string  `yaml:"comparison,omitempty"`            // "auto" | "cost" | "buffers"
 		BufferThreshold      float64 `yaml:"buffer_threshold,omitempty"`      // default: 2.0
-		BufferFloor          int64   `yaml:"buffer_floor,omitempty"`          // default: 1000 (abs block floor, ~8MB)
 		CostThreshold        float64 `yaml:"cost_threshold,omitempty"`        // default: 10.0
 		ImprovementThreshold float64 `yaml:"improvement_threshold,omitempty"` // default: 20.0
 		QErrorRatio          float64 `yaml:"qerror_ratio,omitempty"`          // default: 2.0 (x worse than baseline)
@@ -235,7 +234,6 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 			Enabled:              false,
 			Comparison:           "auto",
 			BufferThreshold:      2.0,
-			BufferFloor:          1000,
 			CostThreshold:        10.0,
 			ImprovementThreshold: 20.0,
 			QErrorRatio:          2.0,
@@ -247,7 +245,6 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 		Enabled:              cfg.Enabled,
 		Comparison:           cfg.Comparison,
 		BufferThreshold:      cfg.BufferThreshold,
-		BufferFloor:          cfg.BufferFloor,
 		CostThreshold:        cfg.CostThreshold,
 		ImprovementThreshold: cfg.ImprovementThreshold,
 		QErrorRatio:          cfg.QErrorRatio,
@@ -258,9 +255,6 @@ func GetAnalyzeConfig() *AnalyzeConfig {
 	}
 	if result.BufferThreshold == 0 {
 		result.BufferThreshold = 2.0
-	}
-	if result.BufferFloor == 0 {
-		result.BufferFloor = 1000
 	}
 	if result.CostThreshold == 0 {
 		result.CostThreshold = 10.0
@@ -433,9 +427,6 @@ func mergeAnalyzeConfig(a, b *AnalyzeConfig) *AnalyzeConfig {
 	if b.BufferThreshold != 0 {
 		out.BufferThreshold = b.BufferThreshold
 	}
-	if b.BufferFloor != 0 {
-		out.BufferFloor = b.BufferFloor
-	}
 	if b.CostThreshold != 0 {
 		out.CostThreshold = b.CostThreshold
 	}
@@ -483,10 +474,6 @@ func IsAnalyzeEnabled() bool {
 
 func GetBufferThreshold() float64 {
 	return GetAnalyzeConfig().BufferThreshold
-}
-
-func GetBufferFloor() int64 {
-	return GetAnalyzeConfig().BufferFloor
 }
 
 func GetCostThreshold() float64 {
