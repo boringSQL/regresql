@@ -1,12 +1,15 @@
 package regresql
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 )
 
 // For PostgreSQL 18+ checks
@@ -29,11 +32,30 @@ func ApplyStatistics(db *sql.DB, file string) error {
 	if err != nil {
 		return fmt.Errorf("reading stats file %s: %w", file, err)
 	}
-	if _, err := db.Exec(string(content)); err != nil {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
 		return fmt.Errorf("applying stats from %s: %w", file, err)
+	}
+	defer conn.Close()
+
+	_, applyErr := conn.ExecContext(ctx, stripPsqlMeta(string(content)))
+	// do not leak pg_dump's search_path into the pool
+	if _, err := conn.ExecContext(ctx, "RESET search_path"); err != nil {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	}
+	if applyErr != nil {
+		return fmt.Errorf("applying stats from %s: %w", file, applyErr)
 	}
 
 	return nil
+}
+
+var psqlRestrictRe = regexp.MustCompile(`(?m)^\\(un)?restrict([ \t][^\n]*)?\r?(\n|$)`)
+
+// stripPsqlMeta drops pg_dump's \restrict / \unrestrict lines
+func stripPsqlMeta(sql string) string {
+	return psqlRestrictRe.ReplaceAllString(sql, "")
 }
 
 // VerifyInjection fails when the planner ignores injected stats, by EXPLAINing

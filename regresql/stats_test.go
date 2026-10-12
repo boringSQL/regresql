@@ -32,12 +32,6 @@ func TestVersionCheckLogic(t *testing.T) {
 	}
 }
 
-func TestApplyStatistics_FileNotFound(t *testing.T) {
-	// Mock DB would be needed for full integration test
-	// This tests the file reading error path
-	t.Skip("requires database connection for full test")
-}
-
 func TestEstimateMatchesInjected(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -59,5 +53,27 @@ func TestEstimateMatchesInjected(t *testing.T) {
 				t.Errorf("estimateMatchesInjected(%v, %v) = %v, want %v", tt.est, tt.reltuples, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestStripPsqlMeta(t *testing.T) {
+	in := "--\n-- Dumped from database version 18.0\n--\n\n\\restrict abc123\n\nSELECT * FROM pg_catalog.pg_restore_relation_stats('relname', 't');\n\\unrestrict abc123\n"
+	want := "--\n-- Dumped from database version 18.0\n--\n\n\nSELECT * FROM pg_catalog.pg_restore_relation_stats('relname', 't');\n"
+	if got := stripPsqlMeta(in); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got := stripPsqlMeta("\\restrict tok\r\nSELECT 1;\r\n\\unrestrict tok"); got != "SELECT 1;\r\n" {
+		t.Errorf("CRLF: got %q", got)
+	}
+}
+
+func TestStripPsqlMetaKeepsLiteralContinuation(t *testing.T) {
+	in := "SELECT f('most_common_vals', '{\"a\nb\n\\\"q\\\"\n\\restricted}');\n"
+	if got := stripPsqlMeta(in); got != in {
+		t.Errorf("literal changed: %q", got)
+	}
+	multi := "SELECT '{x,\n\\\"q\\\"}';\n"
+	if got := stripPsqlMeta(multi); got != multi {
+		t.Errorf("literal changed: %q", got)
 	}
 }
