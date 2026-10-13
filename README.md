@@ -169,6 +169,8 @@ regresql baseline
 regresql baseline --analyze          # include actual timing
 ```
 
+`baseline` exits `13` when the baseline for any query could not be created.
+
 ## Continuous integration
 
 The point of all this is catching a broken query in a pull request instead of in production. `regresql test` exits non-zero when a result or plan check fails, so any CI runner will fail the build on it. `--format github-actions` turns each failure into an inline PR annotation.

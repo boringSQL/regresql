@@ -248,6 +248,7 @@ func BaselineQueries(opts BaselineOptions) {
 	}
 
 	baselineDirs := make(map[string]*lazyDir)
+	failed := 0
 
 	for _, pq := range plannedQueries {
 		fileName := filepath.Base(pq.SQLPath)
@@ -285,11 +286,28 @@ func BaselineQueries(opts BaselineOptions) {
 
 		if err := createBaselineFromPlan(context.Background(), pq, dir.path, db, useAnalyze); err != nil {
 			fmt.Printf("  Error creating baseline for %s: %s\n", pq.Query.Name, err.Error())
+			failed++
 		}
 	}
 
-	fmt.Println("\nBaselines have been created successfully!")
+	if failed > 0 {
+		fmt.Printf("\n%d baseline(s) failed\n", failed)
+	} else {
+		fmt.Println("\nBaselines have been created successfully!")
+	}
 	fmt.Printf("Baseline files are stored in: %s\n", baselineDir)
+	if code := baselineExitCode(failed); code != 0 {
+		os.Exit(code)
+	}
+}
+
+// baselineExitCode maps failed baseline creations to 13, the query execution
+// error code.
+func baselineExitCode(failed int) int {
+	if failed > 0 {
+		return 13
+	}
+	return 0
 }
 
 func createBaselineFromPlan(ctx context.Context, pq *PlannedQuery, baselineDir string, db *sql.DB, useAnalyze bool) error {
