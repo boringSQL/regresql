@@ -174,6 +174,17 @@ the regresql update command again to reset the expected output files.
  `)
 }
 
+// progress receives status lines. Test redirects it to stderr when stdout
+// carries a machine-readable report.
+var progress io.Writer = os.Stdout
+
+func progressWriter(format, outputPath string) io.Writer {
+	if format != "" && format != "console" && outputPath == "" {
+		return os.Stderr
+	}
+	return os.Stdout
+}
+
 // maybeRestore restores the snapshot if configured and not skipped.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
 // sf is the resolved SQL stats file to apply instead of ANALYZE. Empty means ANALYZE.
@@ -192,7 +203,7 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 	}
 
 	if _, err := os.Stat(snapshotPath); os.IsNotExist(err) {
-		fmt.Printf("Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
+		fmt.Fprintf(progress, "Error: snapshot file not found: %s\n\nRun 'regresql snapshot build' to create a snapshot, or use '--no-restore' to skip\n", snapshotPath)
 		os.Exit(1)
 	}
 
@@ -201,7 +212,7 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 		targetDB = cfg.Snapshot.RestoreDatabase
 	}
 
-	fmt.Printf("Restoring snapshot: %s\n", snapshotPath)
+	fmt.Fprintf(progress, "Restoring snapshot: %s\n", snapshotPath)
 
 	start := time.Now()
 	opts := RestoreOptions{
@@ -210,31 +221,31 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 		TargetDatabase: targetDB,
 	}
 	if err := RestoreSnapshot(cfg.PgUri, opts); err != nil {
-		fmt.Printf("Error: failed to restore snapshot: %s\n", err)
+		fmt.Fprintf(progress, "Error: failed to restore snapshot: %s\n", err)
 		os.Exit(1)
 	}
 
 	// Run ANALYZE or apply external stats after restore
 	db, err := openSessionDB(cfg.PgUri)
 	if err != nil {
-		fmt.Printf("Warning: failed to connect: %s\n", err)
+		fmt.Fprintf(progress, "Warning: failed to connect: %s\n", err)
 	} else {
 		defer db.Close()
 
 		if sf != "" {
 			if err := ApplyStatistics(db, sf); err != nil {
-				fmt.Printf("Error: %s\n", err)
+				fmt.Fprintf(progress, "Error: %s\n", err)
 				os.Exit(15)
 			}
-			fmt.Printf("Applied statistics: %s\n", sf)
+			fmt.Fprintf(progress, "Applied statistics: %s\n", sf)
 		} else {
 			if _, err := db.Exec("ANALYZE"); err != nil {
-				fmt.Printf("Warning: ANALYZE failed: %s\n", err)
+				fmt.Fprintf(progress, "Warning: ANALYZE failed: %s\n", err)
 			}
 		}
 	}
 
-	fmt.Printf("Restored in %.1fs\n\n", time.Since(start).Seconds())
+	fmt.Fprintf(progress, "Restored in %.1fs\n\n", time.Since(start).Seconds())
 }
 
 // useStatsFile resolves the stats file (flag > config default) and records
@@ -294,7 +305,7 @@ func validateServerSettings(cfg config, root string) error {
 		return fmt.Errorf("%s\n\nUse validate_settings: warn to continue with warnings", warning)
 	}
 
-	fmt.Printf("%s\n\n", warning)
+	fmt.Fprintf(progress, "%s\n\n", warning)
 	return nil
 }
 
@@ -313,6 +324,9 @@ func validateServerSettings(cfg config, root string) error {
 //	14 - invalid formatter
 //	15 - environment not fit to run (plan choice mode without pg_regresql)
 func Test(opts TestOptions) {
+	progress = progressWriter(opts.FormatName, opts.OutputPath)
+	defer func() { progress = os.Stdout }()
+
 	config, err := ReadConfig(opts.Root)
 	ignorePatterns := []string{}
 	if err == nil {
@@ -323,7 +337,7 @@ func Test(opts TestOptions) {
 	suite.SetRunFilter(opts.RunFilter)
 	config, err = suite.readConfig()
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Fprint(progress, err.Error())
 		os.Exit(3)
 	}
 
@@ -336,20 +350,20 @@ func Test(opts TestOptions) {
 		snapshotsDir := GetSnapshotsDir(opts.Root)
 		metadata, err := ReadSnapshotMetadata(snapshotsDir)
 		if err != nil {
-			fmt.Printf("Error: cannot resolve snapshot %q: %s\n", opts.Snapshot, err)
+			fmt.Fprintf(progress, "Error: cannot resolve snapshot %q: %s\n", opts.Snapshot, err)
 			os.Exit(1)
 		}
 		info, err := ResolveSnapshot(metadata, opts.Snapshot)
 		if err != nil {
-			fmt.Printf("Error: %s\n", err)
+			fmt.Fprintf(progress, "Error: %s\n", err)
 			os.Exit(1)
 		}
 		if !SnapshotExists(info) {
-			fmt.Printf("Error: snapshot file not found: %s\n  Tag: %s\n  The snapshot file may have been deleted.\n", info.Path, FormatSnapshotRef(info))
+			fmt.Fprintf(progress, "Error: snapshot file not found: %s\n  Tag: %s\n  The snapshot file may have been deleted.\n", info.Path, FormatSnapshotRef(info))
 			os.Exit(1)
 		}
 		snapshotOverride = info.Path
-		fmt.Printf("Using snapshot: %s (%s)\n", FormatSnapshotRef(info), info.Path)
+		fmt.Fprintf(progress, "Using snapshot: %s (%s)\n", FormatSnapshotRef(info), info.Path)
 	}
 
 	formatName := opts.FormatName
@@ -357,7 +371,7 @@ func Test(opts TestOptions) {
 		formatName = "console"
 	}
 
-	sf := useStatsFile(config, opts.Root, opts.Stats, os.Stdout)
+	sf := useStatsFile(config, opts.Root, opts.Stats, progress)
 	env := CollectEnv(config.PgUri, sf, config, opts.Root, false)
 	headerOut := io.Writer(os.Stderr)
 	if formatName == "console" {
@@ -379,36 +393,36 @@ func Test(opts TestOptions) {
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
-		fmt.Printf("Error: %s\n", err)
+		fmt.Fprintf(progress, "Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	// migrations haven't changed since last snapshot build?:
 	if err := ValidateMigrationsHash(opts.Root); err != nil {
-		fmt.Printf("Error: %s\n", err)
+		fmt.Fprintf(progress, "Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	// Validate migration command hasn't changed since last snapshot build
 	if err := ValidateMigrationCommandHash(opts.Root); err != nil {
-		fmt.Printf("Error: %s\n", err)
+		fmt.Fprintf(progress, "Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	if err := TestConnectionString(config.PgUri); err != nil {
-		fmt.Print(err.Error())
+		fmt.Fprint(progress, err.Error())
 		os.Exit(2)
 	}
 
 	// Validate server settings match snapshot (warn, strict, or ignore)
 	if err := validateServerSettings(config, opts.Root); err != nil {
-		fmt.Printf("Error: %s\n", err)
+		fmt.Fprintf(progress, "Error: %s\n", err)
 		os.Exit(1)
 	}
 
 	formatter, err := GetFormatter(formatName)
 	if err != nil {
-		fmt.Printf("Error: %s\n", err.Error())
+		fmt.Fprintf(progress, "Error: %s\n", err.Error())
 		os.Exit(14)
 	}
 
@@ -425,7 +439,7 @@ func Test(opts TestOptions) {
 
 	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit, env)
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Fprint(progress, err.Error())
 		os.Exit(13)
 	}
 	if summary.Failed > 0 {

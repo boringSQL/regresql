@@ -2,6 +2,8 @@ package regresql
 
 import (
 	"bytes"
+	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -86,5 +88,41 @@ func TestJSONFormatterEnvironment(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in %s", want, out)
 		}
+	}
+}
+
+func TestProgressWriter(t *testing.T) {
+	tests := []struct {
+		format, out string
+		stderr      bool
+	}{
+		{"", "", false},
+		{"console", "", false},
+		{"json", "", true},
+		{"junit", "", true},
+		{"github-actions", "", true},
+		{"pgtap", "", true},
+		{"json", "report.json", false},
+	}
+	for _, tt := range tests {
+		got := progressWriter(tt.format, tt.out)
+		want := io.Writer(os.Stdout)
+		if tt.stderr {
+			want = os.Stderr
+		}
+		if got != want {
+			t.Errorf("progressWriter(%q, %q) wrong stream", tt.format, tt.out)
+		}
+	}
+}
+
+func TestConnectionStringReportsToProgress(t *testing.T) {
+	var buf bytes.Buffer
+	old := progress
+	progress = &buf
+	t.Cleanup(func() { progress = old })
+	_ = TestConnectionString("postgres://u@127.0.0.1:1/x?connect_timeout=1")
+	if !strings.Contains(buf.String(), "Connecting to") {
+		t.Errorf("got %q", buf.String())
 	}
 }

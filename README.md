@@ -158,6 +158,8 @@ regresql test --format pgtap            # TAP protocol
 
 Output formats: `console` (default), `pgtap`, `junit`, `json`, `github-actions`
 
+For non-console formats without `-o`, progress lines (connecting, restore, applied statistics) and the mode status line go to stderr, so stdout holds only the report. The `json` report carries it under `environment`.
+
 Exit codes: `0` passed, `1` failures, `2` skipped (with `--fail-on-skipped`), `3` config error, `10` severity violation, `13` query execution error, `14` invalid formatter, `15` environment not fit to run (stats injection configured but `pg_regresql` not loadable, stats could not be applied, or injection could not be verified).
 
 #### Assertion modes

@@ -539,7 +539,7 @@ func restoreWithPgRestore(pguri string, opts RestoreOptions, format SnapshotForm
 	args = append(args, opts.InputPath)
 
 	cmd := exec.Command("pg_restore", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = progress
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
@@ -556,7 +556,7 @@ func restoreWithPsql(pguri string, opts RestoreOptions) error {
 	}
 
 	cmd := exec.Command("psql", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = progress
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {

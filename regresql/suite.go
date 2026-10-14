@@ -132,7 +132,7 @@ func Walk(root string, configIgnorePatterns []string) *Suite {
 	// Load ignore patterns from .regresignore file
 	ignoreMatcher, err := LoadIgnoreFile(root)
 	if err != nil {
-		fmt.Printf("Warning: failed to load .regresignore: %s\n", err)
+		fmt.Fprintf(progress, "Warning: failed to load .regresignore: %s\n", err)
 		ignoreMatcher = NewIgnoreMatcher(root, []string{})
 	}
 

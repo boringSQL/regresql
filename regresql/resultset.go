@@ -29,20 +29,20 @@ type ResultSet struct {
 // query (select 1"), because some errors (such as missing SSL certificates)
 // only happen at query time.
 func TestConnectionString(pguri string) error {
-	fmt.Printf("Connecting to '%s'… ", pguri)
+	fmt.Fprintf(progress, "Connecting to '%s'… ", pguri)
 	db, err := sql.Open("pgx", pguri)
 
 	if err != nil {
-		fmt.Println("✗")
+		fmt.Fprintln(progress, "✗")
 		return err
 	}
 	defer db.Close()
 
 	if _, err := RunQuery(context.Background(), db, "Select 1"); err != nil {
-		fmt.Println("✗")
+		fmt.Fprintln(progress, "✗")
 		return err
 	}
-	fmt.Println("✓")
+	fmt.Fprintln(progress, "✓")
 
 	return nil
 }
