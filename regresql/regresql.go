@@ -111,7 +111,7 @@ func Update(opts UpdateOptions) {
 		currentSnapshot = snapshotMeta.Current
 	}
 
-	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, "")
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, useStatsFile(config, opts.Root, "", os.Stdout))
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
@@ -176,9 +176,8 @@ the regresql update command again to reset the expected output files.
 
 // maybeRestore restores the snapshot if configured and not skipped.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
-// statsFile is a SQL stats file to apply instead of ANALYZE. Empty means use config default or ANALYZE.
-func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, statsFile string) {
-	sf := useStatsFile(cfg, root, statsFile, os.Stdout)
+// sf is the resolved SQL stats file to apply instead of ANALYZE. Empty means ANALYZE.
+func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, sf string) {
 	if noRestore {
 		return
 	}
@@ -225,7 +224,7 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 		if sf != "" {
 			if err := ApplyStatistics(db, sf); err != nil {
 				fmt.Printf("Error: %s\n", err)
-				os.Exit(1)
+				os.Exit(15)
 			}
 			fmt.Printf("Applied statistics: %s\n", sf)
 		} else {
@@ -312,6 +311,7 @@ func validateServerSettings(cfg config, root string) error {
 //	     warning-level finding when --strict)
 //	13 - query execution error
 //	14 - invalid formatter
+//	15 - environment not fit to run (plan choice mode without pg_regresql)
 func Test(opts TestOptions) {
 	config, err := ReadConfig(opts.Root)
 	ignorePatterns := []string{}
@@ -352,7 +352,30 @@ func Test(opts TestOptions) {
 		fmt.Printf("Using snapshot: %s (%s)\n", FormatSnapshotRef(info), info.Path)
 	}
 
-	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, opts.Stats)
+	formatName := opts.FormatName
+	if formatName == "" {
+		formatName = "console"
+	}
+
+	sf := useStatsFile(config, opts.Root, opts.Stats, os.Stdout)
+	env := CollectEnv(config.PgUri, sf, config, opts.Root, false)
+	headerOut := io.Writer(os.Stderr)
+	if formatName == "console" {
+		headerOut = os.Stdout
+	}
+	if env.AbortRun() {
+		writeEnvHeader(headerOut, env)
+		fmt.Fprintln(headerOut, env.AbortMessage())
+		os.Exit(15)
+	}
+	if formatName != "console" {
+		writeEnvHeader(os.Stderr, env)
+	}
+	if env.PGMajor == envMismatch {
+		fmt.Fprintln(headerOut, "Warning: stats file was dumped from a different PostgreSQL major than the server")
+	}
+
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, sf)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
@@ -383,10 +406,6 @@ func Test(opts TestOptions) {
 		os.Exit(1)
 	}
 
-	formatName := opts.FormatName
-	if formatName == "" {
-		formatName = "console"
-	}
 	formatter, err := GetFormatter(formatName)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err.Error())
@@ -404,7 +423,7 @@ func Test(opts TestOptions) {
 		})
 	}
 
-	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit)
+	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit, env)
 	if err != nil {
 		fmt.Print(err.Error())
 		os.Exit(13)

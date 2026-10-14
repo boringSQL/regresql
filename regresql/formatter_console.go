@@ -21,11 +21,16 @@ type ConsoleFormatter struct {
 	results  []TestResult
 	options  ConsoleOptions
 	useColor bool
+	env      *EnvStatus
 }
 
 func (f *ConsoleFormatter) SetOptions(opts ConsoleOptions) {
 	f.options = opts
 	f.useColor = f.shouldUseColor()
+}
+
+func (f *ConsoleFormatter) SetEnv(e EnvStatus) {
+	f.env = &e
 }
 
 func (f *ConsoleFormatter) shouldUseColor() bool {
@@ -81,6 +86,9 @@ func (f *ConsoleFormatter) severityColor(severity string) string {
 }
 
 func (f *ConsoleFormatter) Start(w io.Writer) error {
+	if f.env != nil {
+		writeEnvHeader(w, *f.env)
+	}
 	fmt.Fprintln(w, "\nRunning regression tests...")
 	if f.options.Verbose {
 		fmt.Fprintln(w)
@@ -155,7 +163,30 @@ func (f *ConsoleFormatter) printVerboseResult(r TestResult, w io.Writer) {
 	)
 }
 
+func (f *ConsoleFormatter) printPlanChoiceFailure(r TestResult, w io.Writer) {
+	if r.ActualCost > 0 || r.ExpectedCost > 0 {
+		fmt.Fprintf(w, "  Cost (info):   %.2f (baseline: %.2f)\n", r.ActualCost, r.ExpectedCost)
+		fmt.Fprintln(w)
+	}
+	if r.PlanChanged {
+		fmt.Fprintln(w, "  Plan shape changed")
+	}
+	if len(r.PlanRegressions) > 0 {
+		f.printPlanRegressions(r.PlanRegressions, w)
+		return
+	}
+	if !r.PlanChanged {
+		return
+	}
+	fmt.Fprintln(w, "  Plan signature changed (scan/join/node set differs from baseline); run: regresql baseline")
+	fmt.Fprintln(w)
+}
+
 func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
+	if r.PlanChoice {
+		f.printPlanChoiceFailure(r, w)
+		return
+	}
 	if r.AnalyzeMode {
 		fmt.Fprintf(w, "  Expected buffers: %d\n", r.BaselineBuffers)
 		fmt.Fprintf(w, "  Actual buffers:   %d (+%.1f%%)\n", r.ActualBuffers, r.BufferIncrease)
@@ -475,6 +506,11 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 		}
 	}
 
+	if s.UninjectedBaselines > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Note: %d baseline(s) were recorded without injected stats; re-run regresql baseline\n", s.UninjectedBaselines)
+	}
+
 	// Suggestions
 	f.printSuggestions(s, w)
 
@@ -489,11 +525,24 @@ func (f *ConsoleFormatter) printSuggestions(s *TestSummary, w io.Writer) {
 	fmt.Fprintln(w)
 
 	if s.Failed > 0 {
-		fmt.Fprintln(w, "To accept changes: regresql update <query-name>")
+		if f.planChoiceFailures() {
+			fmt.Fprintln(w, "To accept plan changes: regresql baseline")
+		} else {
+			fmt.Fprintln(w, "To accept changes: regresql update <query-name>")
+		}
 	}
 	if s.Pending > 0 {
 		fmt.Fprintln(w, "To create baselines: regresql update --pending")
 	}
+}
+
+func (f *ConsoleFormatter) planChoiceFailures() bool {
+	for _, r := range f.results {
+		if r.Status == "failed" && r.Type == "cost" && r.PlanChoice {
+			return true
+		}
+	}
+	return false
 }
 
 func hasAnyCritical(regressions []PlanRegression) bool {

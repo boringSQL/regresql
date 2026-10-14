@@ -24,6 +24,7 @@ type (
 		AnalyzeMode   bool            `json:"analyze_mode,omitempty"`
 		Buffers       *BufferBaseline `json:"buffers,omitempty"`
 		Actuals       *ActualBaseline `json:"actuals,omitempty"`
+		StatsInjected bool            `json:"stats_injected,omitempty"`
 	}
 
 	BufferBaseline struct {
@@ -133,6 +134,7 @@ func writeBaselineFile(queryName, baselinePath string, filteredPlan map[string]a
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
 		Plan:          filteredPlan,
 		PlanSignature: planSignature,
+		StatsInjected: injectedStats,
 	}
 
 	if useAnalyze && fullExplainPlan != nil {
@@ -191,12 +193,22 @@ func BaselineQueries(opts BaselineOptions) {
 		os.Exit(3)
 	}
 	SetGlobalConfig(config)
-	useStatsFile(config, opts.Root, "", os.Stdout)
+	sf := useStatsFile(config, opts.Root, "", os.Stdout)
 	useAnalyze := opts.Analyze || IsAnalyzeEnabled()
 
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Printf("Error connecting to database: %s\n", err.Error())
 		os.Exit(2)
+	}
+
+	env := CollectEnv(config.PgUri, sf, config, opts.Root, false)
+	writeEnvHeader(os.Stdout, env)
+	if env.AbortRun() {
+		fmt.Println(env.AbortMessage())
+		os.Exit(15)
+	}
+	if env.Mode == ModePlanChoice && useAnalyze {
+		fmt.Println("Warning: buffers recorded on injected stats are not used for gating in plan choice mode")
 	}
 
 	db, err := openSessionDB(config.PgUri)
@@ -206,10 +218,18 @@ func BaselineQueries(opts BaselineOptions) {
 	}
 	defer db.Close()
 
+	if sf != "" {
+		if err := ApplyStatistics(db, sf); err != nil {
+			fmt.Printf("Error: %s\n", err)
+			os.Exit(15)
+		}
+		fmt.Printf("Applied statistics: %s\n", sf)
+	}
+
 	if injectedStats {
 		if err := VerifyInjection(db); err != nil {
 			fmt.Print(err.Error())
-			os.Exit(2)
+			os.Exit(15)
 		}
 	}
 
@@ -222,6 +242,9 @@ func BaselineQueries(opts BaselineOptions) {
 	}
 
 	mode := "cost-based"
+	if env.Mode == ModePlanChoice {
+		mode = env.Mode.Label()
+	}
 	if useAnalyze {
 		mode = "analyze (buffers)"
 	}

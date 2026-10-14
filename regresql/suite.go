@@ -421,7 +421,7 @@ func fileExists(path string) bool {
 }
 
 // testQueries walks plan files, executes queries, and compares results to expected output
-func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool) (*TestSummary, error) {
+func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool, env EnvStatus) (*TestSummary, error) {
 	db, err := openSessionDB(pguri)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
@@ -440,6 +440,10 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 	defer close()
 
 	summary := NewTestSummary()
+	summary.Env = env
+	if es, ok := formatter.(interface{ SetEnv(EnvStatus) }); ok {
+		es.SetEnv(env)
+	}
 	if err := formatter.Start(w); err != nil {
 		return nil, err
 	}

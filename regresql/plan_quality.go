@@ -24,6 +24,8 @@ const (
 	MultipleSorts          WarningType = "multiple_sorts"
 	NestedLoopWithSeqScan  WarningType = "nested_loop_with_seqscan"
 	SeqScanOnCriticalTable WarningType = "seq_scan_critical_table"
+	CostIncreased          WarningType = "cost_increase"
+	NoPlanSignature        WarningType = "no_plan_signature"
 )
 
 // Queries below these thresholds skip scan-related warnings.

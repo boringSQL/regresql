@@ -27,7 +27,13 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 		}
 		return nil
 	case "failed":
-		if r.Type == "cost" {
+		if r.Type == "cost" && r.PlanChoice {
+			msg := fmt.Sprintf("Plan changed in %s", r.Name)
+			if details := planChoiceDetails(r); len(details) > 0 {
+				msg += " - " + strings.Join(details, "; ")
+			}
+			fmt.Fprintf(w, "::error::%s\n", msg)
+		} else if r.Type == "cost" {
 			// Check for plan regressions
 			hasCriticalRegression := false
 			var criticalMsg string

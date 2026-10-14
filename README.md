@@ -158,6 +158,17 @@ regresql test --format pgtap            # TAP protocol
 
 Output formats: `console` (default), `pgtap`, `junit`, `json`, `github-actions`
 
+Exit codes: `0` passed, `1` failures, `2` skipped (with `--fail-on-skipped`), `3` config error, `10` severity violation, `13` query execution error, `14` invalid formatter, `15` environment not fit to run (stats injection configured but `pg_regresql` not loadable, stats could not be applied, or injection could not be verified).
+
+#### Assertion modes
+
+| mode | when | what gates |
+|---|---|---|
+| buffers | no stats file in use | buffers (or cost when the baseline has no buffer data), spills, q-error, critical plan regressions |
+| plan choice (injected stats) | a stats file is in use (`--stats` or `stats.default`) | plan shape only; cost is advisory |
+
+Every run prints `mode: ... | pg_regresql: ... | GUCs: ... | PG major: ...` first. In plan choice mode `analyze.comparison: buffers` is ignored. With `--no-restore`, or without a configured snapshot, `test` and `update` do not apply the stats file (the mode is still reported from configuration); apply it yourself or run `regresql snapshot restore`. Plan quality warnings (sequential scans, nested loops) are not suppressed by the low-buffer filter there, so `--strict` can fail on them.
+
 ### `regresql doctor`
 
 Reports the mode and whether the environment can support it, without restoring or writing anything:
@@ -180,7 +191,7 @@ regresql baseline
 regresql baseline --analyze          # include actual timing
 ```
 
-`baseline` exits `13` when the baseline for any query could not be created.
+`baseline` applies the configured stats file before recording plans. Exit codes: `2` cannot connect, `3` config error, `11` baseline directory or plan problems, `13` any query's baseline could not be created, `15` environment not fit to run (as for `test`).
 
 ## Continuous integration
 

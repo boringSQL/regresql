@@ -35,6 +35,14 @@ func (f *JSONFormatter) Finish(s *TestSummary, w io.Writer) error {
 		"tests": formatTests(f.results),
 	}
 
+	if s.Env.Mode != "" {
+		env := s.Env.Fields()
+		if s.UninjectedBaselines > 0 {
+			env["baselines_without_injected_stats"] = s.UninjectedBaselines
+		}
+		output["environment"] = env
+	}
+
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(output)

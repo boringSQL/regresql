@@ -143,11 +143,14 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
 
+	planChoice := CurrentMode() == ModePlanChoice
+
 	result := TestResult{
 		Name:       testName,
 		Type:       "cost",
 		Threshold:  thresholdPercent,
 		Parameters: bindings,
+		PlanChoice: planChoice,
 	}
 
 	baseline, err := LoadBaseline(baselinePath)
@@ -159,16 +162,19 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	}
 
 	// Warn if analyze.enabled but baseline lacks buffer data
-	if IsAnalyzeEnabled() && !baseline.AnalyzeMode {
+	if !planChoice && IsAnalyzeEnabled() && !baseline.AnalyzeMode {
 		fmt.Fprintf(os.Stderr, "Warning: analyze.enabled=true but baseline '%s' lacks buffer data\n", baselinePath)
 	}
 
-	useBufferComparison, err := getComparisonMode(baseline, baselinePath)
-	if err != nil {
-		result.Status = "failed"
-		result.Error = err.Error()
-		result.Duration = time.Since(start).Seconds()
-		return result
+	var useBufferComparison bool
+	if !planChoice {
+		useBufferComparison, err = getComparisonMode(baseline, baselinePath)
+		if err != nil {
+			result.Status = "failed"
+			result.Error = err.Error()
+			result.Duration = time.Since(start).Seconds()
+			return result
+		}
 	}
 
 	explainPlan, err := p.runExplainWithMode(ctx, q, bindings, useBufferComparison)
@@ -275,51 +281,40 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	if baseline.PlanSignature != nil {
 		result.PlanChanged = HasPlanChanged(baseline.PlanSignature, currentSig)
 		result.PlanRegressions = DetectPlanRegressions(baseline.PlanSignature, currentSig)
-
-		if hasCriticalRegression(result.PlanRegressions) {
-			isOk = false
-		}
 	}
+
+	isOk, notes := gateVerdict(verdictInput{
+		Mode:         CurrentMode(),
+		BranchOk:     isOk,
+		PlanChanged:  result.PlanChanged,
+		HasSignature: baseline.PlanSignature != nil,
+		Regressions:  result.PlanRegressions,
+	})
 
 	opts := p.Query.GetRegressQLOptions()
-	costInfo := PlanCostInfo{
-		TotalCost:    explainPlan.Plan.TotalCost,
-		TotalBuffers: explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks + explainPlan.Plan.LocalHitBlocks + explainPlan.Plan.LocalReadBlocks,
-	}
+	costInfo := planCostInfo(&explainPlan.Plan, planChoice && !useBufferComparison)
 	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
 
-	if useBufferComparison {
-		qErrorNamed := false
-		switch {
-		case result.SpillRegression:
-			result.Status = "failed"
-			result.Name = fmt.Sprintf("%s (spill: temp %d > %d blocks)", testName, result.ActualTempBuffers, result.BaselineTempBuffers)
-		case isOk:
-			result.Status = "passed"
-			result.Name = fmt.Sprintf("%s (%d <= %d * %.0f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold)
-		case bufferOk && result.QErrorRegression:
-			qErrorNamed = true
-			result.Status = "failed"
-			result.Name = fmt.Sprintf("%s (q-error %.0fx > baseline %.0fx, %s)", testName, result.ActualQError, result.BaselineQError, result.QErrorNode)
-		default:
-			result.Status = "failed"
-			result.Name = fmt.Sprintf("%s (%d > %d * %.0f%%, +%.1f%%)", testName, result.ActualBuffers, result.BaselineBuffers, 100+result.Threshold, percentageIncrease)
+	if planChoice {
+		result.Improved = false
+		result.ImprovementPercent = 0
+		result.PlanWarnings = append(result.PlanWarnings, notes...)
+		if percentageIncrease > result.Threshold {
+			result.PlanWarnings = append(result.PlanWarnings, PlanWarning{
+				Type:     CostIncreased,
+				Severity: "info",
+				Message:  fmt.Sprintf("Cost %.2f vs baseline %.2f (+%.1f%%), plan shape unchanged", result.ActualCost, result.ExpectedCost, percentageIncrease),
+			})
 		}
+		result.BaselineUninjected = !baseline.StatsInjected
+		result.Status, result.Name = planChoiceResult(testName, isOk, &result)
+		return result
+	}
 
-		if result.TupleRegression {
-			result.Name += fmt.Sprintf(" [tuples +%.1f%%]", result.TupleIncrease)
-		}
-		if result.QErrorRegression && !qErrorNamed {
-			result.Name += fmt.Sprintf(" [q-error %.0fx > %.0fx]", result.ActualQError, result.BaselineQError)
-		}
+	if useBufferComparison {
+		result.Status, result.Name = bufferResult(testName, isOk, bufferOk, &result, percentageIncrease)
 	} else {
-		if isOk {
-			result.Status = "passed"
-			result.Name = fmt.Sprintf("%s (%.2f <= %.2f * %.0f%%)", testName, result.ActualCost, result.ExpectedCost, 100+result.Threshold)
-		} else {
-			result.Status = "failed"
-			result.Name = fmt.Sprintf("%s (%.2f > %.2f * %.0f%%, +%.1f%%)", testName, result.ActualCost, result.ExpectedCost, 100+result.Threshold, percentageIncrease)
-		}
+		result.Status, result.Name = legacyCostResult(testName, isOk, &result, percentageIncrease)
 	}
 
 	return result
@@ -337,6 +332,87 @@ func (p *Plan) runExplainWithMode(ctx context.Context, q Querier, bindings map[s
 	}
 	sql, args := p.Query.Prepare(bindings)
 	return ExecuteExplainWithOptions(ctx, q, sql, opts, args...)
+}
+
+type (
+	verdictInput struct {
+		Mode         Mode
+		BranchOk     bool
+		PlanChanged  bool
+		HasSignature bool
+		Regressions  []PlanRegression
+	}
+)
+
+// gateVerdict decides pass/fail. Buffers mode is the legacy rule; plan choice
+// mode gates on plan shape only and never on cost.
+func gateVerdict(in verdictInput) (bool, []PlanWarning) {
+	critical := hasCriticalRegression(in.Regressions)
+	if in.Mode != ModePlanChoice {
+		return in.BranchOk && !critical, nil
+	}
+	if !in.HasSignature {
+		return true, []PlanWarning{{
+			Type:       NoPlanSignature,
+			Severity:   "info",
+			Message:    "baseline has no plan signature; plan shape was not compared",
+			Suggestion: "re-run regresql baseline",
+		}}
+	}
+	return !in.PlanChanged && !critical, nil
+}
+
+func planCostInfo(n *PlanNode, buffersUnavailable bool) PlanCostInfo {
+	info := PlanCostInfo{
+		TotalCost:    n.TotalCost,
+		TotalBuffers: n.SharedHitBlocks + n.SharedReadBlocks + n.LocalHitBlocks + n.LocalReadBlocks,
+	}
+	if buffersUnavailable {
+		info.TotalBuffers = -1
+	}
+	return info
+}
+
+func bufferResult(testName string, isOk, bufferOk bool, r *TestResult, percentageIncrease float64) (string, string) {
+	var status, name string
+	qErrorNamed := false
+	switch {
+	case r.SpillRegression:
+		status = "failed"
+		name = fmt.Sprintf("%s (spill: temp %d > %d blocks)", testName, r.ActualTempBuffers, r.BaselineTempBuffers)
+	case isOk:
+		status = "passed"
+		name = fmt.Sprintf("%s (%d <= %d * %.0f%%)", testName, r.ActualBuffers, r.BaselineBuffers, 100+r.Threshold)
+	case bufferOk && r.QErrorRegression:
+		qErrorNamed = true
+		status = "failed"
+		name = fmt.Sprintf("%s (q-error %.0fx > baseline %.0fx, %s)", testName, r.ActualQError, r.BaselineQError, r.QErrorNode)
+	default:
+		status = "failed"
+		name = fmt.Sprintf("%s (%d > %d * %.0f%%, +%.1f%%)", testName, r.ActualBuffers, r.BaselineBuffers, 100+r.Threshold, percentageIncrease)
+	}
+
+	if r.TupleRegression {
+		name += fmt.Sprintf(" [tuples +%.1f%%]", r.TupleIncrease)
+	}
+	if r.QErrorRegression && !qErrorNamed {
+		name += fmt.Sprintf(" [q-error %.0fx > %.0fx]", r.ActualQError, r.BaselineQError)
+	}
+	return status, name
+}
+
+func legacyCostResult(testName string, ok bool, r *TestResult, percentageIncrease float64) (string, string) {
+	if ok {
+		return "passed", fmt.Sprintf("%s (%.2f <= %.2f * %.0f%%)", testName, r.ActualCost, r.ExpectedCost, 100+r.Threshold)
+	}
+	return "failed", fmt.Sprintf("%s (%.2f > %.2f * %.0f%%, +%.1f%%)", testName, r.ActualCost, r.ExpectedCost, 100+r.Threshold, percentageIncrease)
+}
+
+func planChoiceResult(testName string, ok bool, r *TestResult) (string, string) {
+	if ok {
+		return "passed", fmt.Sprintf("%s (shape unchanged; cost %.2f vs %.2f, advisory)", testName, r.ActualCost, r.ExpectedCost)
+	}
+	return "failed", fmt.Sprintf("%s (plan changed)", testName)
 }
 
 func hasCriticalRegression(regressions []PlanRegression) bool {

@@ -64,6 +64,12 @@ type (
 		// Policy evaluator audit trail — each entry explains one
 		// severity re-mapping made by ApplyPolicies.
 		PolicyApplied []PolicyDecision
+
+		// Plan choice mode: shape gates, cost is advisory
+		PlanChoice bool
+
+		// Baseline was recorded without injected stats (plan choice mode)
+		BaselineUninjected bool
 	}
 
 	TestSummary struct {
@@ -76,6 +82,9 @@ type (
 		Duration  float64
 		Results   []TestResult
 		StartTime time.Time
+		Env       EnvStatus
+
+		UninjectedBaselines int
 	}
 
 	OutputFormatter interface {
@@ -124,6 +133,22 @@ func (s *TestSummary) AddResult(r TestResult) {
 	if r.Improved {
 		s.Improved++
 	}
+	if r.BaselineUninjected {
+		s.UninjectedBaselines++
+	}
+}
+
+// planChoiceDetails lists the plan regression lines of a shape failure.
+func planChoiceDetails(r TestResult) []string {
+	lines := make([]string, 0, len(r.PlanRegressions))
+	for _, reg := range r.PlanRegressions {
+		if reg.Table != "" {
+			lines = append(lines, fmt.Sprintf("[%s] Table '%s': %s -> %s", reg.Severity, reg.Table, reg.OldScan, reg.NewScan))
+		} else {
+			lines = append(lines, fmt.Sprintf("[%s] %s", reg.Severity, reg.Message))
+		}
+	}
+	return lines
 }
 
 func getWriter(path string) (io.Writer, func() error, error) {

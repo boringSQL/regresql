@@ -139,3 +139,16 @@ func TestHasSeverityViolation(t *testing.T) {
 		t.Errorf("info severity should never trigger violation")
 	}
 }
+
+func TestDetectPlanQualityIssues_PlanChoiceBuffersUnavailable(t *testing.T) {
+	sig := buildSigWithSeqScans("orders")
+	cost := PlanCostInfo{TotalCost: 1000, TotalBuffers: -1}
+	if findWarning(DetectPlanQualityIssues(sig, RegressQLOptions{}, nil, nil, cost), SeqScanDetected, "orders") == nil {
+		t.Error("expected seq scan warning when buffers are unavailable")
+	}
+
+	cost.TotalBuffers = 0
+	if findWarning(DetectPlanQualityIssues(sig, RegressQLOptions{}, nil, nil, cost), SeqScanDetected, "orders") != nil {
+		t.Error("zero buffers must stay trivial")
+	}
+}

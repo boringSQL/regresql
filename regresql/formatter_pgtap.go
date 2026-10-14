@@ -3,6 +3,7 @@ package regresql
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/mndrix/tap-go"
 )
@@ -25,6 +26,12 @@ Bindings Name: '%s'
 Query Parameters: '%v'
 
 %s`, r.QueryFile, r.BindingsFile, r.BindingName, r.Parameters, r.Diff))
+		} else if r.Type == "cost" && r.PlanChoice {
+			diagMsg := "Plan changed"
+			if details := planChoiceDetails(r); len(details) > 0 {
+				diagMsg += "\n\nPlan Regressions:\n  - " + strings.Join(details, "\n  - ")
+			}
+			f.t.Diagnostic(diagMsg)
 		} else if r.Type == "cost" {
 			diagMsg := fmt.Sprintf("Cost increased by %.1f%% (threshold: %.0f%%)",
 				r.PercentIncrease, r.Threshold)

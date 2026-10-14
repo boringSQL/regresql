@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type (
@@ -67,7 +68,10 @@ func (f *JUnitFormatter) Finish(s *TestSummary, w io.Writer) error {
 		if r.Status == "failed" {
 			msg := "Test failed"
 			content := r.Error
-			if r.Type == "cost" {
+			if r.Type == "cost" && r.PlanChoice {
+				msg = "Plan changed"
+				content = strings.Join(planChoiceDetails(r), "\n")
+			} else if r.Type == "cost" {
 				msg = fmt.Sprintf("Cost increased by %.1f%% (expected: %.2f, actual: %.2f)",
 					r.PercentIncrease, r.ExpectedCost, r.ActualCost)
 			} else if r.Type == "output" {
