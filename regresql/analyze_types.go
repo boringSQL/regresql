@@ -26,6 +26,7 @@ type (
 		ParentRelationship string `json:"Parent Relationship,omitempty"`
 
 		// Scan node fields
+		Schema        string `json:"Schema,omitempty"`
 		RelationName  string `json:"Relation Name,omitempty"`
 		Alias         string `json:"Alias,omitempty"`
 		ScanDirection string `json:"Scan Direction,omitempty"`
