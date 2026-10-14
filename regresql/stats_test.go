@@ -77,3 +77,39 @@ func TestStripPsqlMetaKeepsLiteralContinuation(t *testing.T) {
 		t.Errorf("literal changed: %q", got)
 	}
 }
+
+func TestRestoreRuns(t *testing.T) {
+	withSnap := config{Snapshot: &SnapshotConfig{Path: "snap.dump"}}
+	cases := []struct {
+		name     string
+		cfg      config
+		noRest   bool
+		override string
+		want     bool
+	}{
+		{"no snapshot configured", config{}, false, "", false},
+		{"snapshot configured", withSnap, false, "", true},
+		{"snapshot section without path", config{Snapshot: &SnapshotConfig{}}, false, "", false},
+		{"no-restore wins", withSnap, true, "", false},
+		{"override without config", config{}, false, "x.dump", true},
+		{"no-restore beats override", config{}, true, "x.dump", false},
+	}
+	for _, c := range cases {
+		if got := restoreRuns(c.cfg, c.noRest, c.override); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func TestDropUnappliedStatsWithoutProbe(t *testing.T) {
+	t.Cleanup(func() { injectedStats = false })
+	cfg := config{PgUri: "postgres://127.0.0.1:1/none?sslmode=disable&connect_timeout=1"}
+
+	injectedStats = true
+	if got := dropUnappliedStats(cfg, true, "", ""); got != "" || !injectedStats {
+		t.Errorf("no stats file: got %q, injected %v", got, injectedStats)
+	}
+	if got := dropUnappliedStats(cfg, true, "", "stats.sql"); got != "stats.sql" || !injectedStats {
+		t.Errorf("unreachable database must keep the configured mode: got %q, injected %v", got, injectedStats)
+	}
+}

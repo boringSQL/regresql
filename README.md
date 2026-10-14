@@ -169,7 +169,7 @@ Exit codes: `0` passed, `1` failures, `2` skipped (with `--fail-on-skipped`), `3
 | buffers | no stats file in use | buffers (or cost when the baseline has no buffer data), spills, q-error, critical plan regressions |
 | plan choice (injected stats) | a stats file is in use (`--stats` or `stats.default`) | plan shape only; cost is advisory |
 
-Every run prints `mode: ... | pg_regresql: ... | GUCs: ... | PG major: ...` first. In plan choice mode `analyze.comparison: buffers` is ignored. With `--no-restore`, or without a configured snapshot, `test` and `update` do not apply the stats file (the mode is still reported from configuration); apply it yourself or run `regresql snapshot restore`. Plan quality warnings (sequential scans, nested loops) are not suppressed by the low-buffer filter there, so `--strict` can fail on them.
+Every run prints `mode: ... | pg_regresql: ... | GUCs: ... | PG major: ...` first. In plan choice mode `analyze.comparison: buffers` is ignored. `test` and `update` apply the stats file when they restore a snapshot. With `--no-restore`, or without a configured snapshot, they do not: if the database already carries injected stats the run stays in plan choice mode, otherwise it warns and runs in buffers mode. Plan quality warnings (sequential scans, nested loops) are not suppressed by the low-buffer filter there, so `--strict` can fail on them.
 
 ### `regresql doctor`
 

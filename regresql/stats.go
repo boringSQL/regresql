@@ -58,14 +58,16 @@ func stripPsqlMeta(sql string) string {
 	return psqlRestrictRe.ReplaceAllString(sql, "")
 }
 
-// VerifyInjection fails when the planner ignores injected stats, by EXPLAINing
-// the relation whose injected size differs most from its physical size.
-func VerifyInjection(db *sql.DB) error {
-	var (
-		rel                string
-		reltuples          float64
-		relpages, physical int64
-	)
+type divergentRelation struct {
+	rel                string
+	reltuples          float64
+	relpages, physical int64
+}
+
+// mostDivergent returns the relation whose recorded size differs most from its
+// physical size, or nil when none diverges.
+func mostDivergent(db *sql.DB) (*divergentRelation, error) {
+	var d divergentRelation
 	err := db.QueryRow(`
 SELECT rel, reltuples, relpages, phys FROM (
   SELECT c.oid::regclass::text AS rel, c.reltuples::float8 AS reltuples, c.relpages::bigint AS relpages,
@@ -78,13 +80,38 @@ SELECT rel, reltuples, relpages, phys FROM (
 ) t
 WHERE relpages > 2 * phys OR phys > 2 * relpages
 ORDER BY abs(ln((relpages + 1.0) / (phys + 1.0))) DESC
-LIMIT 1`).Scan(&rel, &reltuples, &relpages, &physical)
+LIMIT 1`).Scan(&d.rel, &d.reltuples, &d.relpages, &d.physical)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil
+		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// StatsPresent reports whether the database already carries injected stats.
+func StatsPresent(pguri string) (bool, error) {
+	db, err := OpenDB(pguri)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+	d, err := mostDivergent(db)
+	return d != nil, err
+}
+
+// VerifyInjection fails when the planner ignores injected stats, by EXPLAINing
+// the relation whose injected size differs most from its physical size.
+func VerifyInjection(db *sql.DB) error {
+	d, err := mostDivergent(db)
 	if err != nil {
 		return fmt.Errorf("checking stats injection: %w\n", err)
 	}
+	if d == nil {
+		return nil
+	}
+	rel, reltuples, relpages, physical := d.rel, d.reltuples, d.relpages, d.physical
 
 	var raw string
 	if err := db.QueryRow("EXPLAIN (FORMAT JSON) SELECT * FROM " + rel).Scan(&raw); err != nil {

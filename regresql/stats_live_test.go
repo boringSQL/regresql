@@ -1,12 +1,16 @@
 package regresql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // Needs PG 18 with pg_regresql installed; set REGRESQL_TEST_PGURI to run.
@@ -15,8 +19,11 @@ func TestLiveInjection(t *testing.T) {
 	if uri == "" {
 		t.Skip("REGRESQL_TEST_PGURI not set")
 	}
-	plain, _ := OpenDB(uri)
-	defer plain.Close()
+	plain, err := OpenDB(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { plain.Close() })
 	t.Cleanup(func() { _, _ = plain.Exec(`DROP TABLE IF EXISTS inj_t`) })
 	for _, q := range []string{
 		`DROP TABLE IF EXISTS inj_t`,
@@ -74,7 +81,7 @@ func TestLiveCollectEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer plain.Close()
+	t.Cleanup(func() { plain.Close() })
 	_, loadErr := plain.Exec("LOAD 'pg_regresql'")
 
 	setInjected(t, true)
@@ -104,7 +111,7 @@ func TestLiveApplyStatistics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { db.Close() })
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS apply_t`) })
 	for _, q := range []string{`DROP TABLE IF EXISTS apply_t`, `CREATE TABLE apply_t(id int primary key)`} {
@@ -140,5 +147,69 @@ func TestLiveApplyStatistics(t *testing.T) {
 	}
 	if tuples != 123456 {
 		t.Errorf("reltuples = %v, want 123456", tuples)
+	}
+}
+
+func TestLiveDropUnappliedStats(t *testing.T) {
+	uri := os.Getenv("REGRESQL_TEST_PGURI")
+	if uri == "" {
+		t.Skip("REGRESQL_TEST_PGURI not set")
+	}
+	admin, err := OpenDB(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { admin.Close() })
+
+	const name = "regresql_unapplied_test"
+	for _, q := range []string{`DROP DATABASE IF EXISTS ` + name, `CREATE DATABASE ` + name} {
+		if _, err := admin.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _, _ = admin.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`) })
+
+	pc, err := pgx.ParseConfig(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc.Database = name
+	scratch := stdlib.RegisterConnConfig(pc)
+	t.Cleanup(func() { stdlib.UnregisterConnConfig(scratch) })
+	db, err := sql.Open("pgx", scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	cfg := config{PgUri: scratch}
+	var buf bytes.Buffer
+	old := progress
+	progress = &buf
+	t.Cleanup(func() { progress = old; injectedStats = false })
+
+	injectedStats = true
+	if got := dropUnappliedStats(cfg, true, "", "stats.sql"); got != "" || injectedStats {
+		t.Errorf("no stats in the database: got %q, injected %v; want dropped", got, injectedStats)
+	}
+	if !strings.Contains(buf.String(), "buffers mode") {
+		t.Errorf("no warning printed: %q", buf.String())
+	}
+
+	for _, q := range []string{
+		`CREATE TABLE unapplied_t(id int primary key)`,
+		`SELECT pg_restore_relation_stats('schemaname','public','relname','unapplied_t','relpages',10000::int,'reltuples',1000000::real,'relallvisible',0::int)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	injectedStats = true
+	if got := dropUnappliedStats(cfg, true, "", "stats.sql"); got != "stats.sql" || !injectedStats {
+		t.Errorf("stats already in the database: got %q, injected %v; want kept", got, injectedStats)
+	}
+	if got := dropUnappliedStats(cfg, false, "snap.dump", "stats.sql"); got != "stats.sql" || !injectedStats {
+		t.Errorf("restore runs: got %q, injected %v; want kept", got, injectedStats)
 	}
 }

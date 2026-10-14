@@ -111,7 +111,9 @@ func Update(opts UpdateOptions) {
 		currentSnapshot = snapshotMeta.Current
 	}
 
-	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, useStatsFile(config, opts.Root, "", os.Stdout))
+	sf := useStatsFile(config, opts.Root, "", os.Stdout)
+	sf = dropUnappliedStats(config, opts.NoRestore, snapshotOverride, sf)
+	maybeRestore(config, opts.Root, opts.NoRestore, snapshotOverride, sf)
 
 	// Validate schema hasn't changed since last snapshot build
 	if err := ValidateSchemaHash(opts.Root); err != nil {
@@ -189,16 +191,12 @@ func progressWriter(format, outputPath string) io.Writer {
 // snapshotOverride allows using a specific snapshot instead of the configured one.
 // sf is the resolved SQL stats file to apply instead of ANALYZE. Empty means ANALYZE.
 func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, sf string) {
-	if noRestore {
+	if !restoreRuns(cfg, noRestore, snapshotOverride) {
 		return
 	}
 
-	// Determine snapshot path - use override or configured path
 	snapshotPath := snapshotOverride
 	if snapshotPath == "" {
-		if cfg.Snapshot == nil || cfg.Snapshot.Path == "" {
-			return // no snapshot configured
-		}
 		snapshotPath = GetSnapshotPath(cfg.Snapshot, root)
 	}
 
@@ -246,6 +244,29 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 	}
 
 	fmt.Fprintf(progress, "Restored in %.1fs\n\n", time.Since(start).Seconds())
+}
+
+// restoreRuns reports whether maybeRestore will restore a snapshot.
+func restoreRuns(cfg config, noRestore bool, snapshotOverride string) bool {
+	if noRestore {
+		return false
+	}
+	return snapshotOverride != "" || (cfg.Snapshot != nil && cfg.Snapshot.Path != "")
+}
+
+// dropUnappliedStats clears the stats file when no restore will apply it and
+// the database does not already carry injected stats.
+func dropUnappliedStats(cfg config, noRestore bool, snapshotOverride, sf string) string {
+	if sf == "" || restoreRuns(cfg, noRestore, snapshotOverride) {
+		return sf
+	}
+	present, err := StatsPresent(cfg.PgUri)
+	if err != nil || present {
+		return sf
+	}
+	fmt.Fprintf(progress, "Warning: stats file %s is not applied (no snapshot restore) and the database has no injected stats; running in buffers mode\n", sf)
+	injectedStats = false
+	return ""
 }
 
 // useStatsFile resolves the stats file (flag > config default) and records
@@ -372,6 +393,7 @@ func Test(opts TestOptions) {
 	}
 
 	sf := useStatsFile(config, opts.Root, opts.Stats, progress)
+	sf = dropUnappliedStats(config, opts.NoRestore, snapshotOverride, sf)
 	env := CollectEnv(config.PgUri, sf, config, opts.Root, false)
 	headerOut := io.Writer(os.Stderr)
 	if formatName == "console" {
