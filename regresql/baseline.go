@@ -191,7 +191,7 @@ func BaselineQueries(opts BaselineOptions) {
 		os.Exit(3)
 	}
 	SetGlobalConfig(config)
-	useStatsFile(config, opts.Root, "")
+	useStatsFile(config, opts.Root, "", os.Stdout)
 	useAnalyze := opts.Analyze || IsAnalyzeEnabled()
 
 	if err := TestConnectionString(config.PgUri); err != nil {

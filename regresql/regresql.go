@@ -2,6 +2,7 @@ package regresql
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -177,7 +178,7 @@ the regresql update command again to reset the expected output files.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
 // statsFile is a SQL stats file to apply instead of ANALYZE. Empty means use config default or ANALYZE.
 func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, statsFile string) {
-	sf := useStatsFile(cfg, root, statsFile)
+	sf := useStatsFile(cfg, root, statsFile, os.Stdout)
 	if noRestore {
 		return
 	}
@@ -239,7 +240,7 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 
 // useStatsFile resolves the stats file (flag > config default) and records
 // whether injection is in use.
-func useStatsFile(cfg config, root, flag string) string {
+func useStatsFile(cfg config, root, flag string, warn io.Writer) string {
 	sf := flag
 	if sf == "" && cfg.Stats != nil && cfg.Stats.Default != "" {
 		sf = cfg.Stats.Default
@@ -249,7 +250,7 @@ func useStatsFile(cfg config, root, flag string) string {
 	}
 	if sf != "" {
 		if _, err := os.Stat(sf); os.IsNotExist(err) {
-			fmt.Printf("Warning: stats file not found: %s; not injecting\n", sf)
+			fmt.Fprintf(warn, "Warning: stats file not found: %s; not injecting\n", sf)
 			sf = ""
 		}
 	}

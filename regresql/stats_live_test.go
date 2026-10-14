@@ -65,6 +65,36 @@ func TestLiveInjection(t *testing.T) {
 	}
 }
 
+func TestLiveCollectEnv(t *testing.T) {
+	uri := os.Getenv("REGRESQL_TEST_PGURI")
+	if uri == "" {
+		t.Skip("REGRESQL_TEST_PGURI not set")
+	}
+	plain, err := OpenDB(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plain.Close()
+	_, loadErr := plain.Exec("LOAD 'pg_regresql'")
+
+	setInjected(t, true)
+	env := CollectEnv(uri, "", config{PgUri: uri}, t.TempDir(), false)
+	if !env.Connected {
+		t.Fatalf("not connected: %v", env.Detail)
+	}
+	if (loadErr == nil) != (env.PgRegresql == envLoaded) {
+		t.Errorf("probe %q disagrees with LOAD result %v", env.PgRegresql, loadErr)
+	}
+	if env.Failed() != (loadErr != nil) {
+		t.Errorf("Failed() = %v with LOAD err %v", env.Failed(), loadErr)
+	}
+
+	injectedStats = false
+	if CollectEnv(uri, "", config{PgUri: uri}, t.TempDir(), false).Failed() {
+		t.Error("buffers mode must not fail without the extension")
+	}
+}
+
 func TestLiveApplyStatistics(t *testing.T) {
 	uri := os.Getenv("REGRESQL_TEST_PGURI")
 	if uri == "" {

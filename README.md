@@ -158,6 +158,17 @@ regresql test --format pgtap            # TAP protocol
 
 Output formats: `console` (default), `pgtap`, `junit`, `json`, `github-actions`
 
+### `regresql doctor`
+
+Reports the mode and whether the environment can support it, without restoring or writing anything:
+
+```bash
+regresql doctor
+regresql doctor --stats stats.sql --format json
+```
+
+Exits `15` when plan choice mode is configured but `pg_regresql` is missing, when the injection check fails, or when the stats file was dumped from a different PostgreSQL major than the server; `2` when the database is unreachable; `3` on config errors (with `--format json` a config error is reported as `{"ok": false, "error": ...}`).
+
 ### `regresql baseline`
 
 Tracks EXPLAIN cost estimates/I/O buffers over time. When a schema change or migration causes a query plan regression. Cost spikes, sequential scans on large tables — you'll catch it in CI before it reaches production.
