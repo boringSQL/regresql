@@ -171,6 +171,12 @@ Exit codes: `0` passed, `1` failures, `2` skipped (with `--fail-on-skipped`), `3
 
 Every run prints `mode: ... | pg_regresql: ... | GUCs: ... | PG major: ...` first. In plan choice mode `analyze.comparison: buffers` is ignored. `test` and `update` apply the stats file when they restore a snapshot. With `--no-restore`, or without a configured snapshot, they do not: if the database already carries injected stats the run stays in plan choice mode, otherwise it warns and runs in buffers mode. Plan quality warnings (sequential scans, nested loops) are not suppressed by the low-buffer filter there, so `--strict` can fail on them.
 
+#### Generic plans
+
+`regresql test --generic` (plan choice mode, PostgreSQL 14+) prepares each parameterised query and runs your bindings through it, in order, with plain `EXPLAIN` in a rolled-back transaction. It asks the planner whether the statement would switch to its generic plan after five executions. It fails when it would, and that plan seq scans a relation of 1000 pages or more that the custom plans read through an index.
+
+A pass means these bindings, in this order, do not settle on a generic plan that drops an index. Bindings that are all selective pass, because production would not switch either. List the broad bindings production sends most often first (plan keys sort as strings: `1_broad` ... `5_broad`, `6_selective`), and keep bindings inside the statistics' range. Planner settings must match production. Type parameters the server cannot infer with `-- paramtypes: int, timestamptz`. Opt a query out with `-- regresql: nogeneric`.
+
 ### `regresql doctor`
 
 Reports the mode and whether the environment can support it, without restoring or writing anything:
@@ -284,7 +290,7 @@ Control test behavior per-query:
 SELECT ...
 ```
 
-Options: `notest`, `nobaseline`, `noseqscanwarn`, `difffloattolerance:0.01`, `timeout:5s`
+Options: `notest`, `nobaseline`, `noseqscanwarn`, `nogeneric`, `difffloattolerance:0.01`, `timeout:5s`
 
 Result comparison can ignore named columns, ignore row order, tolerate float differences, and compare JSONB by value.
 
