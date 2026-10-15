@@ -1,6 +1,8 @@
 package regresql
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -78,5 +80,51 @@ func TestPrepareTwoParams(t *testing.T) {
 		params[0] == "a" &&
 		params[1] == "b") {
 		t.Error("Bindings not properly applied, got ", params)
+	}
+}
+
+func TestGenericMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "q.sql")
+	content := `-- name: typed
+-- regresql: NoGeneric
+-- paramtypes: timestamptz, numeric(10,2)
+select * from t where ts > :since and n = :n and ts < :since + 1;
+
+-- name: wrongcount
+-- paramtypes: int
+select * from t where a = :a and b = :b;
+
+-- name: plain
+select * from t where a = :a;
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	qs, err := parseQueryFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	typed := qs["typed"]
+	if !typed.GetRegressQLOptions().NoGeneric {
+		t.Error("NoGeneric not set")
+	}
+	types, err := typed.GetParamTypes()
+	if err != nil || len(types) != 2 || types[0] != "timestamptz" || types[1] != "numeric(10,2)" {
+		t.Errorf("GetParamTypes = %v, %v", types, err)
+	}
+
+	if _, err := qs["wrongcount"].GetParamTypes(); err == nil {
+		t.Error("count mismatch not reported")
+	}
+
+	plain := qs["plain"]
+	if plain.GetRegressQLOptions().NoGeneric {
+		t.Error("NoGeneric set on plain query")
+	}
+	if types, err := plain.GetParamTypes(); types != nil || err != nil {
+		t.Errorf("plain GetParamTypes = %v, %v", types, err)
 	}
 }

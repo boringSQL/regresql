@@ -17,6 +17,7 @@ type (
 		NoTest             bool
 		NoBaseline         bool
 		NoSeqScanWarn      bool
+		NoGeneric          bool
 		DiffFloatTolerance float64
 		Timeout            time.Duration // statement_timeout override (0 = unset)
 	}
@@ -40,6 +41,8 @@ func (q *Query) GetRegressQLOptions() RegressQLOptions {
 			opts.NoBaseline = true
 		case partLower == "noseqscanwarn":
 			opts.NoSeqScanWarn = true
+		case partLower == "nogeneric":
+			opts.NoGeneric = true
 		case strings.HasPrefix(partLower, "difffloattolerance:"):
 			// Parse DiffFloatTolerance:0.01
 			value := strings.TrimPrefix(part, "DiffFloatTolerance:")
@@ -54,6 +57,60 @@ func (q *Query) GetRegressQLOptions() RegressQLOptions {
 	}
 
 	return opts
+}
+
+func (q *Query) uniqueArgs() []string {
+	seen := make(map[string]bool)
+	args := []string{}
+	for _, varname := range q.Args {
+		if !seen[varname] {
+			seen[varname] = true
+			args = append(args, varname)
+		}
+	}
+	return args
+}
+
+// GetParamTypes returns the types from `-- paramtypes: a, b`, one per unique
+// named argument in order of first appearance. nil means the query has none.
+func (q *Query) GetParamTypes() ([]string, error) {
+	metadata, ok := q.GetMetadata("paramtypes")
+	if !ok {
+		return nil, nil
+	}
+
+	types := splitTopLevel(metadata)
+
+	if want := len(q.uniqueArgs()); len(types) != want {
+		return nil, fmt.Errorf("paramtypes lists %d types, query has %d parameters", len(types), want)
+	}
+	return types, nil
+}
+
+// splitTopLevel splits on commas outside parentheses, so numeric(10,2) stays whole.
+func splitTopLevel(s string) []string {
+	var parts []string
+	depth, start := 0, 0
+	add := func(end int) {
+		if part := strings.TrimSpace(s[start:end]); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	for i, r := range s {
+		switch r {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth == 0 {
+				add(i)
+				start = i + 1
+			}
+		}
+	}
+	add(len(s))
+	return parts
 }
 
 func parseQueryFile(queryPath string) (map[string]*Query, error) {
@@ -82,16 +139,7 @@ func NewQueryFromString(name, sqlText string) (*Query, error) {
 }
 
 func (q *Query) Prepare(bindings map[string]any) (string, []any) {
-	// Deduplicate parameter names while preserving order
-	seen := make(map[string]bool)
-	uniqueArgs := []string{}
-	for _, varname := range q.Args {
-		if !seen[varname] {
-			seen[varname] = true
-			uniqueArgs = append(uniqueArgs, varname)
-		}
-	}
-
+	uniqueArgs := q.uniqueArgs()
 	params := make([]any, len(uniqueArgs))
 	for i, varname := range uniqueArgs {
 		params[i] = bindings[varname]
