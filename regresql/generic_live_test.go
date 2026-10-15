@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,5 +218,113 @@ func TestLiveGenericNeedsExtension(t *testing.T) {
 	_, err = checkGeneric(context.Background(), db, q, []string{"1"}, ids(1))
 	if !errors.Is(err, errGenericNoExtension) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func flipFixture(t *testing.T, db *sql.DB) *Query {
+	t.Helper()
+	t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS gen_big`) })
+	for _, stmt := range []string{
+		`DROP TABLE IF EXISTS gen_big`,
+		`CREATE TABLE gen_big(id int primary key, status int, payload text)`,
+		`CREATE INDEX gen_big_status ON gen_big(status)`,
+		`SELECT pg_restore_relation_stats('schemaname','public','relname','gen_big','relpages',100000::int,'reltuples',10000000::real,'relallvisible',100000::int)`,
+		`SELECT pg_restore_relation_stats('schemaname','public','relname','gen_big_status','relpages',27000::int,'reltuples',10000000::real)`,
+		`SELECT pg_restore_attribute_stats('schemaname','public','relname','gen_big','attname','status','inherited',false,'null_frac',0::real,'avg_width',4,'n_distinct',10::real,'correlation',0::real,'most_common_vals','{1,2,3}'::text,'most_common_freqs','{0.5,0.3,0.00001}'::real[])`,
+		`SELECT pg_restore_attribute_stats('schemaname','public','relname','gen_big','attname','payload','inherited',false,'null_frac',0::real,'avg_width',20,'n_distinct',-1::real)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for status, wantIndexed := range map[int]bool{1: false, 2: false, 3: true} {
+		var plan string
+		rows, err := db.Query(fmt.Sprintf(`EXPLAIN select * from gen_big where status = %d order by payload`, status))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				t.Fatal(err)
+			}
+			plan += line + "\n"
+		}
+		rows.Close()
+		if indexed := strings.Contains(plan, "Bitmap Heap Scan") || strings.Contains(plan, "Index Scan"); indexed != wantIndexed {
+			t.Fatalf("fixture drifted: status %d, indexed=%v, want %v\n%s", status, indexed, wantIndexed, plan)
+		}
+	}
+	return liveQuery(t, "", `select * from gen_big where status = :s order by payload`)
+}
+
+func TestLiveGenericFlip(t *testing.T) {
+	db := liveGenericDB(t)
+	var version int
+	if err := db.QueryRow(`SELECT current_setting('server_version_num')::int`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version < MinPGVersionForStats {
+		t.Skip("pg_restore_attribute_stats needs PostgreSQL 18")
+	}
+	q := flipFixture(t, db)
+	ctx := context.Background()
+
+	bind := func(vals ...int) []map[string]any {
+		out := make([]map[string]any, len(vals))
+		for i, v := range vals {
+			out[i] = map[string]any{"s": v}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name     string
+		names    []string
+		bindings []map[string]any
+		failed   bool
+		message  string
+	}{
+		{
+			"broad first, selective last settles and flips",
+			[]string{"1_broad", "2_broad", "3_broad", "4_broad", "5_broad", "6_selective"},
+			bind(1, 2, 1, 2, 1, 3),
+			true,
+			`generic: gen_big index scan -> Seq Scan; binding "6_selective"`,
+		},
+		{
+			"only selective bindings do not settle",
+			[]string{"1", "2", "3"},
+			bind(3, 3, 3),
+			false,
+			"generic plan would Seq Scan gen_big; settles if broad bindings dominate",
+		},
+		{
+			"only broad bindings settle without a flip",
+			[]string{"1", "2", "3"},
+			bind(1, 2, 1),
+			false,
+			"settled; no index->seq flip",
+		},
+		{
+			"four selective among the first five do not settle",
+			[]string{"1", "2", "3", "4", "5", "6"},
+			bind(3, 3, 3, 3, 1, 3),
+			false,
+			"generic plan would Seq Scan gen_big; settles if broad bindings dominate",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := checkGeneric(ctx, db, q, tt.names, tt.bindings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Skipped || out.Failed != tt.failed || out.Message != tt.message {
+				t.Errorf("outcome %+v, want failed=%v %q", out, tt.failed, tt.message)
+			}
+		})
 	}
 }
