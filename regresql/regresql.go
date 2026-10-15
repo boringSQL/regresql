@@ -1,6 +1,7 @@
 package regresql
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,7 @@ type (
 		Stats         string // Stats profile name, YAML path, or SQL path
 		Verbose       bool
 		Strict        bool
+		Generic       bool
 	}
 
 	UpdateOptions struct {
@@ -404,6 +406,10 @@ func Test(opts TestOptions) {
 		fmt.Fprintln(headerOut, env.AbortMessage())
 		os.Exit(15)
 	}
+	if opts.Generic && env.Mode != ModePlanChoice {
+		fmt.Fprintln(headerOut, "Error: --generic needs plan choice mode (apply a stats file with --stats)")
+		os.Exit(3)
+	}
 	if formatName != "console" {
 		writeEnvHeader(os.Stderr, env)
 	}
@@ -459,9 +465,15 @@ func Test(opts TestOptions) {
 		})
 	}
 
-	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit, env)
+	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit, opts.Generic, env)
 	if err != nil {
 		fmt.Fprint(progress, err.Error())
+		switch {
+		case errors.Is(err, errGenericVersion):
+			os.Exit(3)
+		case errors.Is(err, errGenericNoExtension):
+			os.Exit(15)
+		}
 		os.Exit(13)
 	}
 	if summary.Failed > 0 {

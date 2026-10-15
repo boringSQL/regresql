@@ -328,3 +328,46 @@ func TestLiveGenericFlip(t *testing.T) {
 		})
 	}
 }
+
+func TestLiveRunGenericCheck(t *testing.T) {
+	db := liveGenericDB(t)
+	q := flipFixture(t, db)
+
+	names := []string{"1_broad", "2_broad", "3_broad", "4_broad", "5_broad", "6_selective"}
+	bind := func(vals ...int) []map[string]any {
+		out := make([]map[string]any, len(vals))
+		for i, v := range vals {
+			out[i] = map[string]any{"s": v}
+		}
+		return out
+	}
+	pq := func(bindings []map[string]any) *PlannedQuery {
+		return &PlannedQuery{Query: q, SQLPath: "big.sql", Plan: &Plan{Names: names[:len(bindings)], Bindings: bindings}}
+	}
+
+	r, err := runGenericCheck(context.Background(), db, pq(bind(1, 2, 1, 2, 1, 3)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Type != "generic" || r.Status != "failed" || r.Name != "q" || r.QueryFile != "big.sql" ||
+		r.Error != `generic: gen_big index scan -> Seq Scan; binding "6_selective"` {
+		t.Errorf("failed result %+v", r)
+	}
+
+	r, err = runGenericCheck(context.Background(), db, pq(bind(1, 2, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != "passed" || r.Error != "" || r.Name != "q: settled; no index->seq flip" {
+		t.Errorf("passed result %+v", r)
+	}
+
+	bad := []map[string]any{{"s": "abc"}}
+	r, err = runGenericCheck(context.Background(), db, &PlannedQuery{Query: liveQuery(t, "-- paramtypes: int\n", `select * from gen_big where status = :s`), Plan: &Plan{Names: []string{"1"}, Bindings: bad}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != "skipped" || r.Error == "" {
+		t.Errorf("skipped result %+v", r)
+	}
+}

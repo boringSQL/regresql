@@ -24,6 +24,7 @@ var (
 	testStatsFile string
 	testVerbose   bool
 	testStrict    bool
+	testGeneric   bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",
@@ -49,6 +50,7 @@ var (
 				Stats:         testStatsFile,
 				Verbose:       testVerbose,
 				Strict:        testStrict,
+				Generic:       testGeneric,
 			}
 			regresql.Test(opts)
 		},
@@ -66,6 +68,7 @@ func init() {
 	testCmd.Flags().BoolVar(&testNoRestore, "no-restore", false, "Skip snapshot restore before test")
 	testCmd.Flags().BoolVar(&testFailOnSkipped, "fail-on-skipped", false, "Exit with code 2 if skipped tests exist")
 	testCmd.Flags().BoolVar(&testStrict, "strict", false, "Exit with code 10 if any plan warning or regression is present (treats warnings as errors)")
+	testCmd.Flags().BoolVar(&testGeneric, "generic", false, "Fail when a query would settle on a generic plan that scans where custom plans used an index (plan choice mode)")
 	testCmd.Flags().BoolVar(&testColor, "color", false, "Force colored output")
 	testCmd.Flags().BoolVar(&testNoColor, "no-color", false, "Disable colored output")
 	testCmd.Flags().BoolVar(&testFullDiff, "diff", false, "Show full diff output (no truncation)")

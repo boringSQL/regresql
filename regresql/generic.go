@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -20,12 +21,15 @@ const (
 
 	// executions before the planner's custom-vs-generic decision
 	genericWarmup = 6
+
+	minPGVersionForGeneric = 140000
 )
 
 var (
 	skippableCodes = map[string]bool{"42601": true, "42883": true, "42725": true, "42P18": true, "42804": true}
 
-	errGenericNoExtension = errors.New("pg_regresql is not active on the connection")
+	errGenericNoExtension = errors.New("Error: pg_regresql is not active on the connection (plan choice mode needs the extension)\n")
+	errGenericVersion     = errors.New("--generic needs PostgreSQL 14+")
 )
 
 type genericOutcome struct {
@@ -223,4 +227,40 @@ func failOrSkip(err error) (genericOutcome, bool, error) {
 		return genericOutcome{Skipped: true, Message: pgErr.Message}, false, nil
 	}
 	return genericOutcome{}, false, err
+}
+
+func requireGenericVersion(db *sql.DB) error {
+	sc, err := CaptureServerContext(db)
+	if err != nil {
+		return err
+	}
+	if sc.VersionNum < minPGVersionForGeneric {
+		return fmt.Errorf("%w (found %s)\n", errGenericVersion, sc.Version)
+	}
+	return nil
+}
+
+func runGenericCheck(ctx context.Context, db *sql.DB, pq *PlannedQuery) (TestResult, error) {
+	start := time.Now()
+	out, err := checkGeneric(ctx, db, pq.Query, pq.Plan.Names, pq.Plan.Bindings)
+	if err != nil {
+		return TestResult{}, err
+	}
+
+	r := TestResult{
+		Name:      pq.Query.Name,
+		Type:      "generic",
+		Status:    "passed",
+		Duration:  time.Since(start).Seconds(),
+		QueryFile: pq.SQLPath,
+	}
+	switch {
+	case out.Failed:
+		r.Status, r.Error = "failed", out.Message
+	case out.Skipped:
+		r.Status, r.Error = "skipped", out.Message
+	default:
+		r.Name += ": " + out.Message
+	}
+	return r, nil
 }

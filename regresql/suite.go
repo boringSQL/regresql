@@ -421,7 +421,7 @@ func fileExists(path string) bool {
 }
 
 // testQueries walks plan files, executes queries, and compares results to expected output
-func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit bool, env EnvStatus) (*TestSummary, error) {
+func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit, generic bool, env EnvStatus) (*TestSummary, error) {
 	db, err := openSessionDB(pguri)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
@@ -429,6 +429,12 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 	defer db.Close()
 	if injectedStats {
 		if err := VerifyInjection(db); err != nil {
+			return nil, err
+		}
+	}
+
+	if generic {
+		if err := requireGenericVersion(db); err != nil {
 			return nil, err
 		}
 	}
@@ -534,6 +540,17 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 				Status:    "failed",
 				Error:     fmt.Sprintf("query did not complete within %s (statement_timeout)", timeout),
 				QueryFile: pq.SQLPath,
+			}
+			summary.AddResult(r)
+			if err := formatter.AddResult(r, w); err != nil {
+				return nil, err
+			}
+		}
+
+		if generic && !opts.NoGeneric && len(pq.Query.Args) > 0 && !timedOut {
+			r, err := runGenericCheck(context.Background(), db, pq)
+			if err != nil {
+				return nil, err
 			}
 			summary.AddResult(r)
 			if err := formatter.AddResult(r, w); err != nil {
