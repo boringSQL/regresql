@@ -4,8 +4,6 @@ SQL queries can break silently. Schema migrations, data changes, and index modif
 
 RegreSQL is a language-agnostic SQL regression testing tool for PostgreSQL. It finds your `*.sql` files, runs them against your database, compares output to known-good baselines, and tracks EXPLAIN plan changes.  Detect broken queries and performance regressions before production.
 
-2.0 also adds cross-version testing: running the same queries against two PostgreSQL builds and comparing how each one plans them. That's a separate workflow for planner work and version upgrades, in its own section below. If you're here to test your application's queries, the everyday path is the rest of this README.
-
 `RegreSQL` is part of the [boringSQL](https://boringsql.com) stack alongside [qshape](https://github.com/boringSQL/qshape), [Fixturize](https://github.com/boringSQL/fixturize) and [dryrun](https://github.com/boringSQL/dryrun). See the [project page](https://boringsql.com/products/regresql/) for the full overview.
 
 ## Installing
@@ -37,7 +35,7 @@ Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-g
 ### Go (from source)
 
 ```bash
-go install github.com/boringsql/regresql/v2@latest
+go install github.com/boringsql/regresql/v2/cmd/regresql@latest
 ```
 
 Binary goes to `$GOPATH/bin` (defaults to `~/go/bin`).
@@ -71,7 +69,7 @@ regresql discover
 # Add queries to the test suite
 regresql add src/sql/
 
-# Edit plan files to set parameter values (if your queries have parameters)
+# Replace REQUIRED in the plan files with parameter values (if your queries have parameters)
 vim regresql/plans/src/sql/users.yaml
 
 # Capture expected output
@@ -81,7 +79,7 @@ regresql update
 regresql test
 ```
 
-`init` only writes a local `regresql/` directory and a config file. It doesn't touch your database.
+`init` connects once to check the URI, then writes `regresql/regress.yaml`. If it can't connect it exits 2 and writes nothing. Running it again rewrites `regress.yaml` with only `root` and `pguri`, so every hand-edited setting (`snapshot:`, `stats:`, `ignore:`, ...) is lost. Until every `REQUIRED` is replaced, `update`, `test` and `baseline` stop with an error that names the unfilled bindings.
 
 `update` is the step to be deliberate about. It captures whatever your queries return right now and stores that as the expected result, so run it against a database whose contents you trust. If you don't have one lying around, [Snapshots](#snapshots) below builds a reproducible one you can restore before every run.
 
@@ -160,7 +158,20 @@ Output formats: `console` (default), `pgtap`, `junit`, `json`, `github-actions`
 
 For non-console formats without `-o`, progress lines (connecting, restore, applied statistics) and the mode status line go to stderr, so stdout holds only the report. The `json` report carries it under `environment`.
 
-Exit codes: `0` passed, `1` failures, `2` skipped (with `--fail-on-skipped`), `3` config error, `10` severity violation, `13` query execution error, `14` invalid formatter, `15` environment not fit to run (stats injection configured but `pg_regresql` not loadable, stats could not be applied, or injection could not be verified).
+Exit codes for `test`:
+
+| code | meaning |
+|---|---|
+| `0` | passed |
+| `1` | a check failed, or a snapshot or strict settings problem stopped the run |
+| `2` | cannot connect to the database (with a snapshot restore a failed restore exits `1` first), or skipped tests with `--fail-on-skipped` |
+| `3` | config error, or `--generic` without plan choice mode or on PostgreSQL older than 14 |
+| `10` | severity violation |
+| `13` | a query could not be run, a plan still holds `REQUIRED`, or the stats injection check failed |
+| `14` | invalid formatter |
+| `15` | `pg_regresql` not loadable, or the stats file could not be applied |
+
+`update` uses `1` (snapshot not found or changed, strict settings mismatch), `2` (cannot connect, same restore caveat as `test`), `3` (config error), `12` (expected output could not be created, including unfilled `REQUIRED` or a failed stats injection check) and `15` (stats file could not be applied).
 
 #### Assertion modes
 
@@ -170,6 +181,24 @@ Exit codes: `0` passed, `1` failures, `2` skipped (with `--fail-on-skipped`), `3
 | plan choice (injected stats) | a stats file is in use (`--stats` or `stats.default`) | plan shape only; cost is advisory |
 
 Every run prints `mode: ... | pg_regresql: ... | GUCs: ... | PG major: ...` first. In plan choice mode `analyze.comparison: buffers` is ignored. `test` and `update` apply the stats file when they restore a snapshot. With `--no-restore`, or without a configured snapshot, they do not: if the database already carries injected stats the run stays in plan choice mode, otherwise it warns and runs in buffers mode. Plan quality warnings (sequential scans, nested loops) are not suppressed by the low-buffer filter there, so `--strict` can fail on them.
+
+#### Using `--stats`
+
+Injected statistics need PostgreSQL 18 or newer and the `pg_regresql` extension (`pgxn install pg_regresql`; `regresql doctor` checks it is loadable). The stats file is `pg_dump --statistics-only` output from the database you want to reproduce. `test` and `update` apply the file while they restore a snapshot, so the project needs a snapshot of the test database and these paths in `regress.yaml`. `baseline` applies it directly to the configured database:
+
+```bash
+regresql snapshot capture      # writes snapshots/default.dump
+```
+
+```yaml
+# regresql/regress.yaml
+snapshot:
+  path: snapshots/default.dump   # relative to the project root
+stats:
+  default: ../stats.sql          # relative to regresql/
+```
+
+Then `regresql baseline`, `regresql update` and `regresql test` all run in plan choice mode. `baseline` and `update` read only `stats.default`; they have no `--stats` flag. `regresql config set` only handles `pguri`, so edit the file by hand. `test --stats path/to/stats.sql` overrides the default for one run, and that path is resolved against the current directory. Without a snapshot restore, `test` and `update` do not apply the stats file; `--generic` then exits 3 unless the database already carries injected stats.
 
 #### Generic plans
 
@@ -190,7 +219,7 @@ Exits `15` when plan choice mode is configured but `pg_regresql` is missing, whe
 
 ### `regresql baseline`
 
-Tracks EXPLAIN cost estimates/I/O buffers over time. When a schema change or migration causes a query plan regression. Cost spikes, sequential scans on large tables — you'll catch it in CI before it reaches production.
+Records EXPLAIN cost estimates and I/O buffers for each query, so a later `regresql test` can tell when a schema change or migration caused a plan regression. Cost spikes and sequential scans on large tables show up in CI before they reach production.
 
 In analyze mode it also checks cardinality error (q-error), disk spills, and rows processed.
 
@@ -199,7 +228,7 @@ regresql baseline
 regresql baseline --analyze          # include actual timing
 ```
 
-`baseline` applies the configured stats file before recording plans. Exit codes: `2` cannot connect, `3` config error, `11` baseline directory or plan problems, `13` any query's baseline could not be created, `15` environment not fit to run (as for `test`).
+`baseline` applies the configured stats file before recording plans. Exit codes: `2` cannot connect, `3` config error, `11` baseline directory or plan problems, `13` any query's baseline could not be created, `15` environment not fit to run (`pg_regresql` not loadable, stats file could not be applied, or the injection check failed).
 
 ## Continuous integration
 
@@ -231,8 +260,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
-      - run: go install github.com/boringsql/regresql/v2@latest
+          go-version: "1.25"
+      - run: go install github.com/boringsql/regresql/v2/cmd/regresql@latest
       - run: regresql snapshot restore
       - run: regresql test --format github-actions
 ```
@@ -302,6 +331,7 @@ Snapshots capture database state for reproducible tests. Build once, restore bef
 # regresql/regress.yaml
 pguri: postgres://localhost/mydb
 snapshot:
+  path: snapshots/default.dump
   schema: db/schema.sql
   migrations: db/migrations/
 ```
@@ -374,6 +404,7 @@ plan_quality:
     - media_type
 
 snapshot:
+  path: snapshots/default.dump
   schema: db/schema.sql
   migrations: db/migrations/
   fixtures: [users, products]
