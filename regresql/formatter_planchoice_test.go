@@ -180,3 +180,34 @@ func TestConsoleUninjectedBaselinesNotice(t *testing.T) {
 		t.Errorf("expected one aggregated notice: %q", buf.String())
 	}
 }
+
+func TestConsolePendingNamesMissingExpectedOutput(t *testing.T) {
+	f := &ConsoleFormatter{results: []TestResult{{Name: "q.json", Status: "pending"}}}
+	s := NewTestSummary()
+	s.AddResult(f.results[0])
+
+	var buf bytes.Buffer
+	if err := f.Finish(s, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"1 pending (no expected output)", "PENDING (no expected output):", "To record expected output: regresql update --pending"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "no baseline") {
+		t.Errorf("a missing expected file is not a missing baseline: %q", out)
+	}
+}
+
+func TestGitHubPendingNamesMissingExpectedOutput(t *testing.T) {
+	var buf bytes.Buffer
+	f := &GitHubActionsFormatter{}
+	if err := f.AddResult(TestResult{Name: "q.json", Status: "pending", Error: "Expected file not found"}, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if want := "::notice::q.json pending (no expected output)"; !strings.Contains(buf.String(), want) {
+		t.Errorf("want %q in %q", want, buf.String())
+	}
+}

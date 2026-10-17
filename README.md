@@ -135,7 +135,7 @@ regresql remove src/sql/ --dry-run   # preview what would be deleted
 
 ### `regresql update`
 
-Captures current query output as the expected baseline:
+Captures current query output as the expected output:
 
 ```bash
 regresql update                      # all queries

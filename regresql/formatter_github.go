@@ -104,7 +104,7 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 	case "skipped":
 		fmt.Fprintf(w, "::warning::%s skipped: %s\n", r.Name, r.Error)
 	case "pending":
-		fmt.Fprintf(w, "::notice::%s pending (no baseline): %s\n", r.Name, r.Error)
+		fmt.Fprintf(w, "::notice::%s pending (no expected output): %s\n", r.Name, r.Error)
 	}
 	return nil
 }

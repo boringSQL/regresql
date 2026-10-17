@@ -424,7 +424,7 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 		fmt.Fprintf(w, "  %s %d improved (consider updating baselines)\n", f.colorize("↑", colorGreen), s.Improved)
 	}
 	if s.Pending > 0 {
-		fmt.Fprintf(w, "  %s %d pending (no baseline)\n", f.colorize("?", colorCyan), s.Pending)
+		fmt.Fprintf(w, "  %s %d pending (no expected output)\n", f.colorize("?", colorCyan), s.Pending)
 	}
 	if s.Skipped > 0 {
 		fmt.Fprintf(w, "  %s %d skipped\n", f.colorize("-", colorDim), s.Skipped)
@@ -498,7 +498,7 @@ func (f *ConsoleFormatter) Finish(s *TestSummary, w io.Writer) error {
 	// Pending tests
 	if s.Pending > 0 {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, f.colorize("PENDING (no baseline):", colorCyan))
+		fmt.Fprintln(w, f.colorize("PENDING (no expected output):", colorCyan))
 		for _, r := range f.results {
 			if r.Status == "pending" {
 				fmt.Fprintf(w, "  %s\n", r.Name)
@@ -532,7 +532,7 @@ func (f *ConsoleFormatter) printSuggestions(s *TestSummary, w io.Writer) {
 		}
 	}
 	if s.Pending > 0 {
-		fmt.Fprintln(w, "To create baselines: regresql update --pending")
+		fmt.Fprintln(w, "To record expected output: regresql update --pending")
 	}
 }
 
