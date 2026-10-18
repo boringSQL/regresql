@@ -3,6 +3,7 @@ package regresql
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -148,5 +149,33 @@ func TestSuiteReadConfigDatabaseURLOverride(t *testing.T) {
 	}
 	if cfg.PgUri != envURI {
 		t.Errorf("PgUri = %q, want env override %q", cfg.PgUri, envURI)
+	}
+}
+
+func TestLoadConfigMissingFileNamesInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "regresql", "regress.yaml")
+	_, err := loadConfig(path)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{path, "regresql init"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+func TestLoadConfigBadYAMLKeepsParseError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "regresql")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "regress.yaml")
+	if err := os.WriteFile(path, []byte("pguri: [unclosed\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := loadConfig(path)
+	if err == nil || strings.Contains(err.Error(), "regresql init") {
+		t.Errorf("a parse error must not suggest init: %v", err)
 	}
 }

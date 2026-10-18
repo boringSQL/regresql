@@ -12,8 +12,9 @@ var (
 	validateConfigCwd string
 
 	validateConfigCmd = &cobra.Command{
-		Use:   "validate-config",
-		Short: "Validate configuration for RegreSQL 2.0 compatibility",
+		Use:    "validate-config",
+		Short:  "Validate configuration for RegreSQL 2.0 compatibility",
+		Hidden: true,
 		Long: `Checks configuration files for deprecated patterns and validates
 readiness for RegreSQL 2.0.
 

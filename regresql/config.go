@@ -1,7 +1,9 @@
 package regresql
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -139,6 +141,9 @@ func loadConfig(configFile string) (config, error) {
 	var cfg config
 
 	data, err := os.ReadFile(configFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return cfg, fmt.Errorf("no regresql config at '%s': run 'regresql init postgres://...' first, or pass -C <dir>", configFile)
+	}
 	if err != nil {
 		return cfg, fmt.Errorf("failed to read config '%s': %w", configFile, err)
 	}

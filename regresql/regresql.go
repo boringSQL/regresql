@@ -50,7 +50,8 @@ Use 'regresql add' to add individual queries to the test suite.
 */
 func Init(root string, pguri string) {
 	if err := TestConnectionString(pguri); err != nil {
-		fmt.Print(err.Error())
+		fmt.Println(err)
+		fmt.Println("Check the connection string and that the server is running; nothing was written.")
 		os.Exit(2)
 	}
 
@@ -81,7 +82,7 @@ func Update(opts UpdateOptions) {
 	suite.SetPathFilters(opts.Paths)
 	config, err = suite.readConfig()
 	if err != nil {
-		fmt.Print(err.Error())
+		fmt.Printf("Error: %s\n", err)
 		os.Exit(3)
 	}
 
@@ -360,7 +361,7 @@ func Test(opts TestOptions) {
 	suite.SetRunFilter(opts.RunFilter)
 	config, err = suite.readConfig()
 	if err != nil {
-		fmt.Fprint(progress, err.Error())
+		fmt.Fprintf(progress, "Error: %s\n", err)
 		os.Exit(3)
 	}
 
@@ -407,7 +408,8 @@ func Test(opts TestOptions) {
 		os.Exit(15)
 	}
 	if opts.Generic && env.Mode != ModePlanChoice {
-		fmt.Fprintln(headerOut, "Error: --generic needs plan choice mode (apply a stats file with --stats)")
+		fmt.Fprintln(headerOut, "Error: --generic needs plan choice mode, but no stats file is in use.")
+		fmt.Fprintln(headerOut, "Pass --stats <file> (or set stats.default). It is applied on snapshot restore (snapshot.path, without --no-restore), or used as is when the database already carries injected stats.")
 		os.Exit(3)
 	}
 	if formatName != "console" {

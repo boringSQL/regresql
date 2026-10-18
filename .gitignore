@@ -1,0 +1,21 @@
+**/regresql/expected
+**/regresql/out
+**/regresql/baselines
+!examples/*/regresql/expected
+!examples/*/regresql/baselines
+
+# pg_ext build artifacts
+pg_ext/*.o
+pg_ext/*.so
+pg_ext/*.dylib
+pg_ext/*.bc
+pg_ext/*.zip
+
+/docs/*
+!/docs/LIBRARY.md
+!/docs/getting-started.md
+examples/sql_session1/
+examples/assignments/
+.DS_Store
+pg-harness/docs/
+website/docs/

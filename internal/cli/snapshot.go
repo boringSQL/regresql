@@ -11,24 +11,24 @@ import (
 )
 
 var (
-	snapshotCwd             string
-	snapshotOutput          string
-	snapshotOutputDir       string
-	snapshotFormat          string
-	snapshotSchemaOnly      bool
-	snapshotSection         string
-	snapshotSections        bool
-	snapshotInput           string
-	snapshotClean           bool
-	snapshotBuildFixtures          []string
-	snapshotBuildSchema            string
-	snapshotBuildMigrations        string
-	snapshotBuildVerbose           bool
-	snapshotBuildIgnoreSchemaErrs  bool
-	snapshotBuildDisableTriggers   bool
-	snapshotInfoCompare     bool
-	snapshotTagNote         string
-	snapshotTagArchive      string
+	snapshotCwd                   string
+	snapshotOutput                string
+	snapshotOutputDir             string
+	snapshotFormat                string
+	snapshotSchemaOnly            bool
+	snapshotSection               string
+	snapshotSections              bool
+	snapshotInput                 string
+	snapshotClean                 bool
+	snapshotBuildFixtures         []string
+	snapshotBuildSchema           string
+	snapshotBuildMigrations       string
+	snapshotBuildVerbose          bool
+	snapshotBuildIgnoreSchemaErrs bool
+	snapshotBuildDisableTriggers  bool
+	snapshotInfoCompare           bool
+	snapshotTagNote               string
+	snapshotTagArchive            string
 
 	snapshotCmd = &cobra.Command{
 		Use:   "snapshot",
@@ -234,7 +234,7 @@ func validateSnapshotPrereqs(pguri string) error {
 func runSnapshotCapture() error {
 	cfg, err := regresql.ReadConfig(snapshotCwd)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+		return err
 	}
 	if err := validateSnapshotPrereqs(cfg.PgUri); err != nil {
 		return err
@@ -294,7 +294,7 @@ func runSnapshotCapture() error {
 func runSnapshotCaptureSections() error {
 	cfg, err := regresql.ReadConfig(snapshotCwd)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+		return err
 	}
 	if err := validateSnapshotPrereqs(cfg.PgUri); err != nil {
 		return err
@@ -382,7 +382,7 @@ func findPasswordEnd(s string) int {
 func runSnapshotRestore() error {
 	cfg, err := regresql.ReadConfig(snapshotCwd)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+		return err
 	}
 
 	if cfg.PgUri == "" {
@@ -462,7 +462,7 @@ func runSnapshotRestore() error {
 func runSnapshotBuild() error {
 	cfg, err := regresql.ReadConfig(snapshotCwd)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+		return err
 	}
 
 	if cfg.PgUri == "" {
@@ -702,7 +702,7 @@ func runSnapshotInfoCompare(info *regresql.SnapshotInfo) error {
 
 	cfg, err := regresql.ReadConfig(snapshotCwd)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+		return err
 	}
 
 	db, err := regresql.OpenDB(cfg.PgUri)

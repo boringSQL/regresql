@@ -49,7 +49,7 @@ func TestDetectPlanQualityIssues_CriticalBeatsIgnored(t *testing.T) {
 	sig := buildSigWithSeqScans("orders")
 	warnings := DetectPlanQualityIssues(
 		sig, RegressQLOptions{},
-		[]string{"orders"},     // same table also in ignore list
+		[]string{"orders"}, // same table also in ignore list
 		[]string{"orders"},
 		nonTrivialCost,
 	)

@@ -20,11 +20,11 @@ var (
 	testNoColor       bool
 	testFullDiff      bool
 	testNoDiff        bool
-	testSnapshot  string
-	testStatsFile string
-	testVerbose   bool
-	testStrict    bool
-	testGeneric   bool
+	testSnapshot      string
+	testStatsFile     string
+	testVerbose       bool
+	testStrict        bool
+	testGeneric       bool
 
 	testCmd = &cobra.Command{
 		Use:   "test [flags]",

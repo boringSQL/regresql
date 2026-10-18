@@ -91,7 +91,7 @@ func init() {
 func runConfigGet(key string) error {
 	cfg, err := regresql.ReadConfigFile(configCwd)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w (have you run 'regresql init'?)", err)
+		return err
 	}
 
 	switch key {

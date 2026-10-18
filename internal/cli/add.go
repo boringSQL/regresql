@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -30,7 +31,12 @@ Examples:
 
 After adding, edit the plan files to add parameter values, then run
 'regresql update' to generate expected outputs.`,
-		Args: cobra.MinimumNArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return errors.New("add needs a path: regresql add <file|dir|glob> (see 'regresql discover')")
+			}
+			return nil
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(addCwd); err != nil {
 				fmt.Print(err.Error())

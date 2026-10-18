@@ -14,8 +14,9 @@ var (
 
 	// listCmd represents the list command
 	listCmd = &cobra.Command{
-		Use:   "list",
-		Short: "list candidates SQL files",
+		Use:    "list",
+		Short:  "list candidates SQL files",
+		Hidden: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := checkDirectory(cwd); err != nil {
 				fmt.Print(err.Error())
