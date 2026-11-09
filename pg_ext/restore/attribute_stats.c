@@ -13,7 +13,7 @@
  *       src/backend/statistics/attribute_stats.c
  *
  * Ported from PostgreSQL REL_18_STABLE at commit
- * 1370a7832a2ab7bda5625fd1f0448808b534cd50 (2026-10-07).
+ * 780900dcfab (2026-11-09).
  * Source: src/backend/statistics/attribute_stats.c
  *
  *-------------------------------------------------------------------------
@@ -22,6 +22,7 @@
 #include "postgres.h"
 
 #include "access/heapam.h"
+#include "access/relation.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_collation.h"
@@ -154,6 +155,7 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 	Oid			locked_table = InvalidOid;
 
 	Relation	starel;
+	Relation	targetrel;
 	HeapTuple	statup;
 
 	Oid			atttypid = InvalidOid;
@@ -347,6 +349,16 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 		do_range_length_histogram = false;
 		result = false;
 	}
+
+	/*
+	 * Parsing the input arrays below can run user-defined code (such as a
+	 * domain's CHECK constraint) that alters the column's type within our own
+	 * transaction, which our lock does not prevent.  Hold the relation open
+	 * so that such a reentrant ALTER TABLE is rejected by
+	 * CheckTableNotInUse().  NoLock is fine here as we already hold
+	 * ShareUpdateExclusiveLock on it.
+	 */
+	targetrel = relation_open(reloid, NoLock);
 
 	fmgr_info(F_ARRAY_IN, &array_in_fn);
 
@@ -546,11 +558,25 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 			result = false;
 	}
 
+	/*
+	 * The user-defined code run while parsing the arrays above can also drop
+	 * the column itself through a dependency (e.g. DROP DOMAIN ... CASCADE),
+	 * which holding the relation open does not prevent.  The column must not
+	 * go away in the middle of restoring its statistics, so error out, which
+	 * also rolls back the drop.
+	 */
+	if (!SearchSysCacheExistsAttName(reloid, attname))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_COLUMN),
+				 errmsg("could not restore statistics for column \"%s\": it was dropped during the import",
+						attname)));
+
 	upsert_pg_statistic(starel, statup, values, nulls, replaces);
 
 	if (HeapTupleIsValid(statup))
 		ReleaseSysCache(statup);
 	table_close(starel, RowExclusiveLock);
+	relation_close(targetrel, NoLock);
 
 	return result;
 }

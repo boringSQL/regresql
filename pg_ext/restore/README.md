@@ -10,8 +10,8 @@ the statistics-restore functions to PostgreSQL 16 and 17.
 |---|---|
 | Upstream repository | https://github.com/postgres/postgres |
 | Branch | `REL_18_STABLE` |
-| Commit | `1370a7832a2ab7bda5625fd1f0448808b534cd50` |
-| Commit date | 2026-10-07 |
+| Commit | `780900dcfab` |
+| Commit date | 2026-11-09 |
 | Files | `src/backend/statistics/relation_stats.c` |
 | | `src/backend/statistics/attribute_stats.c` |
 | | `src/backend/statistics/stat_utils.c` |
@@ -26,6 +26,16 @@ shims.
 
 To re-sync, diff this directory against a newer `REL_18_STABLE` commit and keep
 the local changes as a small, documented patch.
+
+## Import history
+
+| Commit | Upstream tree | Contents |
+|---|---|---|
+| `158c761` | `1370a7832a2` (2026-10-07) | initial import of the four files |
+| `Upstream-Commit: 780900dcfab` (2026-11-09) | `780900dcfab` (2026-11-09) | `attribute_stats.c`: keep the target relation open while importing, so reentrant DDL fails instead of leaving stats that no longer match the column (CVE-2026-116329) |
+
+Nothing else in these four files changed on `REL_18_STABLE` between the two
+imports, so `780900dcfab` replaces `1370a7832a2` as the re-sync baseline.
 
 ## License
 

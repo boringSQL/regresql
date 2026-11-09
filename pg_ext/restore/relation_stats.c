@@ -13,7 +13,7 @@
  *       src/backend/statistics/relation_stats.c
  *
  * Ported from PostgreSQL REL_18_STABLE at commit
- * 1370a7832a2ab7bda5625fd1f0448808b534cd50 (2026-10-07).
+ * 780900dcfab (2026-11-09).
  * Source: src/backend/statistics/relation_stats.c
  *
  *-------------------------------------------------------------------------
