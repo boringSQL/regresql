@@ -1,41 +1,72 @@
-# PostgreSQL upstream code
+# PostgreSQL code
 
-The files in this directory are **not original RegreSQL code**. They are copied
-from the PostgreSQL source tree as the base for the pg_regresql 2.1 backport of
-the statistics-restore functions to PostgreSQL 16 and 17.
+Not ours. Everything here is copied from the PostgreSQL tree. It is the base
+for the 2.1 backport of the stats restore functions, so 16 and 17 can load a
+dump made by pg_dump 18 or 19. The rest of pg_regresql is BSD-2-Clause; these
+files stay under the PostgreSQL License.
 
 ## Provenance
 
-| Item | Value |
-|---|---|
-| Upstream repository | https://github.com/postgres/postgres |
-| Branch | `REL_18_STABLE` |
-| Commit | `780900dcfab` |
-| Commit date | 2026-11-09 |
-| Files | `src/backend/statistics/relation_stats.c` |
-| | `src/backend/statistics/attribute_stats.c` |
-| | `src/backend/statistics/stat_utils.c` |
-| | `src/include/statistics/stat_utils.h` |
-| License | PostgreSQL License (below) |
+    repo      https://github.com/postgres/postgres
+    branch    REL_18_STABLE
+    commit    780900dcfab (2026-11-09)
 
-The import commit is verbatim upstream content plus a provenance comment at the
-top of each file. Later commits add the local port changes described in
-`PLAN-stats-pre18.md`: symbol prefixing, the local `stat_utils.h` include, the
-`#if PG_VERSION_NUM < 180000` guard, and the `relallfrozen` / `ACL_MAINTAIN`
-shims.
+    src/backend/statistics/relation_stats.c   -> relation_stats.c
+    src/backend/statistics/attribute_stats.c  -> attribute_stats.c
+    src/backend/statistics/stat_utils.c       -> stat_utils.c
+    src/include/statistics/stat_utils.h       -> stat_utils.h
 
-To re-sync, diff this directory against a newer `REL_18_STABLE` commit and keep
-the local changes as a small, documented patch.
+158c761 imported them from 1370a7832a2 (2026-10-07). bf52896 moved them to
+780900dcfab. The only upstream change in between is 780900dcfab (2026-11-09),
+CVE-2026-116329: hold the target relation open while the attribute input is
+parsed, and re-check the column before writing. Nothing else in these four
+files changed on REL_18_STABLE in that window.
 
-## Import history
+## Local changes
 
-| Commit | Upstream tree | Contents |
-|---|---|---|
-| `158c761` | `1370a7832a2` (2026-10-07) | initial import of the four files |
-| `Upstream-Commit: 780900dcfab` (2026-11-09) | `780900dcfab` (2026-11-09) | `attribute_stats.c`: keep the target relation open while importing, so reentrant DDL fails instead of leaving stats that no longer match the column (CVE-2026-116329) |
+The port commit is the diff worth reading:
 
-Nothing else in these four files changed on `REL_18_STABLE` between the two
-imports, so `780900dcfab` replaces `1370a7832a2` as the re-sync baseline.
+    git diff bf52896..<port-commit> -- pg_ext/restore
+
+Each .c file is wrapped in
+
+    #if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
+
+so 14 and 15 keep building (empty objects) and 18+ is unaffected. On 16/17 the
+two functions are real.
+
+Every non-static symbol got a regresql_ prefix. It is cheap, and it stops a
+server fork that exports the same names from colliding with us.
+PG_FUNCTION_INFO_V1 went on the two entry points only.
+
+statistics/stat_utils.h does not exist on 16/17, so the local stat_utils.h is
+included instead. On 16 attribute_stats.c also needs utils/typcache.h and
+nodes/miscnodes.h (17 and 18 happen to get them transitively), and stat_utils.c
+needs catalog/objectaddress.h for get_relkind_objtype.
+
+The ownership check had to be split. ACL_MAINTAIN is 17+, and
+pg_class_ownercheck was removed in 16. So 17 uses pg_class_aclcheck(...,
+ACL_MAINTAIN), 16 falls back to object_ownercheck(RelationRelationId, ...), and
+the database owner bypasses both.
+
+relallfrozen exists only on 18+. The kwarg stays in relarginfo so a dump that
+passes it is still accepted and type-checked, but the value is dropped, there is
+no column to put it in. That also shrinks the update arrays from 4 to 3.
+
+pg_clear_relation_stats and pg_clear_attribute_stats are gone, together with
+cleararginfo and delete_pg_statistic, which only the clear function called.
+init_empty_stats_tuple stays because attribute_statistics_update uses it.
+
+Extended statistics are a separate problem and are not ported here.
+
+Otherwise the bodies are upstream, tabs and all.
+
+## Re-syncing
+
+Copy the four files from a newer REL_18_STABLE, commit that as a vendor commit,
+then rebase the port commit on top. A plain patch will not apply if upstream
+touched the same functions, so let git do a 3-way merge (git apply -3, or
+rebase/cherry-pick). Conflicts stay in this directory.
 
 ## License
 

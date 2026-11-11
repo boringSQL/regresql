@@ -12,6 +12,8 @@
  * 780900dcfab (2026-11-09).
  * Source: src/include/statistics/stat_utils.h
  *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 #ifndef STATS_UTILS_H
@@ -28,20 +30,20 @@ struct StatsArgInfo
 	Oid			argtype;
 };
 
-extern void stats_check_required_arg(FunctionCallInfo fcinfo,
-									 struct StatsArgInfo *arginfo,
-									 int argnum);
-extern bool stats_check_arg_array(FunctionCallInfo fcinfo,
-								  struct StatsArgInfo *arginfo, int argnum);
-extern bool stats_check_arg_pair(FunctionCallInfo fcinfo,
-								 struct StatsArgInfo *arginfo,
-								 int argnum1, int argnum2);
+extern void regresql_stats_check_required_arg(FunctionCallInfo fcinfo,
+											  struct StatsArgInfo *arginfo,
+											  int argnum);
+extern bool regresql_stats_check_arg_array(FunctionCallInfo fcinfo,
+										   struct StatsArgInfo *arginfo, int argnum);
+extern bool regresql_stats_check_arg_pair(FunctionCallInfo fcinfo,
+										  struct StatsArgInfo *arginfo,
+										  int argnum1, int argnum2);
 
-extern void RangeVarCallbackForStats(const struct RangeVar *relation,
-									 Oid relId, Oid oldRelid, void *arg);
+extern void regresql_RangeVarCallbackForStats(const struct RangeVar *relation,
+											  Oid relId, Oid oldRelid, void *arg);
 
-extern bool stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
-											 FunctionCallInfo positional_fcinfo,
-											 struct StatsArgInfo *arginfo);
+extern bool regresql_stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
+													  FunctionCallInfo positional_fcinfo,
+													  struct StatsArgInfo *arginfo);
 
 #endif							/* STATS_UTILS_H */

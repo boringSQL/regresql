@@ -16,10 +16,14 @@
  * 780900dcfab (2026-11-09).
  * Source: src/backend/statistics/attribute_stats.c
  *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
+
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
 
 #include "access/heapam.h"
 #include "access/relation.h"
@@ -28,14 +32,16 @@
 #include "catalog/pg_collation.h"
 #include "catalog/pg_operator.h"
 #include "nodes/makefuncs.h"
+#include "nodes/miscnodes.h"
 #include "nodes/nodeFuncs.h"
 #include "statistics/statistics.h"
-#include "statistics/stat_utils.h"
+#include "stat_utils.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 
 #define DEFAULT_NULL_FRAC      Float4GetDatum(0.0)
 #define DEFAULT_AVG_WIDTH      Int32GetDatum(0) /* unknown */
@@ -87,24 +93,6 @@ static struct StatsArgInfo attarginfo[] =
 	[NUM_ATTRIBUTE_STATS_ARGS] = {0}
 };
 
-enum clear_attribute_stats_argnum
-{
-	C_ATTRELSCHEMA_ARG = 0,
-	C_ATTRELNAME_ARG,
-	C_ATTNAME_ARG,
-	C_INHERITED_ARG,
-	C_NUM_ATTRIBUTE_STATS_ARGS
-};
-
-static struct StatsArgInfo cleararginfo[] =
-{
-	[C_ATTRELSCHEMA_ARG] = {"schemaname", TEXTOID},
-	[C_ATTRELNAME_ARG] = {"relname", TEXTOID},
-	[C_ATTNAME_ARG] = {"attname", TEXTOID},
-	[C_INHERITED_ARG] = {"inherited", BOOLOID},
-	[C_NUM_ATTRIBUTE_STATS_ARGS] = {0}
-};
-
 static bool attribute_statistics_update(FunctionCallInfo fcinfo);
 static Node *get_attr_expr(Relation rel, int attnum);
 static void get_attr_stat_type(Oid reloid, AttrNumber attnum,
@@ -123,7 +111,6 @@ static void set_stats_slot(Datum *values, bool *nulls, bool *replaces,
 						   Datum stavalues, bool stavalues_isnull);
 static void upsert_pg_statistic(Relation starel, HeapTuple oldtup,
 								Datum *values, bool *nulls, bool *replaces);
-static bool delete_pg_statistic(Oid reloid, AttrNumber attnum, bool stainherit);
 static void init_empty_stats_tuple(Oid reloid, int16 attnum, bool inherited,
 								   Datum *values, bool *nulls, bool *replaces);
 
@@ -189,8 +176,8 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 
 	bool		result = true;
 
-	stats_check_required_arg(fcinfo, attarginfo, ATTRELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo, attarginfo, ATTRELNAME_ARG);
+	regresql_stats_check_required_arg(fcinfo, attarginfo, ATTRELSCHEMA_ARG);
+	regresql_stats_check_required_arg(fcinfo, attarginfo, ATTRELNAME_ARG);
 
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(ATTRELSCHEMA_ARG));
 	relname = TextDatumGetCString(PG_GETARG_DATUM(ATTRELNAME_ARG));
@@ -204,7 +191,7 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 	/* lock before looking up attribute */
 	reloid = RangeVarGetRelidExtended(makeRangeVar(nspname, relname, -1),
 									  ShareUpdateExclusiveLock, 0,
-									  RangeVarCallbackForStats, &locked_table);
+									  regresql_RangeVarCallbackForStats, &locked_table);
 
 	/* user can specify either attname or attnum, but not both */
 	if (!PG_ARGISNULL(ATTNAME_ARG))
@@ -249,7 +236,7 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 				 errmsg("cannot modify statistics on system column \"%s\"",
 						attname)));
 
-	stats_check_required_arg(fcinfo, attarginfo, INHERITED_ARG);
+	regresql_stats_check_required_arg(fcinfo, attarginfo, INHERITED_ARG);
 	inherited = PG_GETARG_BOOL(INHERITED_ARG);
 
 	/*
@@ -257,41 +244,41 @@ attribute_statistics_update(FunctionCallInfo fcinfo)
 	 * and skip the corresponding statistics kind, reporting back a failure.
 	 */
 
-	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_FREQS_ARG))
+	if (!regresql_stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_FREQS_ARG))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
+	if (!regresql_stats_check_arg_array(fcinfo, attarginfo, MOST_COMMON_ELEM_FREQS_ARG))
 	{
 		do_mcelem = false;
 		result = false;
 	}
-	if (!stats_check_arg_array(fcinfo, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
+	if (!regresql_stats_check_arg_array(fcinfo, attarginfo, ELEM_COUNT_HISTOGRAM_ARG))
 	{
 		do_dechist = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(fcinfo, attarginfo,
-							  MOST_COMMON_VALS_ARG, MOST_COMMON_FREQS_ARG))
+	if (!regresql_stats_check_arg_pair(fcinfo, attarginfo,
+									   MOST_COMMON_VALS_ARG, MOST_COMMON_FREQS_ARG))
 	{
 		do_mcv = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(fcinfo, attarginfo,
-							  MOST_COMMON_ELEMS_ARG,
-							  MOST_COMMON_ELEM_FREQS_ARG))
+	if (!regresql_stats_check_arg_pair(fcinfo, attarginfo,
+									   MOST_COMMON_ELEMS_ARG,
+									   MOST_COMMON_ELEM_FREQS_ARG))
 	{
 		do_mcelem = false;
 		result = false;
 	}
 
-	if (!stats_check_arg_pair(fcinfo, attarginfo,
-							  RANGE_LENGTH_HISTOGRAM_ARG,
-							  RANGE_EMPTY_FRAC_ARG))
+	if (!regresql_stats_check_arg_pair(fcinfo, attarginfo,
+									   RANGE_LENGTH_HISTOGRAM_ARG,
+									   RANGE_EMPTY_FRAC_ARG))
 	{
 		do_range_length_histogram = false;
 		result = false;
@@ -933,36 +920,6 @@ upsert_pg_statistic(Relation starel, HeapTuple oldtup,
 }
 
 /*
- * Delete pg_statistic record.
- */
-static bool
-delete_pg_statistic(Oid reloid, AttrNumber attnum, bool stainherit)
-{
-	Relation	sd = table_open(StatisticRelationId, RowExclusiveLock);
-	HeapTuple	oldtup;
-	bool		result = false;
-
-	/* Is there already a pg_statistic tuple for this attribute? */
-	oldtup = SearchSysCache3(STATRELATTINH,
-							 ObjectIdGetDatum(reloid),
-							 Int16GetDatum(attnum),
-							 BoolGetDatum(stainherit));
-
-	if (HeapTupleIsValid(oldtup))
-	{
-		CatalogTupleDelete(sd, &oldtup->t_self);
-		ReleaseSysCache(oldtup);
-		result = true;
-	}
-
-	table_close(sd, RowExclusiveLock);
-
-	CommandCounterIncrement();
-
-	return result;
-}
-
-/*
  * Initialize values and nulls for a new stats tuple.
  */
 static void
@@ -1000,58 +957,7 @@ init_empty_stats_tuple(Oid reloid, int16 attnum, bool inherited,
 	}
 }
 
-/*
- * Delete statistics for the given attribute.
- */
-Datum
-pg_clear_attribute_stats(PG_FUNCTION_ARGS)
-{
-	char	   *nspname;
-	char	   *relname;
-	Oid			reloid;
-	char	   *attname;
-	AttrNumber	attnum;
-	bool		inherited;
-	Oid			locked_table = InvalidOid;
-
-	stats_check_required_arg(fcinfo, cleararginfo, C_ATTRELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo, cleararginfo, C_ATTRELNAME_ARG);
-	stats_check_required_arg(fcinfo, cleararginfo, C_ATTNAME_ARG);
-	stats_check_required_arg(fcinfo, cleararginfo, C_INHERITED_ARG);
-
-	nspname = TextDatumGetCString(PG_GETARG_DATUM(C_ATTRELSCHEMA_ARG));
-	relname = TextDatumGetCString(PG_GETARG_DATUM(C_ATTRELNAME_ARG));
-
-	if (RecoveryInProgress())
-		ereport(ERROR,
-				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-				 errmsg("recovery is in progress"),
-				 errhint("Statistics cannot be modified during recovery.")));
-
-	reloid = RangeVarGetRelidExtended(makeRangeVar(nspname, relname, -1),
-									  ShareUpdateExclusiveLock, 0,
-									  RangeVarCallbackForStats, &locked_table);
-
-	attname = TextDatumGetCString(PG_GETARG_DATUM(C_ATTNAME_ARG));
-	attnum = get_attnum(reloid, attname);
-
-	if (attnum < 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot clear statistics on system column \"%s\"",
-						attname)));
-
-	if (attnum == InvalidAttrNumber)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_COLUMN),
-				 errmsg("column \"%s\" of relation \"%s\" does not exist",
-						attname, get_rel_name(reloid))));
-
-	inherited = PG_GETARG_BOOL(C_INHERITED_ARG);
-
-	delete_pg_statistic(reloid, attnum, inherited);
-	PG_RETURN_VOID();
-}
+PG_FUNCTION_INFO_V1(regresql_pg_restore_attribute_stats);
 
 /*
  * Import statistics for a given relation attribute.
@@ -1080,7 +986,7 @@ pg_clear_attribute_stats(PG_FUNCTION_ARGS)
  * in turn fail the function.
  */
 Datum
-pg_restore_attribute_stats(PG_FUNCTION_ARGS)
+regresql_pg_restore_attribute_stats(PG_FUNCTION_ARGS)
 {
 	LOCAL_FCINFO(positional_fcinfo, NUM_ATTRIBUTE_STATS_ARGS);
 	bool		result = true;
@@ -1088,8 +994,8 @@ pg_restore_attribute_stats(PG_FUNCTION_ARGS)
 	InitFunctionCallInfoData(*positional_fcinfo, NULL, NUM_ATTRIBUTE_STATS_ARGS,
 							 InvalidOid, NULL, NULL);
 
-	if (!stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo,
-										  attarginfo))
+	if (!regresql_stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo,
+												   attarginfo))
 		result = false;
 
 	if (!attribute_statistics_update(positional_fcinfo))
@@ -1097,3 +1003,5 @@ pg_restore_attribute_stats(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(result);
 }
+
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000 */

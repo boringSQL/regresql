@@ -15,20 +15,25 @@
  * 780900dcfab (2026-11-09).
  * Source: src/backend/statistics/stat_utils.c
  *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
 
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
+
 #include "access/htup_details.h"
 #include "access/relation.h"
 #include "catalog/index.h"
 #include "catalog/namespace.h"
+#include "catalog/objectaddress.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_database.h"
 #include "funcapi.h"
 #include "miscadmin.h"
-#include "statistics/stat_utils.h"
+#include "stat_utils.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
 #include "utils/array.h"
@@ -41,9 +46,9 @@
  * Ensure that a given argument is not null.
  */
 void
-stats_check_required_arg(FunctionCallInfo fcinfo,
-						 struct StatsArgInfo *arginfo,
-						 int argnum)
+regresql_stats_check_required_arg(FunctionCallInfo fcinfo,
+								  struct StatsArgInfo *arginfo,
+								  int argnum)
 {
 	if (PG_ARGISNULL(argnum))
 		ereport(ERROR,
@@ -60,9 +65,9 @@ stats_check_required_arg(FunctionCallInfo fcinfo,
  * true.
  */
 bool
-stats_check_arg_array(FunctionCallInfo fcinfo,
-					  struct StatsArgInfo *arginfo,
-					  int argnum)
+regresql_stats_check_arg_array(FunctionCallInfo fcinfo,
+							   struct StatsArgInfo *arginfo,
+							   int argnum)
 {
 	ArrayType  *arr;
 
@@ -101,9 +106,9 @@ stats_check_arg_array(FunctionCallInfo fcinfo,
  * true.
  */
 bool
-stats_check_arg_pair(FunctionCallInfo fcinfo,
-					 struct StatsArgInfo *arginfo,
-					 int argnum1, int argnum2)
+regresql_stats_check_arg_pair(FunctionCallInfo fcinfo,
+							  struct StatsArgInfo *arginfo,
+							  int argnum1, int argnum2)
 {
 	if (PG_ARGISNULL(argnum1) && PG_ARGISNULL(argnum2))
 		return true;
@@ -132,8 +137,8 @@ stats_check_arg_pair(FunctionCallInfo fcinfo,
  *   - the role has the MAINTAIN privilege on the relation
  */
 void
-RangeVarCallbackForStats(const RangeVar *relation,
-						 Oid relId, Oid oldRelId, void *arg)
+regresql_RangeVarCallbackForStats(const RangeVar *relation,
+								  Oid relId, Oid oldRelId, void *arg)
 {
 	Oid		   *locked_oid = (Oid *) arg;
 	Oid			table_oid = relId;
@@ -226,6 +231,7 @@ RangeVarCallbackForStats(const RangeVar *relation,
 	/* Check permissions */
 	if (!object_ownercheck(DatabaseRelationId, MyDatabaseId, GetUserId()))
 	{
+#if PG_VERSION_NUM >= 170000
 		AclResult	aclresult = pg_class_aclcheck(table_oid,
 												  GetUserId(),
 												  ACL_MAINTAIN);
@@ -234,6 +240,12 @@ RangeVarCallbackForStats(const RangeVar *relation,
 			aclcheck_error(aclresult,
 						   get_relkind_objtype(form->relkind),
 						   NameStr(form->relname));
+#else
+		if (!object_ownercheck(RelationRelationId, table_oid, GetUserId()))
+			aclcheck_error(ACLCHECK_NOT_OWNER,
+						   get_relkind_objtype(form->relkind),
+						   NameStr(form->relname));
+#endif
 	}
 
 	ReleaseSysCache(tuple);
@@ -294,9 +306,9 @@ stats_check_arg_type(const char *argname, Oid argtype, Oid expectedtype)
  * should also match the intended positional function.
  */
 bool
-stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
-								 FunctionCallInfo positional_fcinfo,
-								 struct StatsArgInfo *arginfo)
+regresql_stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
+										  FunctionCallInfo positional_fcinfo,
+										  struct StatsArgInfo *arginfo)
 {
 	Datum	   *args;
 	bool	   *argnulls;
@@ -369,3 +381,5 @@ stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 
 	return result;
 }
+
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000 */

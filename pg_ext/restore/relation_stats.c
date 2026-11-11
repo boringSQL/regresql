@@ -16,10 +16,14 @@
  * 780900dcfab (2026-11-09).
  * Source: src/backend/statistics/relation_stats.c
  *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
+
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
 
 #include <math.h>
 
@@ -27,7 +31,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "nodes/makefuncs.h"
-#include "statistics/stat_utils.h"
+#include "stat_utils.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/fmgrprotos.h"
@@ -81,18 +85,16 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 	bool		update_reltuples = false;
 	BlockNumber relallvisible = 0;
 	bool		update_relallvisible = false;
-	BlockNumber relallfrozen = 0;
-	bool		update_relallfrozen = false;
 	HeapTuple	ctup;
 	Form_pg_class pgcform;
-	int			replaces[4] = {0};
-	Datum		values[4] = {0};
-	bool		nulls[4] = {0};
+	int			replaces[3] = {0};
+	Datum		values[3] = {0};
+	bool		nulls[3] = {0};
 	int			nreplaces = 0;
 	Oid			locked_table = InvalidOid;
 
-	stats_check_required_arg(fcinfo, relarginfo, RELSCHEMA_ARG);
-	stats_check_required_arg(fcinfo, relarginfo, RELNAME_ARG);
+	regresql_stats_check_required_arg(fcinfo, relarginfo, RELSCHEMA_ARG);
+	regresql_stats_check_required_arg(fcinfo, relarginfo, RELNAME_ARG);
 
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
 	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
@@ -105,7 +107,7 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 
 	reloid = RangeVarGetRelidExtended(makeRangeVar(nspname, relname, -1),
 									  ShareUpdateExclusiveLock, 0,
-									  RangeVarCallbackForStats, &locked_table);
+									  regresql_RangeVarCallbackForStats, &locked_table);
 
 	if (!PG_ARGISNULL(RELPAGES_ARG))
 	{
@@ -138,12 +140,6 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 	{
 		relallvisible = PG_GETARG_UINT32(RELALLVISIBLE_ARG);
 		update_relallvisible = true;
-	}
-
-	if (!PG_ARGISNULL(RELALLFROZEN_ARG))
-	{
-		relallfrozen = PG_GETARG_UINT32(RELALLFROZEN_ARG);
-		update_relallfrozen = true;
 	}
 
 	/*
@@ -179,13 +175,6 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 		nreplaces++;
 	}
 
-	if (update_relallfrozen && relallfrozen != pgcform->relallfrozen)
-	{
-		replaces[nreplaces] = Anum_pg_class_relallfrozen;
-		values[nreplaces] = UInt32GetDatum(relallfrozen);
-		nreplaces++;
-	}
-
 	if (nreplaces > 0)
 	{
 		TupleDesc	tupdesc = RelationGetDescr(crel);
@@ -207,36 +196,10 @@ relation_statistics_update(FunctionCallInfo fcinfo)
 	return result;
 }
 
-/*
- * Clear statistics for a given pg_class entry; that is, set back to initial
- * stats for a newly-created table.
- */
-Datum
-pg_clear_relation_stats(PG_FUNCTION_ARGS)
-{
-	LOCAL_FCINFO(newfcinfo, 6);
-
-	InitFunctionCallInfoData(*newfcinfo, NULL, 6, InvalidOid, NULL, NULL);
-
-	newfcinfo->args[0].value = PG_GETARG_DATUM(0);
-	newfcinfo->args[0].isnull = PG_ARGISNULL(0);
-	newfcinfo->args[1].value = PG_GETARG_DATUM(1);
-	newfcinfo->args[1].isnull = PG_ARGISNULL(1);
-	newfcinfo->args[2].value = UInt32GetDatum(0);
-	newfcinfo->args[2].isnull = false;
-	newfcinfo->args[3].value = Float4GetDatum(-1.0);
-	newfcinfo->args[3].isnull = false;
-	newfcinfo->args[4].value = UInt32GetDatum(0);
-	newfcinfo->args[4].isnull = false;
-	newfcinfo->args[5].value = UInt32GetDatum(0);
-	newfcinfo->args[5].isnull = false;
-
-	relation_statistics_update(newfcinfo);
-	PG_RETURN_VOID();
-}
+PG_FUNCTION_INFO_V1(regresql_pg_restore_relation_stats);
 
 Datum
-pg_restore_relation_stats(PG_FUNCTION_ARGS)
+regresql_pg_restore_relation_stats(PG_FUNCTION_ARGS)
 {
 	LOCAL_FCINFO(positional_fcinfo, NUM_RELATION_STATS_ARGS);
 	bool		result = true;
@@ -245,8 +208,8 @@ pg_restore_relation_stats(PG_FUNCTION_ARGS)
 							 NUM_RELATION_STATS_ARGS,
 							 InvalidOid, NULL, NULL);
 
-	if (!stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo,
-										  relarginfo))
+	if (!regresql_stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo,
+												   relarginfo))
 		result = false;
 
 	if (!relation_statistics_update(positional_fcinfo))
@@ -254,3 +217,5 @@ pg_restore_relation_stats(PG_FUNCTION_ARGS)
 
 	PG_RETURN_BOOL(result);
 }
+
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000 */
