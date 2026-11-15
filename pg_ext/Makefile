@@ -1,20 +1,25 @@
+.DEFAULT_GOAL := all
+
 MODULE_big = pg_regresql
-OBJS = pg_regresql.o
+OBJS = pg_regresql.o restore/relation_stats.o restore/attribute_stats.o restore/stat_utils.o
 EXTENSION = pg_regresql
-DATA = pg_regresql--2.0.sql
-VERSION = 2.0
-DISTNAME = $(EXTENSION)-$(VERSION)
+DATA = pg_regresql--2.0.sql pg_regresql--2.1.sql
+EXT_VERSION = 2.1
+DISTNAME = $(EXTENSION)-$(EXT_VERSION)
 DIST_FILES = META.json Makefile $(EXTENSION).control $(DATA) $(EXTENSION).c README.md LICENSE
+RESTORE_FILES = restore/relation_stats.c restore/attribute_stats.c restore/stat_utils.c restore/stat_utils.h restore/README.md
 
 dist:
 	rm -rf /tmp/$(DISTNAME) $(DISTNAME).zip
-	mkdir /tmp/$(DISTNAME)
+	mkdir -p /tmp/$(DISTNAME)/restore
 	cp $(DIST_FILES) /tmp/$(DISTNAME)/
+	cp $(RESTORE_FILES) /tmp/$(DISTNAME)/restore/
 	cd /tmp && zip -r $(CURDIR)/$(DISTNAME).zip $(DISTNAME)/
 	rm -rf /tmp/$(DISTNAME)
 
 clean:
-	rm -f $(OBJS) $(MODULE_big).so $(MODULE_big).dylib $(MODULE_big).bc
+	rm -f $(OBJS) $(OBJS:.o=.bc) $(MODULE_big).so $(MODULE_big).dylib $(MODULE_big).bc
+	rm -rf .deps
 
 ifeq ($(filter clean dist,$(MAKECMDGOALS)),)
 ifndef PG_SOURCE

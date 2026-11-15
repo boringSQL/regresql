@@ -10,6 +10,9 @@ pg_ext/*.so
 pg_ext/*.dylib
 pg_ext/*.bc
 pg_ext/*.zip
+pg_ext/restore/*.o
+pg_ext/restore/*.bc
+pg_ext/.deps/
 
 /docs/*
 !/docs/LIBRARY.md

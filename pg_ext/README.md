@@ -59,6 +59,19 @@ For all sessions on a test instance, add to `postgresql.conf`:
 session_preload_libraries = 'pg_regresql'
 ```
 
+## Restoring statistics on PostgreSQL 16 and 17
+
+`CREATE EXTENSION pg_regresql;` adds the two `pg_restore_*` functions pg_dump 18
+and later call. Then load the dump, or just its statistics:
+
+    pg_dump --statistics-only -f stats.sql ...
+    psql -f stats.sql
+
+On 16, drop the `SET transaction_timeout = 0;` line first. Extended statistics
+are not restored: 16/17 reject the `pg_dependencies` literal pg_dump 19 emits,
+so skip those statements. From 2.0, drop and recreate the extension; there is no
+update script. On 18+ nothing is created, core has the functions.
+
 ## Use Cases
 
 The primary use case is SQL query plan regression testing. Inject production statistics into a CI/test database and compare `EXPLAIN` output across schema migrations or PostgreSQL upgrades.
@@ -83,7 +96,8 @@ Other use cases are:
 
 ## Compatibility
 
-- PostgreSQL 14+ (uses `get_relation_info_hook`, available since PG 8.3)
+- PostgreSQL 14+ for the planner hook (`get_relation_info_hook`)
+- Stats restore functions: 16 and 17 only; 18+ has them in core
 - Should work with `pg_hint_plan`, `hypopg`, and other hook-based extensions (not tested for now)
 
 ## License

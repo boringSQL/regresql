@@ -1,14 +1,14 @@
 {
   "name": "pg_regresql",
-  "abstract": "Trust pg_class statistics for query planning instead of physical file size",
-  "version": "2.0.0",
+  "abstract": "Trust pg_class statistics for query planning instead of physical file size; restore dumped statistics on 16/17",
+  "version": "2.1.0",
   "maintainer": "Radim Marek <radim@boringsql.com>",
   "license": "postgresql",
   "provides": {
     "pg_regresql": {
       "file": "pg_regresql.c",
-      "version": "2.0.0",
-      "abstract": "Trust pg_class statistics for query planning instead of physical file size"
+      "version": "2.1.0",
+      "abstract": "Trust pg_class statistics for query planning instead of physical file size; restore dumped statistics on 16/17"
     }
   },
   "prereqs": {
