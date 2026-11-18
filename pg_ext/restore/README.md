@@ -1,8 +1,8 @@
 # PostgreSQL code
 
 Not ours. Everything here is copied from the PostgreSQL tree. It is the base
-for the 2.1 backport of the stats restore functions, so 16 and 17 can load a
-dump made by pg_dump 18 or 19. The rest of pg_regresql is BSD-2-Clause; these
+for the 2.1 backport of the stats restore functions and the 2.2 backport of the
+extended statistics ones, so 16 and 17 can load a dump made by pg_dump 18 or 19. The rest of pg_regresql is BSD-2-Clause; these
 files stay under the PostgreSQL License.
 
 ## Provenance
@@ -15,6 +15,18 @@ files stay under the PostgreSQL License.
     src/backend/statistics/attribute_stats.c  -> attribute_stats.c
     src/backend/statistics/stat_utils.c       -> stat_utils.c
     src/include/statistics/stat_utils.h       -> stat_utils.h
+
+2.2 adds files from PostgreSQL master, since 18 has no extended statistics
+restore either:
+
+    repo      https://github.com/postgres/postgres
+    branch    master
+    commit    061065e28f0 (2026-10-08)
+
+    src/backend/statistics/extended_stats_funcs.c  -> extended_stats_funcs.c
+    src/backend/utils/adt/pg_ndistinct.c           -> pg_ndistinct.c
+    src/backend/utils/adt/pg_dependencies.c        -> pg_dependencies.c
+    src/include/statistics/statistics_format.h     -> statistics_format.h
 
 158c761 imported them from 1370a7832a2 (2026-10-07). bf52896 moved them to
 780900dcfab. The only upstream change in between is 780900dcfab (2026-11-09),
