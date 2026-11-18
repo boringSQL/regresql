@@ -24,9 +24,15 @@ restore either:
     commit    061065e28f0 (2026-10-08)
 
     src/backend/statistics/extended_stats_funcs.c  -> extended_stats_funcs.c
-    src/backend/utils/adt/pg_ndistinct.c           -> pg_ndistinct.c
-    src/backend/utils/adt/pg_dependencies.c        -> pg_dependencies.c
-    src/include/statistics/statistics_format.h     -> statistics_format.h
+    src/backend/utils/adt/pg_ndistinct.c           -> pg_ndistinct.c (input routine only)
+    src/backend/utils/adt/pg_dependencies.c        -> pg_dependencies.c (input routine only)
+    src/include/statistics/statistics_format.h     -> statistics_format.h (verbatim)
+    src/backend/statistics/mvdistinct.c            -> statext_import.c (free, validate)
+    src/backend/statistics/dependencies.c          -> statext_import.c (free, validate)
+    src/backend/statistics/mcv.c                   -> statext_import.c (free, import)
+    src/backend/statistics/stat_utils.c            -> stat_utils.c (statatt_set_slot,
+        statatt_init_empty_tuple, statatt_get_elem_type, statatt_get_range_type,
+        statatt_check_bounds_histogram added)
 
 158c761 imported them from 1370a7832a2 (2026-10-07). bf52896 moved them to
 780900dcfab. The only upstream change in between is 780900dcfab (2026-11-09),
@@ -69,9 +75,47 @@ pg_clear_relation_stats and pg_clear_attribute_stats are gone, together with
 cleararginfo and delete_pg_statistic, which only the clear function called.
 init_empty_stats_tuple stays because attribute_statistics_update uses it.
 
-Extended statistics are a separate problem and are not ported here.
-
 Otherwise the bodies are upstream, tabs and all.
+
+### 2.2, extended statistics
+
+The new files are wrapped in `PG_VERSION_NUM >= 160000 && PG_VERSION_NUM <
+190000`, and stat_utils.c is widened to the same range, so the objects stay
+consistent on 18 (compiles clean there, not run).
+
+All non-static symbols are prefixed `regresql_`. Entry points with
+PG_FUNCTION_INFO_V1: regresql_pg_restore_extended_stats,
+regresql_pg_clear_extended_stats, regresql_pg_ndistinct_in,
+regresql_pg_dependencies_in.
+
+statext_import.c collects the six functions 16/17 lack (statext_ndistinct_free
+and _validate, statext_dependencies_free and _validate, statext_mcv_free and
+_import) under regresql_ names, with statext_import.h. The serialize and
+deserialize routines are the server's own. STATS_MCVLIST_MAX_ITEMS is 10000 on
+16/17, the same as MAX_STATISTICS_TARGET.
+
+pg_ndistinct.c and pg_dependencies.c keep only the input parsers, out/recv/send
+are dropped, the 16/17 output stays. 16 and 17 differ in
+makeJsonLexContextCstringLen (no lex argument and no freeJsonLexContext on 16),
+so the pg_*_in functions have a PG_VERSION_NUM >= 170000 branch for that. The
+callbacks are upstream, JSON_SEM_ACTION_FAILED exists on 16.
+
+extended_stats_funcs.c: upsert_pg_statistic_ext_data lost its const qualifiers
+on the three arrays, and import_mcv, check_mcvlist_array and array_in_safe cast
+away const where they call array_contains_nulls, deconstruct_array_builtin and
+InputFunctionCallSafe. Those take const pointers only on master. The local
+stat_utils.h and statext_import.h replace statistics/stat_utils.h, and
+miscnodes.h is included explicitly.
+
+stat_utils.c gains the statatt_* helpers. The upstream errcode() additions in
+stats_fill_fcinfo_from_arg_pairs were not taken, they are 19-only polish.
+attribute_stats.c keeps its own static copies of the REL_18 slot helpers, they
+are not rewired to the new statatt_* functions.
+
+Not ported: the 19 output format of pg_ndistinct/pg_dependencies. 16/17 keep
+printing `{"1, 2": 11}`; only input understands the JSON array. Unknown literals
+(`'...'` without a cast) are not accepted for n_distinct/dependencies, pass
+`::pg_ndistinct` or `::pg_dependencies`.
 
 ## Re-syncing
 

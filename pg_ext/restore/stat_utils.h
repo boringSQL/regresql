@@ -19,10 +19,14 @@
 #ifndef STATS_UTILS_H
 #define STATS_UTILS_H
 
+#include "access/attnum.h"
 #include "fmgr.h"
 
 /* avoid including primnodes.h here */
 struct RangeVar;
+
+/* avoid including typcache.h here */
+typedef struct TypeCacheEntry TypeCacheEntry;
 
 struct StatsArgInfo
 {
@@ -45,5 +49,24 @@ extern void regresql_RangeVarCallbackForStats(const struct RangeVar *relation,
 extern bool regresql_stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 													  FunctionCallInfo positional_fcinfo,
 													  struct StatsArgInfo *arginfo);
+
+extern void regresql_statatt_init_empty_tuple(Oid reloid, int16 attnum, bool inherited,
+											  Datum *values, bool *nulls, bool *replaces);
+
+extern void regresql_statatt_set_slot(Datum *values, bool *nulls, bool *replaces,
+									  int16 stakind, Oid staop, Oid stacoll,
+									  Datum stanumbers, bool stanumbers_isnull,
+									  Datum stavalues, bool stavalues_isnull);
+
+extern bool regresql_statatt_get_elem_type(TypeCacheEntry *basetypcache,
+										   Oid *elemtypid, Oid *elem_eq_opr);
+extern bool regresql_statatt_get_range_type(TypeCacheEntry *basetypcache,
+											Oid *rangetypid);
+
+extern bool regresql_statatt_check_bounds_histogram(Datum arrayval);
+
+/* input routines of the 2.2 pg_ndistinct / pg_dependencies parsers */
+extern Datum regresql_pg_ndistinct_in(PG_FUNCTION_ARGS);
+extern Datum regresql_pg_dependencies_in(PG_FUNCTION_ARGS);
 
 #endif							/* STATS_UTILS_H */

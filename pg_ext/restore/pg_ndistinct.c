@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pg_ndistinct.c
- *		pg_ndistinct data type support.
+ *		pg_ndistinct data type support (input routine).
  *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -9,10 +9,18 @@
  * IDENTIFICATION
  *	  src/backend/utils/adt/pg_ndistinct.c
  *
+ * Ported from PostgreSQL master at commit 061065e28f0 (2026-10-08).
+ * Source: src/backend/utils/adt/pg_ndistinct.c
+ * Only the input routine is ported; the 16/17 output routine is untouched.
+ *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
+
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000
 
 #include "common/int.h"
 #include "common/jsonapi.h"
@@ -20,7 +28,7 @@
 #include "mb/pg_wchar.h"
 #include "nodes/miscnodes.h"
 #include "statistics/extended_stats_internal.h"
-#include "statistics/statistics_format.h"
+#include "statistics_format.h"
 #include "utils/builtins.h"
 #include "utils/fmgrprotos.h"
 
@@ -723,8 +731,10 @@ build_mvndistinct(NDistinctParseState *parse, char *str)
  * pg_ndistinct_in
  *		input routine for type pg_ndistinct.
  */
+PG_FUNCTION_INFO_V1(regresql_pg_ndistinct_in);
+
 Datum
-pg_ndistinct_in(PG_FUNCTION_ARGS)
+regresql_pg_ndistinct_in(PG_FUNCTION_ARGS)
 {
 	char	   *str = PG_GETARG_CSTRING(0);
 	NDistinctParseState parse_state;
@@ -755,10 +765,15 @@ pg_ndistinct_in(PG_FUNCTION_ARGS)
 	sem_action.array_element_end = NULL;
 	sem_action.scalar = ndistinct_scalar;
 
+#if PG_VERSION_NUM >= 170000
 	lex = makeJsonLexContextCstringLen(NULL, str, strlen(str),
 									   PG_UTF8, true);
 	result = pg_parse_json(lex, &sem_action);
 	freeJsonLexContext(lex);
+#else
+	lex = makeJsonLexContextCstringLen(str, strlen(str), PG_UTF8, true);
+	result = pg_parse_json(lex, &sem_action);
+#endif
 
 	if (result == JSON_SUCCESS)
 		bytes = build_mvndistinct(&parse_state, str);
@@ -782,69 +797,4 @@ pg_ndistinct_in(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
-/*
- * pg_ndistinct_out
- *		output routine for type pg_ndistinct
- *
- * Produces a human-readable representation of the value.
- */
-Datum
-pg_ndistinct_out(PG_FUNCTION_ARGS)
-{
-	bytea	   *data = PG_GETARG_BYTEA_PP(0);
-	MVNDistinct *ndist = statext_ndistinct_deserialize(data);
-	StringInfoData str;
-
-	initStringInfo(&str);
-	appendStringInfoChar(&str, '[');
-
-	for (uint32 i = 0; i < ndist->nitems; i++)
-	{
-		MVNDistinctItem item = ndist->items[i];
-
-		if (i > 0)
-			appendStringInfoString(&str, ", ");
-
-		if (item.nattributes <= 0)
-			elog(ERROR, "invalid zero-length attribute array in MVNDistinct");
-
-		appendStringInfo(&str, "{\"" PG_NDISTINCT_KEY_ATTRIBUTES "\": [%d",
-						 item.attributes[0]);
-
-		for (int j = 1; j < item.nattributes; j++)
-			appendStringInfo(&str, ", %d", item.attributes[j]);
-
-		appendStringInfo(&str, "], \"" PG_NDISTINCT_KEY_NDISTINCT "\": %d}",
-						 (int) item.ndistinct);
-	}
-
-	appendStringInfoChar(&str, ']');
-
-	PG_RETURN_CSTRING(str.data);
-}
-
-/*
- * pg_ndistinct_recv
- *		binary input routine for type pg_ndistinct
- */
-Datum
-pg_ndistinct_recv(PG_FUNCTION_ARGS)
-{
-	ereport(ERROR,
-			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("cannot accept a value of type %s", "pg_ndistinct")));
-
-	PG_RETURN_VOID();			/* keep compiler quiet */
-}
-
-/*
- * pg_ndistinct_send
- *		binary output routine for type pg_ndistinct
- *
- * n-distinct is serialized into a bytea value, so let's send that.
- */
-Datum
-pg_ndistinct_send(PG_FUNCTION_ARGS)
-{
-	return byteasend(fcinfo);
-}
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000 */

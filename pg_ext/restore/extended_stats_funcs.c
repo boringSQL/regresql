@@ -12,9 +12,16 @@
  * IDENTIFICATION
  *	  src/backend/statistics/extended_stats_funcs.c
  *
+ * Ported from PostgreSQL master at commit 061065e28f0 (2026-10-08).
+ * Source: src/backend/statistics/extended_stats_funcs.c
+ *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 #include "postgres.h"
+
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000
 
 #include "access/heapam.h"
 #include "catalog/indexing.h"
@@ -25,11 +32,13 @@
 #include "catalog/pg_statistic_ext.h"
 #include "catalog/pg_statistic_ext_data.h"
 #include "miscadmin.h"
+#include "nodes/miscnodes.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/optimizer.h"
 #include "statistics/extended_stats_internal.h"
-#include "statistics/stat_utils.h"
+#include "stat_utils.h"
+#include "statext_import.h"
 #include "utils/acl.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
@@ -140,9 +149,9 @@ typedef struct
 } StakindFlags;
 
 static void expand_stxkind(HeapTuple tup, StakindFlags *enabled);
-static void upsert_pg_statistic_ext_data(const Datum *values,
-										 const bool *nulls,
-										 const bool *replaces);
+static void upsert_pg_statistic_ext_data(Datum *values,
+										 bool *nulls,
+										 bool *replaces);
 
 static bool check_mcvlist_array(const ArrayType *arr, int argindex,
 								int required_ndims, int mcv_length);
@@ -265,8 +274,8 @@ expand_stxkind(HeapTuple tup, StakindFlags *enabled)
  * Perform the actual storage of a pg_statistic_ext_data tuple.
  */
 static void
-upsert_pg_statistic_ext_data(const Datum *values, const bool *nulls,
-							 const bool *replaces)
+upsert_pg_statistic_ext_data(Datum *values, bool *nulls,
+							 bool *replaces)
 {
 	Relation	pg_stextdata;
 	HeapTuple	stxdtup;
@@ -373,17 +382,17 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	}
 
 	/* relation arguments */
-	stats_check_required_arg(fcinfo, extarginfo, RELSCHEMA_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, RELSCHEMA_ARG);
 	relnspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, RELNAME_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, RELNAME_ARG);
 	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
 
 	/* extended statistics arguments */
-	stats_check_required_arg(fcinfo, extarginfo, STATSCHEMA_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, STATSCHEMA_ARG);
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(STATSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, STATNAME_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, STATNAME_ARG);
 	stxname = TextDatumGetCString(PG_GETARG_DATUM(STATNAME_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, INHERITED_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, INHERITED_ARG);
 	inherited = PG_GETARG_BOOL(INHERITED_ARG);
 
 	/*
@@ -394,7 +403,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 	 */
 	relid = RangeVarGetRelidExtended(makeRangeVar(relnspname, relname, -1),
 									 ShareUpdateExclusiveLock, 0,
-									 RangeVarCallbackForStats, &locked_table);
+									 regresql_RangeVarCallbackForStats, &locked_table);
 
 	nspoid = get_namespace_oid(nspname, true);
 	if (nspoid == InvalidOid)
@@ -659,7 +668,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		bytea	   *data = DatumGetByteaPP(ndistinct_datum);
 		MVNDistinct *ndistinct = statext_ndistinct_deserialize(data);
 
-		if (statext_ndistinct_validate(ndistinct, &stxform->stxkeys,
+		if (regresql_statext_ndistinct_validate(ndistinct, &stxform->stxkeys,
 									   numexprs, WARNING))
 		{
 			values[Anum_pg_statistic_ext_data_stxdndistinct - 1] = ndistinct_datum;
@@ -669,7 +678,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		else
 			success = false;
 
-		statext_ndistinct_free(ndistinct);
+		regresql_statext_ndistinct_free(ndistinct);
 	}
 
 	if (has.dependencies)
@@ -678,7 +687,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		bytea	   *data = DatumGetByteaPP(dependencies_datum);
 		MVDependencies *dependencies = statext_dependencies_deserialize(data);
 
-		if (statext_dependencies_validate(dependencies, &stxform->stxkeys,
+		if (regresql_statext_dependencies_validate(dependencies, &stxform->stxkeys,
 										  numexprs, WARNING))
 		{
 			values[Anum_pg_statistic_ext_data_stxddependencies - 1] = dependencies_datum;
@@ -688,7 +697,7 @@ extended_statistics_update(FunctionCallInfo fcinfo)
 		else
 			success = false;
 
-		statext_dependencies_free(dependencies);
+		regresql_statext_dependencies_free(dependencies);
 	}
 
 	if (has.mcv)
@@ -782,7 +791,7 @@ check_mcvlist_array(const ArrayType *arr, int argindex, int required_ndims,
 		return false;
 	}
 
-	if (array_contains_nulls(arr))
+	if (array_contains_nulls((ArrayType *) arr))
 	{
 		ereport(WARNING,
 				errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -877,10 +886,10 @@ import_mcv(const ArrayType *mcv_arr, const ArrayType *freqs_arr,
 	 * This part builds the contents for "most_common_val_nulls", based on the
 	 * values from "most_common_vals".
 	 */
-	deconstruct_array_builtin(mcv_arr, TEXTOID, &mcv_elems,
+	deconstruct_array_builtin((ArrayType *) mcv_arr, TEXTOID, &mcv_elems,
 							  &mcv_nulls, &check_nummcv);
 
-	mcv = statext_mcv_import(WARNING, numattrs,
+	mcv = regresql_statext_mcv_import(WARNING, numattrs,
 							 atttypids, atttypmods, atttypcolls,
 							 nitems, mcv_elems, mcv_nulls,
 							 (float8 *) ARR_DATA_PTR(freqs_arr),
@@ -1059,7 +1068,7 @@ array_in_safe(FmgrInfo *array_in, const char *s, Oid typid, int32 typmod,
 	 * Overwriting the existing hint (if any) is not ideal, and an error
 	 * context would only work for level >= ERROR.
 	 */
-	if (!InputFunctionCallSafe(array_in, s, typid, typmod,
+	if (!InputFunctionCallSafe(array_in, (char *) s, typid, typmod,
 							   (Node *) &escontext, &result))
 	{
 		StringInfoData hint_str;
@@ -1230,7 +1239,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 										 TYPECACHE_LT_OPR |
 										 TYPECACHE_EQ_OPR);
 
-	statatt_init_empty_tuple(InvalidOid, InvalidAttrNumber, false,
+	regresql_statatt_init_empty_tuple(InvalidOid, InvalidAttrNumber, false,
 							 values, nulls, replaces);
 
 	/*
@@ -1247,7 +1256,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 	 */
 	if (found[MOST_COMMON_ELEMS_ELEM] || found[ELEM_COUNT_HISTOGRAM_ELEM])
 	{
-		if (!statatt_get_elem_type(basetypcache, &elemtypid, &elemeqopr))
+		if (!regresql_statatt_get_elem_type(basetypcache, &elemtypid, &elemeqopr))
 		{
 			ereport(WARNING,
 					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1265,7 +1274,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		found[RANGE_EMPTY_FRAC_ELEM] ||
 		found[RANGE_BOUNDS_HISTOGRAM_ELEM])
 	{
-		if (!statatt_get_range_type(basetypcache, &rtypid))
+		if (!regresql_statatt_get_range_type(basetypcache, &rtypid))
 		{
 			ereport(WARNING,
 					errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -1367,7 +1376,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 				goto pg_statistic_error;
 			}
 
-			statatt_set_slot(values, nulls, replaces,
+			regresql_statatt_set_slot(values, nulls, replaces,
 							 STATISTIC_KIND_MCV,
 							 basetypcache->eq_opr, typcoll,
 							 stanumbers, false, stavalues, false);
@@ -1389,7 +1398,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		pfree(s);
 
 		if (val_ok)
-			statatt_set_slot(values, nulls, replaces,
+			regresql_statatt_set_slot(values, nulls, replaces,
 							 STATISTIC_KIND_HISTOGRAM,
 							 basetypcache->lt_opr, typcoll,
 							 0, true, stavalues, false);
@@ -1408,7 +1417,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 			ArrayType  *arry = construct_array_builtin(corr, 1, FLOAT4OID);
 			Datum		stanumbers = PointerGetDatum(arry);
 
-			statatt_set_slot(values, nulls, replaces,
+			regresql_statatt_set_slot(values, nulls, replaces,
 							 STATISTIC_KIND_CORRELATION,
 							 basetypcache->lt_opr, typcoll,
 							 stanumbers, false, 0, true);
@@ -1441,7 +1450,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 
 		/* Only set the slot if both datums have been built */
 		if (val_ok && num_ok)
-			statatt_set_slot(values, nulls, replaces,
+			regresql_statatt_set_slot(values, nulls, replaces,
 							 STATISTIC_KIND_MCELEM,
 							 elemeqopr, typcoll,
 							 stanumbers, false, stavalues, false);
@@ -1463,7 +1472,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 		pfree(s);
 
 		if (num_ok)
-			statatt_set_slot(values, nulls, replaces, STATISTIC_KIND_DECHIST,
+			regresql_statatt_set_slot(values, nulls, replaces, STATISTIC_KIND_DECHIST,
 							 elemeqopr, typcoll, stanumbers, false, 0, true);
 		else
 			goto pg_statistic_error;
@@ -1490,8 +1499,8 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 								  extexprargname[RANGE_BOUNDS_HISTOGRAM_ELEM],
 								  &val_ok);
 
-		if (val_ok && statatt_check_bounds_histogram(stavalues))
-			statatt_set_slot(values, nulls, replaces,
+		if (val_ok && regresql_statatt_check_bounds_histogram(stavalues))
+			regresql_statatt_set_slot(values, nulls, replaces,
 							 STATISTIC_KIND_BOUNDS_HISTOGRAM,
 							 InvalidOid, InvalidOid,
 							 0, true, stavalues, false);
@@ -1524,7 +1533,7 @@ import_pg_statistic(Relation pgsd, JsonbContainer *cont,
 								  &val_ok);
 
 		if (val_ok)
-			statatt_set_slot(values, nulls, replaces,
+			regresql_statatt_set_slot(values, nulls, replaces,
 							 STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM,
 							 Float8LessOperator, InvalidOid,
 							 stanumbers, false, stavalues, false);
@@ -1720,8 +1729,10 @@ delete_pg_statistic_ext_data(Oid stxoid, bool inherited)
  * given to stats_fill_fcinfo_from_arg_pairs to be mapped into positional
  * arguments.
  */
+PG_FUNCTION_INFO_V1(regresql_pg_restore_extended_stats);
+
 Datum
-pg_restore_extended_stats(PG_FUNCTION_ARGS)
+regresql_pg_restore_extended_stats(PG_FUNCTION_ARGS)
 {
 	LOCAL_FCINFO(positional_fcinfo, NUM_EXTENDED_STATS_ARGS);
 	bool		result = true;
@@ -1729,7 +1740,7 @@ pg_restore_extended_stats(PG_FUNCTION_ARGS)
 	InitFunctionCallInfoData(*positional_fcinfo, NULL, NUM_EXTENDED_STATS_ARGS,
 							 InvalidOid, NULL, NULL);
 
-	if (!stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo, extarginfo))
+	if (!regresql_stats_fill_fcinfo_from_arg_pairs(fcinfo, positional_fcinfo, extarginfo))
 		result = false;
 
 	if (!extended_statistics_update(positional_fcinfo))
@@ -1741,8 +1752,10 @@ pg_restore_extended_stats(PG_FUNCTION_ARGS)
 /*
  * Delete statistics for the given statistics object.
  */
+PG_FUNCTION_INFO_V1(regresql_pg_clear_extended_stats);
+
 Datum
-pg_clear_extended_stats(PG_FUNCTION_ARGS)
+regresql_pg_clear_extended_stats(PG_FUNCTION_ARGS)
 {
 	char	   *relnspname;
 	char	   *relname;
@@ -1757,17 +1770,17 @@ pg_clear_extended_stats(PG_FUNCTION_ARGS)
 	Oid			locked_table = InvalidOid;
 
 	/* relation arguments */
-	stats_check_required_arg(fcinfo, extarginfo, RELSCHEMA_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, RELSCHEMA_ARG);
 	relnspname = TextDatumGetCString(PG_GETARG_DATUM(RELSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, RELNAME_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, RELNAME_ARG);
 	relname = TextDatumGetCString(PG_GETARG_DATUM(RELNAME_ARG));
 
 	/* extended statistics arguments */
-	stats_check_required_arg(fcinfo, extarginfo, STATSCHEMA_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, STATSCHEMA_ARG);
 	nspname = TextDatumGetCString(PG_GETARG_DATUM(STATSCHEMA_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, STATNAME_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, STATNAME_ARG);
 	stxname = TextDatumGetCString(PG_GETARG_DATUM(STATNAME_ARG));
-	stats_check_required_arg(fcinfo, extarginfo, INHERITED_ARG);
+	regresql_stats_check_required_arg(fcinfo, extarginfo, INHERITED_ARG);
 	inherited = PG_GETARG_BOOL(INHERITED_ARG);
 
 	if (RecoveryInProgress())
@@ -1787,7 +1800,7 @@ pg_clear_extended_stats(PG_FUNCTION_ARGS)
 	 */
 	relid = RangeVarGetRelidExtended(makeRangeVar(relnspname, relname, -1),
 									 ShareUpdateExclusiveLock, 0,
-									 RangeVarCallbackForStats, &locked_table);
+									 regresql_RangeVarCallbackForStats, &locked_table);
 
 	/* Now check if the namespace of the stats object exists. */
 	nspoid = get_namespace_oid(nspname, true);
@@ -1837,3 +1850,5 @@ pg_clear_extended_stats(PG_FUNCTION_ARGS)
 
 	PG_RETURN_VOID();
 }
+
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000 */

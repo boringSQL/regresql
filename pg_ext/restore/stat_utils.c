@@ -22,7 +22,7 @@
 
 #include "postgres.h"
 
-#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000
 
 #include "access/htup_details.h"
 #include "access/relation.h"
@@ -30,7 +30,10 @@
 #include "catalog/namespace.h"
 #include "catalog/objectaddress.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_database.h"
+#include "catalog/pg_statistic.h"
+#include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "stat_utils.h"
@@ -39,8 +42,17 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
+#include "utils/rangetypes.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
+
+/* Default values assigned to new pg_statistic tuples. */
+#define DEFAULT_STATATT_NULL_FRAC      Float4GetDatum(0.0)	/* stanullfrac */
+#define DEFAULT_STATATT_AVG_WIDTH      Int32GetDatum(0) /* stawidth, same as
+														 * unknown */
+#define DEFAULT_STATATT_N_DISTINCT     Float4GetDatum(0.0)	/* stadistinct, same as
+															 * unknown */
 
 /*
  * Ensure that a given argument is not null.
@@ -382,4 +394,280 @@ regresql_stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 	return result;
 }
 
-#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000 */
+/*
+ * Derive element type information from the base type of an attribute.  This
+ * information is needed when the given type is one that contains elements of
+ * other types.
+ *
+ * The type cache entry should be derived from a previous call to
+ * the attribute type lookup.
+ */
+bool
+regresql_statatt_get_elem_type(TypeCacheEntry *basetypcache,
+					  Oid *elemtypid, Oid *elem_eq_opr)
+{
+	TypeCacheEntry *elemtypcache;
+
+	if (basetypcache->type_id == TSVECTOROID)
+	{
+		/*
+		 * Special case: element type for tsvector is text. See
+		 * compute_tsvector_stats().
+		 */
+		*elemtypid = TEXTOID;
+	}
+	else
+	{
+		/* find the underlying element type */
+		*elemtypid = get_element_type(basetypcache->type_id);
+	}
+
+	if (!OidIsValid(*elemtypid))
+		return false;
+
+	/* finds the right operator even if elemtypid is a domain */
+	elemtypcache = lookup_type_cache(*elemtypid, TYPECACHE_EQ_OPR);
+	if (!OidIsValid(elemtypcache->eq_opr))
+		return false;
+
+	*elem_eq_opr = elemtypcache->eq_opr;
+
+	return true;
+}
+
+/*
+ * Derive the range type to use from the attribute type, returning false if
+ * the attribute cannot have range statistics at all.
+ *
+ * For a multirange type, we step down to its range type, because
+ * compute_range_stats() stores range bounds even when analyzing a multirange
+ * column (see also range_typanalyze() and multirange_typanalyze()).
+ *
+ * The type cache entry should be derived from a previous call to
+ * the attribute type lookup, so that any domain has already been looked through.
+ */
+bool
+regresql_statatt_get_range_type(TypeCacheEntry *basetypcache, Oid *rangetypid)
+{
+	if (basetypcache->typtype == TYPTYPE_MULTIRANGE)
+		*rangetypid = get_multirange_range(basetypcache->type_id);
+	else if (basetypcache->typtype == TYPTYPE_RANGE)
+		*rangetypid = basetypcache->type_id;
+	else
+	{
+		*rangetypid = InvalidOid;
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * Find and update the slot of a stakind, or use the first empty slot.
+ *
+ * Core statistics types expect the stakind value to be one of the
+ * STATISTIC_KIND_* constants defined in pg_statistic.h, but types defined
+ * by extensions are not restricted to those values.
+ *
+ * In the case of core statistics, the required staop is determined by the
+ * stakind given and will either be a hardcoded oid, or the eq/lt operator
+ * derived from the attribute type lookup.  Likewise, types defined by extensions
+ * have no such restriction.
+ *
+ * The stacoll value should be either the atttypcoll derived from
+ * the attribute type lookup, or a hardcoded value required by that particular
+ * stakind.
+ *
+ * The value/null pairs for stanumbers and stavalues should be calculated
+ * based on the stakind, using the array input routines or constructed arrays.
+ */
+void
+regresql_statatt_set_slot(Datum *values, bool *nulls, bool *replaces,
+				 int16 stakind, Oid staop, Oid stacoll,
+				 Datum stanumbers, bool stanumbers_isnull,
+				 Datum stavalues, bool stavalues_isnull)
+{
+	int			slotidx;
+	int			first_empty = -1;
+	AttrNumber	stakind_attnum;
+	AttrNumber	staop_attnum;
+	AttrNumber	stacoll_attnum;
+
+	/* find existing slot with given stakind */
+	for (slotidx = 0; slotidx < STATISTIC_NUM_SLOTS; slotidx++)
+	{
+		stakind_attnum = Anum_pg_statistic_stakind1 - 1 + slotidx;
+
+		if (first_empty < 0 &&
+			DatumGetInt16(values[stakind_attnum]) == 0)
+			first_empty = slotidx;
+		if (DatumGetInt16(values[stakind_attnum]) == stakind)
+			break;
+	}
+
+	if (slotidx >= STATISTIC_NUM_SLOTS && first_empty >= 0)
+		slotidx = first_empty;
+
+	if (slotidx >= STATISTIC_NUM_SLOTS)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("maximum number of statistics slots exceeded: %d",
+						slotidx + 1)));
+
+	stakind_attnum = Anum_pg_statistic_stakind1 - 1 + slotidx;
+	staop_attnum = Anum_pg_statistic_staop1 - 1 + slotidx;
+	stacoll_attnum = Anum_pg_statistic_stacoll1 - 1 + slotidx;
+
+	if (DatumGetInt16(values[stakind_attnum]) != stakind)
+	{
+		values[stakind_attnum] = Int16GetDatum(stakind);
+		replaces[stakind_attnum] = true;
+	}
+	if (DatumGetObjectId(values[staop_attnum]) != staop)
+	{
+		values[staop_attnum] = ObjectIdGetDatum(staop);
+		replaces[staop_attnum] = true;
+	}
+	if (DatumGetObjectId(values[stacoll_attnum]) != stacoll)
+	{
+		values[stacoll_attnum] = ObjectIdGetDatum(stacoll);
+		replaces[stacoll_attnum] = true;
+	}
+	if (!stanumbers_isnull)
+	{
+		values[Anum_pg_statistic_stanumbers1 - 1 + slotidx] = stanumbers;
+		nulls[Anum_pg_statistic_stanumbers1 - 1 + slotidx] = false;
+		replaces[Anum_pg_statistic_stanumbers1 - 1 + slotidx] = true;
+	}
+	if (!stavalues_isnull)
+	{
+		values[Anum_pg_statistic_stavalues1 - 1 + slotidx] = stavalues;
+		nulls[Anum_pg_statistic_stavalues1 - 1 + slotidx] = false;
+		replaces[Anum_pg_statistic_stavalues1 - 1 + slotidx] = true;
+	}
+}
+
+/*
+ * Initialize values and nulls for a new pg_statistic tuple.
+ *
+ * The caller is responsible for allocating the arrays where the results are
+ * stored, which should be of size Natts_pg_statistic.
+ *
+ * When using this routine for a tuple inserted into pg_statistic, reloid,
+ * attnum and inherited flags should all be set.
+ *
+ * When using this routine for a tuple that is an element of a stxdexpr
+ * array inserted into pg_statistic_ext_data, reloid, attnum and inherited
+ * should be respectively set to InvalidOid, InvalidAttrNumber and false.
+ */
+void
+regresql_statatt_init_empty_tuple(Oid reloid, int16 attnum, bool inherited,
+						 Datum *values, bool *nulls, bool *replaces)
+{
+	memset(nulls, true, sizeof(bool) * Natts_pg_statistic);
+	memset(replaces, true, sizeof(bool) * Natts_pg_statistic);
+
+	/* This must initialize non-NULL attributes */
+	values[Anum_pg_statistic_starelid - 1] = ObjectIdGetDatum(reloid);
+	nulls[Anum_pg_statistic_starelid - 1] = false;
+	values[Anum_pg_statistic_staattnum - 1] = Int16GetDatum(attnum);
+	nulls[Anum_pg_statistic_staattnum - 1] = false;
+	values[Anum_pg_statistic_stainherit - 1] = BoolGetDatum(inherited);
+	nulls[Anum_pg_statistic_stainherit - 1] = false;
+
+	values[Anum_pg_statistic_stanullfrac - 1] = DEFAULT_STATATT_NULL_FRAC;
+	nulls[Anum_pg_statistic_stanullfrac - 1] = false;
+	values[Anum_pg_statistic_stawidth - 1] = DEFAULT_STATATT_AVG_WIDTH;
+	nulls[Anum_pg_statistic_stawidth - 1] = false;
+	values[Anum_pg_statistic_stadistinct - 1] = DEFAULT_STATATT_N_DISTINCT;
+	nulls[Anum_pg_statistic_stadistinct - 1] = false;
+
+	/* initialize stakind, staop, and stacoll slots */
+	for (int slotnum = 0; slotnum < STATISTIC_NUM_SLOTS; slotnum++)
+	{
+		values[Anum_pg_statistic_stakind1 + slotnum - 1] = (Datum) 0;
+		nulls[Anum_pg_statistic_stakind1 + slotnum - 1] = false;
+		values[Anum_pg_statistic_staop1 + slotnum - 1] = ObjectIdGetDatum(InvalidOid);
+		nulls[Anum_pg_statistic_staop1 + slotnum - 1] = false;
+		values[Anum_pg_statistic_stacoll1 + slotnum - 1] = ObjectIdGetDatum(InvalidOid);
+		nulls[Anum_pg_statistic_stacoll1 + slotnum - 1] = false;
+	}
+}
+
+/*
+ * Check that an imported bounds histogram (STATISTIC_KIND_BOUNDS_HISTOGRAM)
+ * is shaped the same way ANALYZE builds it in compute_range_stats().
+ *
+ * For both range-typed and multirange-typed columns the histogram is an array
+ * of ranges, so we take the range type from the array's element type.
+ */
+bool
+regresql_statatt_check_bounds_histogram(Datum arrayval)
+{
+	ArrayType  *arr = DatumGetArrayTypeP(arrayval);
+	Oid			rngtypid = ARR_ELEMTYPE(arr);
+	TypeCacheEntry *typcache;
+	int16		elmlen;
+	bool		elmbyval;
+	char		elmalign;
+	Datum	   *elems;
+	bool	   *nulls;
+	int			nelems;
+	RangeBound	prev_lower = {0};
+	RangeBound	prev_upper = {0};
+
+	typcache = lookup_type_cache(rngtypid, TYPECACHE_RANGE_INFO);
+
+	/*
+	 * The element type should always be a range type here.  This is
+	 * defensive. If it isn't, the bounds histogram is never consulted by the
+	 * range estimator, and there is nothing to verify.
+	 */
+	if (typcache->rngelemtype == NULL)
+		return true;
+
+	get_typlenbyvalalign(rngtypid, &elmlen, &elmbyval, &elmalign);
+	deconstruct_array(arr, rngtypid, elmlen, elmbyval, elmalign,
+					  &elems, &nulls, &nelems);
+
+	for (int i = 0; i < nelems; i++)
+	{
+		RangeBound	lower,
+					upper;
+		bool		empty;
+
+		/*
+		 * NULL elements are already rejected by the array input routines and
+		 * array_in_safe().
+		 */
+		range_deserialize(typcache, DatumGetRangeTypeP(elems[i]),
+						  &lower, &upper, &empty);
+
+		if (empty)
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("\"%s\" must not contain empty ranges",
+							"range_bounds_histogram")));
+			return false;
+		}
+
+		if (i > 0 &&
+			(range_cmp_bounds(typcache, &lower, &prev_lower) < 0 ||
+			 range_cmp_bounds(typcache, &upper, &prev_upper) < 0))
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("\"%s\" must have its lower and upper bounds sorted in ascending order",
+							"range_bounds_histogram")));
+			return false;
+		}
+
+		prev_lower = lower;
+		prev_upper = upper;
+	}
+
+	return true;
+}
+
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000 */

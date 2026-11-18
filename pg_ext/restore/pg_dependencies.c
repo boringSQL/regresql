@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * pg_dependencies.c
- *		pg_dependencies data type support.
+ *		pg_dependencies data type support (input routine).
  *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -9,10 +9,18 @@
  * IDENTIFICATION
  *	  src/backend/utils/adt/pg_dependencies.c
  *
+ * Ported from PostgreSQL master at commit 061065e28f0 (2026-10-08).
+ * Source: src/backend/utils/adt/pg_dependencies.c
+ * Only the input routine is ported; the 16/17 output routine is untouched.
+ *
+ * Local modifications are listed in README.md in this directory.
+ *
  *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
+
+#if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000
 
 #include "common/int.h"
 #include "common/jsonapi.h"
@@ -20,7 +28,7 @@
 #include "mb/pg_wchar.h"
 #include "nodes/miscnodes.h"
 #include "statistics/extended_stats_internal.h"
-#include "statistics/statistics_format.h"
+#include "statistics_format.h"
 #include "utils/builtins.h"
 #include "utils/float.h"
 #include "utils/fmgrprotos.h"
@@ -743,8 +751,10 @@ build_mvdependencies(DependenciesParseState *parse, char *str)
  *     {"attributes": [2,-1], "dependency": 1, "degree": 1.0000}]
  *
  */
+PG_FUNCTION_INFO_V1(regresql_pg_dependencies_in);
+
 Datum
-pg_dependencies_in(PG_FUNCTION_ARGS)
+regresql_pg_dependencies_in(PG_FUNCTION_ARGS)
 {
 	char	   *str = PG_GETARG_CSTRING(0);
 	bytea	   *bytes = NULL;
@@ -778,10 +788,15 @@ pg_dependencies_in(PG_FUNCTION_ARGS)
 	sem_action.object_field_end = NULL;
 	sem_action.scalar = dependencies_scalar;
 
-	lex = makeJsonLexContextCstringLen(NULL, str, strlen(str), PG_UTF8, true);
-
+#if PG_VERSION_NUM >= 170000
+	lex = makeJsonLexContextCstringLen(NULL, str, strlen(str),
+									   PG_UTF8, true);
 	result = pg_parse_json(lex, &sem_action);
 	freeJsonLexContext(lex);
+#else
+	lex = makeJsonLexContextCstringLen(str, strlen(str), PG_UTF8, true);
+	result = pg_parse_json(lex, &sem_action);
+#endif
 
 	if (result == JSON_SUCCESS)
 		bytes = build_mvdependencies(&parse_state, str);
@@ -805,68 +820,4 @@ pg_dependencies_in(PG_FUNCTION_ARGS)
 	PG_RETURN_NULL();
 }
 
-
-/*
- * pg_dependencies_out		- output routine for type pg_dependencies.
- */
-Datum
-pg_dependencies_out(PG_FUNCTION_ARGS)
-{
-	bytea	   *data = PG_GETARG_BYTEA_PP(0);
-	MVDependencies *dependencies = statext_dependencies_deserialize(data);
-	StringInfoData str;
-
-	initStringInfo(&str);
-	appendStringInfoChar(&str, '[');
-
-	for (uint32 i = 0; i < dependencies->ndeps; i++)
-	{
-		MVDependency *dependency = dependencies->deps[i];
-
-		if (i > 0)
-			appendStringInfoString(&str, ", ");
-
-		if (dependency->nattributes <= 1)
-			elog(ERROR, "invalid zero-length nattributes array in MVDependencies");
-
-		appendStringInfo(&str, "{\"" PG_DEPENDENCIES_KEY_ATTRIBUTES "\": [%d",
-						 dependency->attributes[0]);
-
-		for (int j = 1; j < dependency->nattributes - 1; j++)
-			appendStringInfo(&str, ", %d", dependency->attributes[j]);
-
-		appendStringInfo(&str, "], \"" PG_DEPENDENCIES_KEY_DEPENDENCY "\": %d, "
-						 "\"" PG_DEPENDENCIES_KEY_DEGREE "\": %f}",
-						 dependency->attributes[dependency->nattributes - 1],
-						 dependency->degree);
-	}
-
-	appendStringInfoChar(&str, ']');
-
-	PG_RETURN_CSTRING(str.data);
-}
-
-/*
- * pg_dependencies_recv		- binary input routine for type pg_dependencies.
- */
-Datum
-pg_dependencies_recv(PG_FUNCTION_ARGS)
-{
-	ereport(ERROR,
-			(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-			 errmsg("cannot accept a value of type %s", "pg_dependencies")));
-
-	PG_RETURN_VOID();			/* keep compiler quiet */
-}
-
-/*
- * pg_dependencies_send		- binary output routine for type pg_dependencies.
- *
- * Functional dependencies are serialized in a bytea value (although the type
- * is named differently), so let's just send that.
- */
-Datum
-pg_dependencies_send(PG_FUNCTION_ARGS)
-{
-	return byteasend(fcinfo);
-}
+#endif							/* PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 190000 */
