@@ -107,15 +107,19 @@ InputFunctionCallSafe. Those take const pointers only on master. The local
 stat_utils.h and statext_import.h replace statistics/stat_utils.h, and
 miscnodes.h is included explicitly.
 
-stat_utils.c gains the statatt_* helpers. The upstream errcode() additions in
-stats_fill_fcinfo_from_arg_pairs were not taken, they are 19-only polish.
-attribute_stats.c keeps its own static copies of the REL_18 slot helpers, they
-are not rewired to the new statatt_* functions.
+stat_utils.c: besides the statatt_* helpers, stats_fill_fcinfo_from_arg_pairs
+accepts a text value for n_distinct and dependencies and parses it with the
+same input routines (stats_text_to_bytea), so the argument type check upstream
+makes still holds for everything else. A parse error is thrown as a WARNING and
+the function returns false. The upstream errcode() additions in that function
+were not taken, they are 19-only polish. attribute_stats.c keeps its own static
+copies of the REL_18 slot helpers, they are not rewired to the new statatt_*
+functions.
 
 Not ported: the 19 output format of pg_ndistinct/pg_dependencies. 16/17 keep
 printing `{"1, 2": 11}`; only input understands the JSON array. Unknown literals
 (`'...'` without a cast) are not accepted for n_distinct/dependencies, pass
-`::pg_ndistinct` or `::pg_dependencies`.
+`::pg_ndistinct`, `::pg_dependencies` or `::text`.
 
 ## Re-syncing
 

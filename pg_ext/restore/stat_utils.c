@@ -36,6 +36,7 @@
 #include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
+#include "nodes/miscnodes.h"
 #include "stat_utils.h"
 #include "storage/lmgr.h"
 #include "utils/acl.h"
@@ -292,6 +293,9 @@ get_arg_by_name(const char *argname, struct StatsArgInfo *arginfo)
 
 /*
  * Ensure that a given argument matched the expected type.
+ *
+ * Local addition: n_distinct and dependencies may also be given as text,
+ * stats_text_to_bytea() converts those before the type check is reached.
  */
 static bool
 stats_check_arg_type(const char *argname, Oid argtype, Oid expectedtype)
@@ -306,6 +310,36 @@ stats_check_arg_type(const char *argname, Oid argtype, Oid expectedtype)
 	}
 
 	return true;
+}
+
+/*
+ * Local addition.  Parse a text value for a pg_ndistinct or pg_dependencies
+ * argument with the PG19 input routines.  An error is thrown as a WARNING,
+ * the same way the other conversion failures of the restore functions are.
+ */
+static bool
+stats_text_to_bytea(const char *argname, Datum value, Oid argtype, Datum *result)
+{
+	ErrorSaveContext escontext = {T_ErrorSaveContext};
+	char	   *s = TextDatumGetCString(value);
+	bool		ok;
+
+	escontext.details_wanted = true;
+
+	ok = DirectInputFunctionCallSafe(argtype == PG_NDISTINCTOID ?
+									 regresql_pg_ndistinct_in :
+									 regresql_pg_dependencies_in,
+									 s, InvalidOid, -1,
+									 (Node *) &escontext, result);
+
+	if (!ok)
+	{
+		escontext.error_data->elevel = WARNING;
+		ThrowErrorData(escontext.error_data);
+	}
+
+	pfree(s);
+	return ok;
 }
 
 /*
@@ -379,6 +413,19 @@ regresql_stats_fill_fcinfo_from_arg_pairs(FunctionCallInfo pairs_fcinfo,
 			continue;
 
 		argnum = get_arg_by_name(argname, arginfo);
+
+		if (argnum >= 0 && types[i + 1] == TEXTOID &&
+			(arginfo[argnum].argtype == PG_NDISTINCTOID ||
+			 arginfo[argnum].argtype == PG_DEPENDENCIESOID))
+		{
+			if (!stats_text_to_bytea(argname, args[i + 1],
+									 arginfo[argnum].argtype, &args[i + 1]))
+			{
+				result = false;
+				continue;
+			}
+			types[i + 1] = arginfo[argnum].argtype;
+		}
 
 		if (argnum < 0 || !stats_check_arg_type(argname, types[i + 1],
 												arginfo[argnum].argtype))
