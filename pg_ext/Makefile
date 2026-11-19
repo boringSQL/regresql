@@ -1,13 +1,15 @@
 .DEFAULT_GOAL := all
 
 MODULE_big = pg_regresql
-OBJS = pg_regresql.o restore/relation_stats.o restore/attribute_stats.o restore/stat_utils.o
+OBJS = pg_regresql.o restore/relation_stats.o restore/attribute_stats.o restore/stat_utils.o \
+	restore/extended_stats_funcs.o restore/statext_import.o restore/pg_ndistinct.o restore/pg_dependencies.o
 EXTENSION = pg_regresql
-DATA = pg_regresql--2.0.sql pg_regresql--2.1.sql
-EXT_VERSION = 2.1.0
+DATA = pg_regresql--2.0.sql pg_regresql--2.1.sql pg_regresql--2.2.sql pg_regresql--2.1--2.2.sql
+EXT_VERSION = 2.2.0
 DISTNAME = $(EXTENSION)-$(EXT_VERSION)
 DIST_FILES = META.json Makefile $(EXTENSION).control $(DATA) $(EXTENSION).c README.md LICENSE
-RESTORE_FILES = restore/relation_stats.c restore/attribute_stats.c restore/stat_utils.c restore/stat_utils.h restore/README.md
+RESTORE_FILES = restore/relation_stats.c restore/attribute_stats.c restore/stat_utils.c restore/stat_utils.h \
+	restore/extended_stats_funcs.c restore/statext_import.c restore/statext_import.h restore/pg_ndistinct.c restore/pg_dependencies.c restore/statistics_format.h restore/README.md
 
 dist:
 	rm -rf /tmp/$(DISTNAME) $(DISTNAME).zip

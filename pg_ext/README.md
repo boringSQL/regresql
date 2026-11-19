@@ -67,10 +67,18 @@ and later call. Then load the dump, or just its statistics:
     pg_dump --statistics-only -f stats.sql ...
     psql -f stats.sql
 
-On 16, drop the `SET transaction_timeout = 0;` line first. Extended statistics
-are not restored: 16/17 reject the `pg_dependencies` literal pg_dump 19 emits,
-so skip those statements. From 2.0, drop and recreate the extension; there is no
-update script. On 18+ nothing is created, core has the functions.
+On 16, drop the `SET transaction_timeout = 0;` line first. From 2.0, drop and
+recreate the extension; from 2.1, `ALTER EXTENSION pg_regresql UPDATE`. On 18+
+nothing is created, core has the functions.
+
+2.2 adds `pg_restore_extended_stats()` and `pg_clear_extended_stats()` from
+PostgreSQL 19, and makes `'[{"attributes" : [11,14], "ndistinct" : 24}]'::pg_ndistinct`
+and the `pg_dependencies` equivalent work on 16/17, which is what pg_dump 19
+emits. n_distinct and dependencies also accept plain text. The two input
+functions are detached from the extension, so DROP EXTENSION leaves the casts
+working (and the functions behind, they are named `regresql_pg_*_in`). Output of
+those types stays in the 16/17 format. The test is
+`pg_ext/test/ext_stats/run.sh`.
 
 ## Use Cases
 
@@ -97,7 +105,7 @@ Other use cases are:
 ## Compatibility
 
 - PostgreSQL 14+ for the planner hook (`get_relation_info_hook`)
-- Stats restore functions: 16 and 17 only; 18+ has them in core
+- Stats restore functions: 16 and 17 only; 18+ has the relation and attribute ones in core (extended ones only from 19)
 - Should work with `pg_hint_plan`, `hypopg`, and other hook-based extensions (not tested for now)
 
 ## License

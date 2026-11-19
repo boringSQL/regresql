@@ -81,7 +81,8 @@ Otherwise the bodies are upstream, tabs and all.
 
 The new files are wrapped in `PG_VERSION_NUM >= 160000 && PG_VERSION_NUM <
 190000`, and stat_utils.c is widened to the same range, so the objects stay
-consistent on 18 (compiles clean there, not run).
+consistent on 18 (compiles clean there, not run). The SQL still creates the
+functions on 16 and 17 only.
 
 All non-static symbols are prefixed `regresql_`. Entry points with
 PG_FUNCTION_INFO_V1: regresql_pg_restore_extended_stats,
@@ -120,6 +121,13 @@ Not ported: the 19 output format of pg_ndistinct/pg_dependencies. 16/17 keep
 printing `{"1, 2": 11}`; only input understands the JSON array. Unknown literals
 (`'...'` without a cast) are not accepted for n_distinct/dependencies, pass
 `::pg_ndistinct`, `::pg_dependencies` or `::text`.
+
+The SQL script points pg_type.typinput of pg_ndistinct and pg_dependencies at
+regresql_pg_ndistinct_in / regresql_pg_dependencies_in, then detaches both
+functions from the extension. They survive DROP EXTENSION, so the casts keep
+working and pg_type never points at a dropped function. Removing the .so while
+they exist breaks both types. CREATE EXTENSION adopts the leftover functions
+again before replacing them.
 
 ## Re-syncing
 
