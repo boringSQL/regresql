@@ -264,12 +264,12 @@ func buildIndexRegressionRecommendations(tableName string, baseline ScanInfo) []
 }
 
 func GetSeveritySymbol(severity string) string {
-	switch severity {
-	case "critical":
+	switch Severity(severity) {
+	case SevCritical:
 		return "✗"
-	case "warning":
+	case SevWarning:
 		return "⚠️"
-	case "info":
+	case SevInfo:
 		return "ℹ️"
 	default:
 		return "•"

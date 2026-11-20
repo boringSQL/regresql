@@ -54,7 +54,7 @@ Query Parameters: '%v'
 	}
 
 	// Add plan warnings as diagnostics
-	if len(r.PlanWarnings) > 0 && (r.Status == "passed" || r.Status == "warning") {
+	if len(r.PlanWarnings) > 0 && r.Status == "passed" {
 		warningMsg := "Plan Quality Warnings:"
 		for _, warning := range r.PlanWarnings {
 			warningMsg += fmt.Sprintf("\n  - %s", warning.Message)
@@ -71,9 +71,6 @@ Query Parameters: '%v'
 		f.t.Ok(true, r.Name)
 	case "failed":
 		f.t.Ok(false, r.Name)
-	case "warning":
-		// Treat warnings as passing but with diagnostic info
-		f.t.Ok(true, r.Name)
 	case "skipped":
 		f.t.Skip(1, r.Name)
 	}

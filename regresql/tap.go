@@ -417,7 +417,7 @@ func planChoiceResult(testName string, ok bool, r *TestResult) (string, string) 
 
 func hasCriticalRegression(regressions []PlanRegression) bool {
 	for _, reg := range regressions {
-		if reg.Severity == "critical" {
+		if SeverityAtLeast(reg.Severity, SevCritical) {
 			return true
 		}
 	}

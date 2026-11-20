@@ -73,12 +73,12 @@ func (f *ConsoleFormatter) colorize(text, color string) string {
 }
 
 func (f *ConsoleFormatter) severityColor(severity string) string {
-	switch severity {
-	case "error", "critical":
+	switch Severity(severity) {
+	case SevError, SevCritical:
 		return colorRed
-	case "warning":
+	case SevWarning:
 		return colorYellow
-	case "info":
+	case SevInfo:
 		return colorCyan
 	default:
 		return colorDim
@@ -117,8 +117,6 @@ func (f *ConsoleFormatter) AddResult(r TestResult, w io.Writer) error {
 		fmt.Fprint(w, f.colorize("F", colorRed))
 	case "pending":
 		fmt.Fprint(w, f.colorize("?", colorCyan))
-	case "warning":
-		fmt.Fprint(w, f.colorize("W", colorYellow))
 	case "skipped":
 		fmt.Fprint(w, f.colorize("S", colorDim))
 	}
@@ -142,9 +140,6 @@ func (f *ConsoleFormatter) printVerboseResult(r TestResult, w io.Writer) {
 	case "pending":
 		statusIcon = "? PENDING"
 		statusColor = colorCyan
-	case "warning":
-		statusIcon = "⚠ WARNING"
-		statusColor = colorYellow
 	case "skipped":
 		statusIcon = "- SKIP"
 		statusColor = colorDim
@@ -223,8 +218,7 @@ func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
 }
 
 func (f *ConsoleFormatter) printPlanRegressions(regressions []PlanRegression, w io.Writer) {
-	hasCritical := hasAnyCritical(regressions)
-	if hasCritical {
+	if hasCriticalRegression(regressions) {
 		fmt.Fprintln(w, "  ⚠️  PLAN REGRESSION DETECTED:")
 	}
 
@@ -236,7 +230,7 @@ func (f *ConsoleFormatter) printPlanRegressions(regressions []PlanRegression, w 
 			fmt.Fprintf(w, "  %s %s\n", symbol, reg.Message)
 		}
 
-		if reg.Severity == "critical" && len(reg.Recommendations) > 0 {
+		if SeverityAtLeast(reg.Severity, SevCritical) && len(reg.Recommendations) > 0 {
 			fmt.Fprintln(w)
 			fmt.Fprintln(w, "  Recommendations:")
 			for _, rec := range reg.Recommendations {
@@ -539,15 +533,6 @@ func (f *ConsoleFormatter) printSuggestions(s *TestSummary, w io.Writer) {
 func (f *ConsoleFormatter) planChoiceFailures() bool {
 	for _, r := range f.results {
 		if r.Status == "failed" && r.Type == "cost" && r.PlanChoice {
-			return true
-		}
-	}
-	return false
-}
-
-func hasAnyCritical(regressions []PlanRegression) bool {
-	for _, reg := range regressions {
-		if reg.Severity == "critical" {
 			return true
 		}
 	}

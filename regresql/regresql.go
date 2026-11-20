@@ -491,10 +491,10 @@ func Test(opts TestOptions) {
 
 func hasSeverityViolation(results []TestResult, strict bool) bool {
 	match := func(sev string) bool {
-		if sev == "error" {
-			return true
+		if strict {
+			return SeverityAtLeast(sev, SevWarning)
 		}
-		return strict && sev == "warning"
+		return SeverityAtLeast(sev, SevError)
 	}
 	for _, r := range results {
 		for _, w := range r.PlanWarnings {

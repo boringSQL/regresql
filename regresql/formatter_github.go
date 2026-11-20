@@ -19,7 +19,7 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 		// Show plan warnings even for passed tests
 		if len(r.PlanWarnings) > 0 {
 			for _, warning := range r.PlanWarnings {
-				if warning.Severity == "warning" {
+				if Severity(warning.Severity) == SevWarning {
 					msg := strings.ReplaceAll(warning.Message, "%", "%%")
 					fmt.Fprintf(w, "::warning::%s - %s\n", r.Name, msg)
 				}
@@ -35,12 +35,12 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 			fmt.Fprintf(w, "::error::%s\n", msg)
 		} else if r.Type == "cost" {
 			// Check for plan regressions
-			hasCriticalRegression := false
+			hasCritical := false
 			var criticalMsg string
 
 			for _, reg := range r.PlanRegressions {
-				if reg.Severity == "critical" {
-					hasCriticalRegression = true
+				if SeverityAtLeast(reg.Severity, SevCritical) {
+					hasCritical = true
 					if reg.Table != "" {
 						criticalMsg = fmt.Sprintf(" - PLAN REGRESSION: Table '%s' changed from %s to %s",
 							reg.Table, reg.OldScan, reg.NewScan)
@@ -51,7 +51,7 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 				}
 			}
 
-			if hasCriticalRegression {
+			if hasCritical {
 				fmt.Fprintf(w, "::error::Cost regression in %s: Expected %.2f, got %.2f (+%.1f%%)%s\n",
 					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease, criticalMsg)
 			} else {
@@ -92,14 +92,6 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 		}
 		if r.Error != "" {
 			fmt.Fprintf(w, "::error::%s: %s\n", r.Name, r.Error)
-		}
-	case "warning":
-		// Show plan quality warnings
-		if len(r.PlanWarnings) > 0 {
-			for _, warning := range r.PlanWarnings {
-				msg := strings.ReplaceAll(warning.Message, "%", "%%")
-				fmt.Fprintf(w, "::warning::%s - %s\n", r.Name, msg)
-			}
 		}
 	case "skipped":
 		fmt.Fprintf(w, "::warning::%s skipped: %s\n", r.Name, r.Error)
