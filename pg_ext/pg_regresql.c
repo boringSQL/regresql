@@ -129,9 +129,7 @@ _PG_init(void)
                              PGC_USERSET,
                              GUC_NOT_IN_SAMPLE,
                              NULL, NULL, NULL);
-#if PG_VERSION_NUM >= 150000
     MarkGUCPrefixReserved("pg_regresql");
-#endif
 
     // setup the hook function
     prev_hook = get_relation_info_hook;

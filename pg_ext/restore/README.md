@@ -58,7 +58,7 @@ Each .c file is wrapped in
 
     #if PG_VERSION_NUM >= 160000 && PG_VERSION_NUM < 180000
 
-so 14 and 15 keep building (empty objects) and 18+ is unaffected. On 16/17 the
+so 15 keeps building (empty objects) and 18+ is unaffected. On 16/17 the
 two functions are real.
 
 Every non-static symbol got a regresql_ prefix. It is cheap, and it stops a

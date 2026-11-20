@@ -61,8 +61,9 @@ session_preload_libraries = 'pg_regresql'
 
 ## Restoring statistics on PostgreSQL 16 and 17
 
-`CREATE EXTENSION pg_regresql;` adds the two `pg_restore_*` functions pg_dump 18
-and later call. Then load the dump, or just its statistics:
+`CREATE EXTENSION pg_regresql;` adds the `pg_restore_*` functions pg_dump 18
+and later call, plus `pg_clear_extended_stats()`. Then load the dump, or just
+its statistics:
 
     pg_dump --statistics-only -f stats.sql ...
     psql -f stats.sql
@@ -104,7 +105,7 @@ Other use cases are:
 
 ## Compatibility
 
-- PostgreSQL 14+ for the planner hook (`get_relation_info_hook`)
+- PostgreSQL 15+ for the planner hook (`get_relation_info_hook`)
 - Stats restore functions: 16 and 17 only; 18+ has the relation and attribute ones in core (extended ones only from 19)
 - Should work with `pg_hint_plan`, `hypopg`, and other hook-based extensions (not tested for now)
 
