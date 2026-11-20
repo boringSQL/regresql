@@ -9,7 +9,7 @@
  * IDENTIFICATION
  *	  src/backend/utils/adt/pg_ndistinct.c
  *
- * Ported from PostgreSQL master at commit 061065e28f0 (2026-10-08).
+ * Ported from PostgreSQL REL_19_0 (5c839a2a08b, 2026-11-16).
  * Source: src/backend/utils/adt/pg_ndistinct.c
  * Only the input routine is ported; the 16/17 output routine is untouched.
  *
@@ -185,7 +185,7 @@ ndistinct_object_end(void *state)
 	/* Create the MVNDistinctItem */
 	item = palloc_object(MVNDistinctItem);
 	item->nattributes = natts;
-	item->attributes = palloc0_array(AttrNumber, natts);
+	item->attributes = palloc0(natts * sizeof(AttrNumber));
 	item->ndistinct = (double) parse->ndistinct;
 
 	for (int i = 0; i < natts; i++)

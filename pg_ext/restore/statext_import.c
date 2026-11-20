@@ -11,7 +11,7 @@
  *	  src/backend/statistics/dependencies.c
  *	  src/backend/statistics/mcv.c
  *
- * Ported from PostgreSQL master at commit 061065e28f0 (2026-10-08).
+ * Ported from PostgreSQL REL_19_0 (5c839a2a08b, 2026-11-16).
  * Source: the functions statext_ndistinct_free, statext_ndistinct_validate,
  * statext_dependencies_free, statext_dependencies_validate, statext_mcv_free
  * and statext_mcv_import of the files above, which 16 and 17 do not have.
@@ -43,7 +43,7 @@
 void
 regresql_statext_ndistinct_free(MVNDistinct *ndistinct)
 {
-	for (uint32 i = 0; i < ndistinct->nitems; i++)
+	for (int i = 0; i < ndistinct->nitems; i++)
 		pfree(ndistinct->items[i].attributes);
 	pfree(ndistinct);
 }
@@ -68,7 +68,7 @@ regresql_statext_ndistinct_validate(const MVNDistinct *ndistinct,
 	int			attnum_expr_lowbound = 0 - numexprs;
 
 	/* Scan through each MVNDistinct entry */
-	for (uint32 i = 0; i < ndistinct->nitems; i++)
+	for (int i = 0; i < ndistinct->nitems; i++)
 	{
 		MVNDistinctItem item = ndistinct->items[i];
 
@@ -119,7 +119,7 @@ regresql_statext_ndistinct_validate(const MVNDistinct *ndistinct,
 void
 regresql_statext_dependencies_free(MVDependencies *dependencies)
 {
-	for (uint32 i = 0; i < dependencies->ndeps; i++)
+	for (int i = 0; i < dependencies->ndeps; i++)
 		pfree(dependencies->deps[i]);
 	pfree(dependencies);
 }
@@ -144,7 +144,7 @@ regresql_statext_dependencies_validate(const MVDependencies *dependencies,
 	int			attnum_expr_lowbound = 0 - numexprs;
 
 	/* Scan through each dependency entry */
-	for (uint32 i = 0; i < dependencies->ndeps; i++)
+	for (int i = 0; i < dependencies->ndeps; i++)
 	{
 		const MVDependency *dep = dependencies->deps[i];
 
@@ -195,7 +195,7 @@ regresql_statext_dependencies_validate(const MVDependencies *dependencies,
 void
 regresql_statext_mcv_free(MCVList *mcvlist)
 {
-	for (uint32 i = 0; i < mcvlist->nitems; i++)
+	for (int i = 0; i < mcvlist->nitems; i++)
 	{
 		MCVItem    *item = &mcvlist->items[i];
 

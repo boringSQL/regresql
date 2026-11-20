@@ -63,7 +63,6 @@ extern bool regresql_statatt_get_elem_type(TypeCacheEntry *basetypcache,
 extern bool regresql_statatt_get_range_type(TypeCacheEntry *basetypcache,
 											Oid *rangetypid);
 
-extern bool regresql_statatt_check_bounds_histogram(Datum arrayval);
 
 /* input routines of the 2.2 pg_ndistinct / pg_dependencies parsers */
 extern Datum regresql_pg_ndistinct_in(PG_FUNCTION_ARGS);

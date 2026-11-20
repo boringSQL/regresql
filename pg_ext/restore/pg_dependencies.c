@@ -9,7 +9,7 @@
  * IDENTIFICATION
  *	  src/backend/utils/adt/pg_dependencies.c
  *
- * Ported from PostgreSQL master at commit 061065e28f0 (2026-10-08).
+ * Ported from PostgreSQL REL_19_0 (5c839a2a08b, 2026-11-16).
  * Source: src/backend/utils/adt/pg_dependencies.c
  * Only the input routine is ported; the 16/17 output routine is untouched.
  *

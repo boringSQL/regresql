@@ -16,12 +16,12 @@ files stay under the PostgreSQL License.
     src/backend/statistics/stat_utils.c       -> stat_utils.c
     src/include/statistics/stat_utils.h       -> stat_utils.h
 
-2.2 adds files from PostgreSQL master, since 18 has no extended statistics
+2.2 adds files from PostgreSQL 19, since 18 has no extended statistics
 restore either:
 
     repo      https://github.com/postgres/postgres
-    branch    master
-    commit    061065e28f0 (2026-10-08)
+    tag       REL_19_0
+    commit    5c839a2a08b (2026-11-16)
 
     src/backend/statistics/extended_stats_funcs.c  -> extended_stats_funcs.c
     src/backend/utils/adt/pg_ndistinct.c           -> pg_ndistinct.c (input routine only)
@@ -31,8 +31,16 @@ restore either:
     src/backend/statistics/dependencies.c          -> statext_import.c (free, validate)
     src/backend/statistics/mcv.c                   -> statext_import.c (free, import)
     src/backend/statistics/stat_utils.c            -> stat_utils.c (statatt_set_slot,
-        statatt_init_empty_tuple, statatt_get_elem_type, statatt_get_range_type,
-        statatt_check_bounds_histogram added)
+        statatt_init_empty_tuple, statatt_get_elem_type, statatt_get_range_type
+        added)
+
+8ac7b8b imported the 2.2 files from master at 061065e28f0 (2026-10-08), after
+19 had branched. They were re-synced to REL_19_0, which carries
+CVE-2026-116329 for extended statistics too (keep the relation open, re-check
+that the statistics object still exists before writing), the nested "exprs"
+fix, the lifted range_bounds_histogram requirement and empty value arrays.
+The master-only statatt_check_bounds_histogram validation is not in 19.0 and
+was dropped with it.
 
 158c761 imported them from 1370a7832a2 (2026-10-07). bf52896 moved them to
 780900dcfab. The only upstream change in between is 780900dcfab (2026-11-09),
@@ -102,9 +110,9 @@ so the pg_*_in functions have a PG_VERSION_NUM >= 170000 branch for that. The
 callbacks are upstream, JSON_SEM_ACTION_FAILED exists on 16.
 
 extended_stats_funcs.c: upsert_pg_statistic_ext_data lost its const qualifiers
-on the three arrays, and import_mcv, check_mcvlist_array and array_in_safe cast
-away const where they call array_contains_nulls, deconstruct_array_builtin and
-InputFunctionCallSafe. Those take const pointers only on master. The local
+on the three arrays, and import_mcv and check_mcvlist_array cast away const
+where they call array_contains_nulls and deconstruct_array_builtin. Those take
+const pointers only from 19. The local
 stat_utils.h and statext_import.h replace statistics/stat_utils.h, and
 miscnodes.h is included explicitly.
 
