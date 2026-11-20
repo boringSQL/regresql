@@ -512,7 +512,6 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 
 			policies := GetPoliciesConfig()
 			for _, r := range pq.Plan.CompareResultSetsToResults(s.RegressDir, edir) {
-				ApplyPolicies(&r, policies)
 				summary.AddResult(r)
 				if err := formatter.AddResult(r, w); err != nil {
 					return err
@@ -520,8 +519,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 			}
 
 			if !opts.NoBaseline && hasBaselines(pq.Query, bdir, pq.Plan.Names) {
-				for _, r := range pq.Plan.CompareBaselinesToResults(context.Background(), bdir, tx, DefaultCostThresholdPercent) {
-					ApplyPolicies(&r, policies)
+				for _, r := range pq.Plan.CompareBaselinesToResults(context.Background(), bdir, tx, DefaultCostThresholdPercent, policies) {
 					summary.AddResult(r)
 					if err := formatter.AddResult(r, w); err != nil {
 						return err

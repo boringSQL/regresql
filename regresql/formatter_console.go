@@ -218,7 +218,7 @@ func (f *ConsoleFormatter) printCostFailure(r TestResult, w io.Writer) {
 }
 
 func (f *ConsoleFormatter) printPlanRegressions(regressions []PlanRegression, w io.Writer) {
-	if hasCriticalRegression(regressions) {
+	if hasFailingRegression(regressions) {
 		fmt.Fprintln(w, "  ⚠️  PLAN REGRESSION DETECTED:")
 	}
 
@@ -230,7 +230,7 @@ func (f *ConsoleFormatter) printPlanRegressions(regressions []PlanRegression, w 
 			fmt.Fprintf(w, "  %s %s\n", symbol, reg.Message)
 		}
 
-		if SeverityAtLeast(reg.Severity, SevCritical) && len(reg.Recommendations) > 0 {
+		if SeverityAtLeast(reg.Severity, SevError) && len(reg.Recommendations) > 0 {
 			fmt.Fprintln(w)
 			fmt.Fprintln(w, "  Recommendations:")
 			for _, rec := range reg.Recommendations {

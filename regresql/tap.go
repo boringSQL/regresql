@@ -125,20 +125,20 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 	return results
 }
 
-func (p *Plan) CompareBaselinesToResults(ctx context.Context, baselineDir string, q Querier, thresholdPercent float64) []TestResult {
+func (p *Plan) CompareBaselinesToResults(ctx context.Context, baselineDir string, q Querier, thresholdPercent float64, policies *PoliciesConfig) []TestResult {
 	if len(p.Query.Args) == 0 {
-		return []TestResult{p.compareBaseline(ctx, baselineDir, "", nil, q, thresholdPercent)}
+		return []TestResult{p.compareBaseline(ctx, baselineDir, "", nil, q, thresholdPercent, policies)}
 	}
 
 	results := make([]TestResult, 0, len(p.Bindings))
 	for i, bindings := range p.Bindings {
-		result := p.compareBaseline(ctx, baselineDir, p.Names[i], bindings, q, thresholdPercent)
+		result := p.compareBaseline(ctx, baselineDir, p.Names[i], bindings, q, thresholdPercent, policies)
 		results = append(results, result)
 	}
 	return results
 }
 
-func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64) TestResult {
+func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64, policies *PoliciesConfig) TestResult {
 	start := time.Now()
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
@@ -283,29 +283,29 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		result.PlanRegressions = DetectPlanRegressions(baseline.PlanSignature, currentSig)
 	}
 
-	isOk, notes := gateVerdict(verdictInput{
+	opts := p.Query.GetRegressQLOptions()
+	costInfo := planCostInfo(&explainPlan.Plan, planChoice && !useBufferComparison)
+	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
+	// before policies run, so a pack can remap it like any other warning
+	if planChoice && percentageIncrease > result.Threshold {
+		result.PlanWarnings = append(result.PlanWarnings, PlanWarning{
+			Type:     CostIncreased,
+			Severity: "info",
+			Message:  fmt.Sprintf("Cost %.2f vs baseline %.2f (+%.1f%%), plan shape unchanged", result.ActualCost, result.ExpectedCost, percentageIncrease),
+		})
+	}
+
+	isOk, notes := applyPoliciesThenGate(&result, policies, verdictInput{
 		Mode:         CurrentMode(),
 		BranchOk:     isOk,
 		PlanChanged:  result.PlanChanged,
 		HasSignature: baseline.PlanSignature != nil,
-		Regressions:  result.PlanRegressions,
 	})
-
-	opts := p.Query.GetRegressQLOptions()
-	costInfo := planCostInfo(&explainPlan.Plan, planChoice && !useBufferComparison)
-	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
 
 	if planChoice {
 		result.Improved = false
 		result.ImprovementPercent = 0
 		result.PlanWarnings = append(result.PlanWarnings, notes...)
-		if percentageIncrease > result.Threshold {
-			result.PlanWarnings = append(result.PlanWarnings, PlanWarning{
-				Type:     CostIncreased,
-				Severity: "info",
-				Message:  fmt.Sprintf("Cost %.2f vs baseline %.2f (+%.1f%%), plan shape unchanged", result.ActualCost, result.ExpectedCost, percentageIncrease),
-			})
-		}
 		result.BaselineUninjected = !baseline.StatsInjected
 		result.Status, result.Name = planChoiceResult(testName, isOk, &result)
 		return result
@@ -344,12 +344,21 @@ type (
 	}
 )
 
+// applyPoliciesThenGate applies pack policies to the result and gates the
+// verdict on the remapped regressions, so a policy can downgrade a regression
+// to a warning or escalate one to a failure.
+func applyPoliciesThenGate(result *TestResult, policies *PoliciesConfig, in verdictInput) (bool, []PlanWarning) {
+	ApplyPolicies(result, policies)
+	in.Regressions = result.PlanRegressions
+	return gateVerdict(in)
+}
+
 // gateVerdict decides pass/fail. Buffers mode is the legacy rule; plan choice
 // mode gates on plan shape only and never on cost.
 func gateVerdict(in verdictInput) (bool, []PlanWarning) {
-	critical := hasCriticalRegression(in.Regressions)
+	failing := hasFailingRegression(in.Regressions)
 	if in.Mode != ModePlanChoice {
-		return in.BranchOk && !critical, nil
+		return in.BranchOk && !failing, nil
 	}
 	if !in.HasSignature {
 		return true, []PlanWarning{{
@@ -359,7 +368,7 @@ func gateVerdict(in verdictInput) (bool, []PlanWarning) {
 			Suggestion: "re-run regresql baseline",
 		}}
 	}
-	return !in.PlanChanged && !critical, nil
+	return !in.PlanChanged && !failing, nil
 }
 
 func planCostInfo(n *PlanNode, buffersUnavailable bool) PlanCostInfo {
@@ -415,9 +424,9 @@ func planChoiceResult(testName string, ok bool, r *TestResult) (string, string) 
 	return "failed", fmt.Sprintf("%s (plan changed)", testName)
 }
 
-func hasCriticalRegression(regressions []PlanRegression) bool {
+func hasFailingRegression(regressions []PlanRegression) bool {
 	for _, reg := range regressions {
-		if SeverityAtLeast(reg.Severity, SevCritical) {
+		if SeverityAtLeast(reg.Severity, SevError) {
 			return true
 		}
 	}

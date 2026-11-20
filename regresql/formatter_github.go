@@ -35,25 +35,25 @@ func (f *GitHubActionsFormatter) AddResult(r TestResult, w io.Writer) error {
 			fmt.Fprintf(w, "::error::%s\n", msg)
 		} else if r.Type == "cost" {
 			// Check for plan regressions
-			hasCritical := false
-			var criticalMsg string
+			hasFailing := false
+			var regDetail string
 
 			for _, reg := range r.PlanRegressions {
-				if SeverityAtLeast(reg.Severity, SevCritical) {
-					hasCritical = true
+				if SeverityAtLeast(reg.Severity, SevError) {
+					hasFailing = true
 					if reg.Table != "" {
-						criticalMsg = fmt.Sprintf(" - PLAN REGRESSION: Table '%s' changed from %s to %s",
+						regDetail = fmt.Sprintf(" - PLAN REGRESSION: Table '%s' changed from %s to %s",
 							reg.Table, reg.OldScan, reg.NewScan)
 					} else {
-						criticalMsg = fmt.Sprintf(" - PLAN REGRESSION: %s", reg.Message)
+						regDetail = fmt.Sprintf(" - PLAN REGRESSION: %s", reg.Message)
 					}
 					break
 				}
 			}
 
-			if hasCritical {
+			if hasFailing {
 				fmt.Fprintf(w, "::error::Cost regression in %s: Expected %.2f, got %.2f (+%.1f%%)%s\n",
-					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease, criticalMsg)
+					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease, regDetail)
 			} else {
 				fmt.Fprintf(w, "::error::Cost regression in %s: Expected %.2f, got %.2f (+%.1f%%)\n",
 					r.Name, r.ExpectedCost, r.ActualCost, r.PercentIncrease)

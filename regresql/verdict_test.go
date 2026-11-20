@@ -4,19 +4,20 @@ import "testing"
 
 var (
 	criticalReg = []PlanRegression{{Severity: "critical", Message: "seq scan"}}
+	errorReg    = []PlanRegression{{Severity: "error", Message: "access changed"}}
 	warningReg  = []PlanRegression{{Severity: "warning", Message: "shape"}}
 )
 
 func TestGateVerdictBuffersMatchesLegacy(t *testing.T) {
 	for _, branchOk := range []bool{false, true} {
-		for _, regs := range [][]PlanRegression{nil, warningReg, criticalReg} {
+		for _, regs := range [][]PlanRegression{nil, warningReg, errorReg, criticalReg} {
 			for _, buf := range []bool{false, true} {
 				got, notes := gateVerdict(verdictInput{
 					Mode: ModeBuffers, BranchOk: branchOk,
 					HasSignature: regs != nil, PlanChanged: regs != nil, Regressions: regs,
 				})
 				want := branchOk
-				if hasCriticalRegression(regs) {
+				if hasFailingRegression(regs) {
 					want = false
 				}
 				if got != want || len(notes) != 0 {
@@ -45,6 +46,7 @@ func TestGateVerdictPlanChoice(t *testing.T) {
 		{"branch ok ignored on shape change", verdictInput{BranchOk: true, HasSignature: true, PlanChanged: true}, false, 0},
 		{"changed with empty regressions fails", verdictInput{HasSignature: true, PlanChanged: true}, false, 0},
 		{"non critical regression with change fails", verdictInput{HasSignature: true, PlanChanged: true, Regressions: warningReg}, false, 0},
+		{"error regression fails without shape change", verdictInput{HasSignature: true, Regressions: errorReg}, false, 0},
 		{"critical fails", verdictInput{BranchOk: true, HasSignature: true, Regressions: criticalReg}, false, 0},
 		{"no signature passes with note", verdictInput{BranchOk: false}, true, 1},
 	}
