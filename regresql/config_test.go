@@ -179,3 +179,25 @@ func TestLoadConfigBadYAMLKeepsParseError(t *testing.T) {
 		t.Errorf("a parse error must not suggest init: %v", err)
 	}
 }
+
+func TestLoadConfigRejectsUnknownPolicySeverity(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "regresql")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "regress.yaml")
+	body := "pguri: postgres://localhost/db\npolicies:\n  severity:\n    sequential_scan_detected: blocker\n"
+	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(path)
+	if err == nil {
+		t.Fatal("expected an error for an unknown severity")
+	}
+	for _, want := range []string{"sequential_scan_detected", "blocker", "accepted"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}

@@ -161,6 +161,14 @@ func loadConfig(configFile string) (config, error) {
 		cfg = mergeConfig(base, cfg)
 	}
 
+	if cfg.Policies != nil {
+		for rule, value := range cfg.Policies.Severity {
+			if _, err := ParseSeverity(value); err != nil {
+				return config{}, fmt.Errorf("invalid config '%s': policies.severity.%s: %w", configFile, rule, err)
+			}
+		}
+	}
+
 	return cfg, nil
 }
 
