@@ -3,9 +3,26 @@ package regresql
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+func loadPackConfig(t *testing.T, name string) Config {
+	t.Helper()
+	data, source, err := readPack(name, "")
+	if err != nil {
+		t.Fatalf("readPack(%q): %v", name, err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parse pack %s: %v", source, err)
+	}
+	cfg.Extends = ""
+	return cfg
+}
 
 func TestBundledPacksLoad(t *testing.T) {
 	packs := listBundledPacks()
@@ -13,11 +30,7 @@ func TestBundledPacksLoad(t *testing.T) {
 		t.Fatal("expected at least one bundled pack")
 	}
 	for _, name := range packs {
-		cfg, err := resolveAndLoadPack(name, "")
-		if err != nil {
-			t.Errorf("resolveAndLoadPack(%q) error = %v", name, err)
-			continue
-		}
+		cfg := loadPackConfig(t, name)
 		if cfg.Policies == nil {
 			t.Errorf("pack %q: expected non-nil Policies", name)
 		}
@@ -185,49 +198,47 @@ func TestExtendsNoChaining(t *testing.T) {
 	}
 }
 
-func TestMergeConfig_ScalarProjectWins(t *testing.T) {
-	base := config{PgUri: "base-uri", Root: "base-root"}
-	over := config{PgUri: "over-uri"}
-	out := mergeConfig(base, over)
-	if out.PgUri != "over-uri" {
-		t.Errorf("PgUri: expected project win, got %q", out.PgUri)
+func TestExtendsLayering(t *testing.T) {
+	cases := []struct {
+		name, pack, project string
+		got                 func(Config) any
+		want                any
+	}{
+		{"project scalar overrides pack", "analyze: {buffer_threshold: 5}", "analyze: {buffer_threshold: 3}",
+			func(c Config) any { return c.Analyze.BufferThreshold }, 3.0},
+		{"project zero overrides pack", "analyze: {buffer_threshold: 5}", "analyze: {buffer_threshold: 0}",
+			func(c Config) any { return c.Analyze.BufferThreshold }, 0.0},
+		{"pack scalar survives unrelated project key", "analyze: {buffer_threshold: 5}", "analyze: {cost_threshold: 7}",
+			func(c Config) any { return [2]float64{c.Analyze.BufferThreshold, c.Analyze.CostThreshold} }, [2]float64{5, 7}},
+		{"omitted analyze key keeps default", "", "analyze: {enabled: true}",
+			func(c Config) any { return c.Analyze.BufferThreshold }, 2.0},
+		{"ignore appends and dedupes", "ignore: [a, b]", "ignore: [b, c]",
+			func(c Config) any { return []string(c.Ignore) }, []string{"a", "b", "c"}},
+		{"fixtures append", "snapshot: {fixtures: [one.sql]}", "snapshot: {fixtures: [two.sql]}",
+			func(c Config) any { return []string(c.Snapshot.Fixtures) }, []string{"one.sql", "two.sql"}},
 	}
-	if out.Root != "base-root" {
-		t.Errorf("Root: expected base preserved, got %q", out.Root)
-	}
-}
-
-func TestMergeConfig_ListsConcatDedupe(t *testing.T) {
-	base := config{Ignore: []string{"a", "b"}}
-	over := config{Ignore: []string{"b", "c"}}
-	out := mergeConfig(base, over)
-	want := []string{"a", "b", "c"}
-	if len(out.Ignore) != len(want) {
-		t.Fatalf("Ignore length = %d, want %d (%v)", len(out.Ignore), len(want), out.Ignore)
-	}
-	for i, v := range want {
-		if out.Ignore[i] != v {
-			t.Errorf("Ignore[%d] = %q, want %q", i, out.Ignore[i], v)
-		}
-	}
-}
-
-func TestMergeConfig_MapKeyMerge(t *testing.T) {
-	base := config{Policies: &PoliciesConfig{
-		Severity: map[string]string{"a": "warning", "b": "warning"},
-	}}
-	over := config{Policies: &PoliciesConfig{
-		Severity: map[string]string{"b": "error", "c": "info"},
-	}}
-	out := mergeConfig(base, over)
-	if out.Policies.Severity["a"] != "warning" {
-		t.Errorf("a: expected base preserved")
-	}
-	if out.Policies.Severity["b"] != "error" {
-		t.Errorf("b: expected project override, got %q", out.Policies.Severity["b"])
-	}
-	if out.Policies.Severity["c"] != "info" {
-		t.Errorf("c: expected project addition")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "")
+			root := t.TempDir()
+			dir := filepath.Join(root, "regresql")
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				t.Fatal(err)
+			}
+			files := map[string]string{"pack.yaml": tc.pack, "regress.yaml": "extends: ./pack.yaml\n" + tc.project}
+			for name, body := range files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body+"\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := ReadConfig(root)
+			if err != nil {
+				t.Fatalf("ReadConfig: %v", err)
+			}
+			if got := tc.got(cfg); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

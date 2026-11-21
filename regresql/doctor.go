@@ -25,8 +25,6 @@ func Doctor(opts DoctorOptions) (EnvStatus, error) {
 		}
 		return EnvStatus{}, err
 	}
-	SetGlobalConfig(config)
-
 	var statsWarn bytes.Buffer
 	sf := useStatsFile(config, opts.Root, opts.Stats, &statsWarn)
 	env := CollectEnv(config.PgUri, sf, config, opts.Root, true)

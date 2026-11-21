@@ -192,9 +192,8 @@ func BaselineQueries(opts BaselineOptions) {
 		fmt.Printf("Error reading config: %s\n", err.Error())
 		os.Exit(3)
 	}
-	SetGlobalConfig(config)
 	sf := useStatsFile(config, opts.Root, "", os.Stdout)
-	useAnalyze := opts.Analyze || IsAnalyzeEnabled()
+	useAnalyze := opts.Analyze || config.AnalyzeConfig().Enabled
 
 	if err := TestConnectionString(config.PgUri); err != nil {
 		fmt.Printf("Error connecting to database: %s\n", err.Error())

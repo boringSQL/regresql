@@ -20,11 +20,7 @@ func seqScanRegression() PlanRegression {
 
 func packPolicies(t *testing.T, name string) *PoliciesConfig {
 	t.Helper()
-	cfg, err := resolveAndLoadPack(name, "")
-	if err != nil {
-		t.Fatalf("load pack %q: %v", name, err)
-	}
-	return cfg.Policies
+	return loadPackConfig(t, name).Policies
 }
 
 func TestPoliciesDecideVerdict(t *testing.T) {

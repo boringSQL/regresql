@@ -13,11 +13,12 @@ import (
 const pgQueryCanceled = "57014"
 
 // resolveTimeout: per-query metadata override wins over the global default (0 = none).
-func resolveTimeout(q *Query) time.Duration {
+func resolveTimeout(q *Query, defaultTimeout string) time.Duration {
 	if opts := q.GetRegressQLOptions(); opts.Timeout > 0 {
 		return opts.Timeout
 	}
-	return GetStatementTimeout()
+	d, _ := time.ParseDuration(defaultTimeout)
+	return d
 }
 
 func applyStatementTimeout(ctx context.Context, q Querier, d time.Duration) error {

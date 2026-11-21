@@ -38,7 +38,7 @@ type genericOutcome struct {
 	Message string
 }
 
-func checkGeneric(ctx context.Context, db *sql.DB, q *Query, names []string, bindings []map[string]any) (genericOutcome, error) {
+func checkGeneric(ctx context.Context, db *sql.DB, q *Query, names []string, bindings []map[string]any, defaultTimeout string) (genericOutcome, error) {
 	if len(q.Args) == 0 {
 		return genericOutcome{Skipped: true, Message: "no parameters"}, nil
 	}
@@ -70,7 +70,7 @@ func checkGeneric(ctx context.Context, db *sql.DB, q *Query, names []string, bin
 	var poisoned bool
 	err = conn.Raw(func(driverConn any) error {
 		var runErr error
-		out, poisoned, runErr = runGeneric(ctx, driverConn.(*stdlib.Conn).Conn(), q, types, names, bindings)
+		out, poisoned, runErr = runGeneric(ctx, driverConn.(*stdlib.Conn).Conn(), q, types, names, bindings, defaultTimeout)
 		return runErr
 	})
 	if poisoned {
@@ -79,7 +79,7 @@ func checkGeneric(ctx context.Context, db *sql.DB, q *Query, names []string, bin
 	return out, err
 }
 
-func runGeneric(ctx context.Context, c *pgx.Conn, q *Query, types, names []string, bindings []map[string]any) (out genericOutcome, poisoned bool, err error) {
+func runGeneric(ctx context.Context, c *pgx.Conn, q *Query, types, names []string, bindings []map[string]any, defaultTimeout string) (out genericOutcome, poisoned bool, err error) {
 	simple := pgx.QueryExecModeSimpleProtocol
 	exec := func(stmt string) error {
 		_, err := c.Exec(ctx, stmt, simple)
@@ -95,7 +95,7 @@ func runGeneric(ctx context.Context, c *pgx.Conn, q *Query, types, names []strin
 	if err := exec("BEGIN"); err != nil {
 		return out, false, err
 	}
-	if d := resolveTimeout(q); d > 0 {
+	if d := resolveTimeout(q, defaultTimeout); d > 0 {
 		if err := exec(fmt.Sprintf("SET LOCAL statement_timeout = %d", d.Milliseconds())); err != nil {
 			return out, false, err
 		}
@@ -240,9 +240,9 @@ func requireGenericVersion(db *sql.DB) error {
 	return nil
 }
 
-func runGenericCheck(ctx context.Context, db *sql.DB, pq *PlannedQuery) (TestResult, error) {
+func runGenericCheck(ctx context.Context, db *sql.DB, pq *PlannedQuery, defaultTimeout string) (TestResult, error) {
 	start := time.Now()
-	out, err := checkGeneric(ctx, db, pq.Query, pq.Plan.Names, pq.Plan.Bindings)
+	out, err := checkGeneric(ctx, db, pq.Query, pq.Plan.Names, pq.Plan.Bindings, defaultTimeout)
 	if err != nil {
 		return TestResult{}, err
 	}

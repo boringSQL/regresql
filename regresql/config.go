@@ -6,18 +6,18 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
 
 type (
-	config struct {
+	Config struct {
 		Extends        string                `yaml:"extends,omitempty"`
 		Root           string                `yaml:"root"`
 		PgUri          string                `yaml:"pguri"`
 		Timeout        string                `yaml:"timeout,omitempty"` // statement_timeout, e.g. "30s"
-		Ignore         []string              `yaml:"ignore,omitempty"`
+		Ignore         mergeAppend           `yaml:"ignore,omitempty"`
 		PlanQuality    *PlanQualityGlobal    `yaml:"plan_quality,omitempty"`
 		DiffComparison *DiffComparisonGlobal `yaml:"diff_comparison,omitempty"`
 		Snapshot       *SnapshotConfig       `yaml:"snapshot,omitempty"`
@@ -56,17 +56,34 @@ type (
 	}
 
 	SnapshotConfig struct {
-		Path             string   `yaml:"path,omitempty"`
-		Format           string   `yaml:"format,omitempty"`
-		Schema           string   `yaml:"schema,omitempty"`
-		Migrations       string   `yaml:"migrations,omitempty"`
-		MigrationCommand string   `yaml:"migration_command,omitempty"`
-		Fixtures         []string `yaml:"fixtures,omitempty"`
-		Fixturize        []string `yaml:"fixturize,omitempty"`
-		RestoreDatabase  string   `yaml:"restore_database,omitempty"`
-		ValidateSettings string   `yaml:"validate_settings,omitempty"`
+		Path             string      `yaml:"path,omitempty"`
+		Format           string      `yaml:"format,omitempty"`
+		Schema           string      `yaml:"schema,omitempty"`
+		Migrations       string      `yaml:"migrations,omitempty"`
+		MigrationCommand string      `yaml:"migration_command,omitempty"`
+		Fixtures         mergeAppend `yaml:"fixtures,omitempty"`
+		Fixturize        mergeAppend `yaml:"fixturize,omitempty"`
+		RestoreDatabase  string      `yaml:"restore_database,omitempty"`
+		ValidateSettings string      `yaml:"validate_settings,omitempty"`
 	}
 )
+
+// mergeAppend appends list values across extends instead of replacing them,
+// deduplicating on the way.
+type mergeAppend []string
+
+func (m *mergeAppend) UnmarshalYAML(value *yaml.Node) error {
+	var values []string
+	if err := value.Decode(&values); err != nil {
+		return err
+	}
+	for _, v := range values {
+		if !slices.Contains(*m, v) {
+			*m = append(*m, v)
+		}
+	}
+	return nil
+}
 
 func (s *Suite) getRegressConfigFile() string {
 	return filepath.Join(s.RegressDir, "regress.yaml")
@@ -89,7 +106,7 @@ func (s *Suite) createRegressDir() error {
 func (s *Suite) setupConfig(pguri string) {
 	configFile := s.getRegressConfigFile()
 
-	cfg := config{
+	cfg := Config{
 		Root:  s.Root,
 		PgUri: pguri,
 	}
@@ -106,7 +123,7 @@ func (s *Suite) setupConfig(pguri string) {
 	}
 }
 
-func (s *Suite) readConfig() (config, error) {
+func (s *Suite) readConfig() (Config, error) {
 	cfg, err := loadConfig(s.getRegressConfigFile())
 	if err != nil {
 		return cfg, err
@@ -115,7 +132,7 @@ func (s *Suite) readConfig() (config, error) {
 }
 
 // ReadConfig reads the configuration from the regress.yaml file
-func ReadConfig(root string) (config, error) {
+func ReadConfig(root string) (Config, error) {
 	cfg, err := ReadConfigFile(root)
 	if err != nil {
 		return cfg, err
@@ -124,7 +141,7 @@ func ReadConfig(root string) (config, error) {
 }
 
 // withEnvOverride lets DATABASE_URL override the configured pguri at run time.
-func withEnvOverride(cfg config) config {
+func withEnvOverride(cfg Config) Config {
 	if uri := os.Getenv("DATABASE_URL"); uri != "" {
 		cfg.PgUri = uri
 	}
@@ -133,12 +150,12 @@ func withEnvOverride(cfg config) config {
 
 // ReadConfigFile reads regress.yaml as written, without the DATABASE_URL
 // override. Use it for `config get`/`config set`, which operate on the file.
-func ReadConfigFile(root string) (config, error) {
+func ReadConfigFile(root string) (Config, error) {
 	return loadConfig(filepath.Join(root, "regresql", "regress.yaml"))
 }
 
-func loadConfig(configFile string) (config, error) {
-	var cfg config
+func loadConfig(configFile string) (Config, error) {
+	var cfg Config
 
 	data, err := os.ReadFile(configFile)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -148,23 +165,34 @@ func loadConfig(configFile string) (config, error) {
 		return cfg, fmt.Errorf("failed to read config '%s': %w", configFile, err)
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	var head struct {
+		Extends string `yaml:"extends"`
+	}
+	if err := yaml.Unmarshal(data, &head); err != nil {
 		return cfg, fmt.Errorf("failed to parse config '%s': %w", configFile, err)
 	}
 
-	if cfg.Extends != "" {
-		base, err := resolveAndLoadPack(cfg.Extends, filepath.Dir(configFile))
+	// Decode the pack first, then the project file over it: scalars and maps
+	// merge per key, lists are replaced (see mergeAppend).
+	if head.Extends != "" {
+		pack, source, err := readPack(head.Extends, filepath.Dir(configFile))
 		if err != nil {
-			return config{}, fmt.Errorf("failed to resolve extends %q: %w", cfg.Extends, err)
+			return Config{}, fmt.Errorf("failed to resolve extends %q: %w", head.Extends, err)
 		}
-		cfg.Extends = ""
-		cfg = mergeConfig(base, cfg)
+		if err := yaml.Unmarshal(pack, &cfg); err != nil {
+			return Config{}, fmt.Errorf("failed to parse pack %s: %w", source, err)
+		}
 	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, fmt.Errorf("failed to parse config '%s': %w", configFile, err)
+	}
+	// Chained extends in packs is not supported in v1.
+	cfg.Extends = ""
 
 	if cfg.Policies != nil {
 		for rule, value := range cfg.Policies.Severity {
 			if _, err := ParseSeverity(value); err != nil {
-				return config{}, fmt.Errorf("invalid config '%s': policies.severity.%s: %w", configFile, rule, err)
+				return Config{}, fmt.Errorf("invalid config '%s': policies.severity.%s: %w", configFile, rule, err)
 			}
 		}
 	}
@@ -200,311 +228,56 @@ func UpdateConfigField(root, key, value string) error {
 	return nil
 }
 
-var cachedConfig *config
-
-func SetGlobalConfig(cfg config) {
-	cachedConfig = &cfg
-}
-
-func GetIgnoredSeqScanTables() []string {
-	if cachedConfig == nil || cachedConfig.PlanQuality == nil {
-		return nil
+func (c Config) AnalyzeConfig() AnalyzeConfig {
+	if c.Analyze != nil {
+		return *c.Analyze
 	}
-	return cachedConfig.PlanQuality.IgnoreSeqScanTables
+	return defaultAnalyzeConfig
 }
 
-func GetCriticalTables() []string {
-	if cachedConfig == nil || cachedConfig.Policies == nil {
-		return nil
-	}
-	return cachedConfig.Policies.CriticalTables
-}
-
-func GetPoliciesConfig() *PoliciesConfig {
-	if cachedConfig == nil {
-		return nil
-	}
-	return cachedConfig.Policies
-}
-
-func GetDiffConfig() *DiffConfig {
+func (c Config) DiffConfig() *DiffConfig {
 	cfg := DefaultDiffConfig()
-	if cachedConfig != nil && cachedConfig.DiffComparison != nil {
-		dc := cachedConfig.DiffComparison
-		if dc.FloatTolerance > 0 {
-			cfg.FloatTolerance = dc.FloatTolerance
+	if d := c.DiffComparison; d != nil {
+		if d.FloatTolerance > 0 {
+			cfg.FloatTolerance = d.FloatTolerance
 		}
-		if dc.MaxSamples > 0 {
-			cfg.MaxSamples = dc.MaxSamples
+		if d.MaxSamples > 0 {
+			cfg.MaxSamples = d.MaxSamples
 		}
 	}
 	return cfg
 }
 
-func GetAnalyzeConfig() *AnalyzeConfig {
-	if cachedConfig == nil || cachedConfig.Analyze == nil {
-		return &AnalyzeConfig{
-			Enabled:              false,
-			Comparison:           "auto",
-			BufferThreshold:      2.0,
-			CostThreshold:        10.0,
-			ImprovementThreshold: 20.0,
-			QErrorRatio:          2.0,
-			QErrorFloor:          10.0,
-		}
+func (c Config) IgnoredSeqScanTables() []string {
+	if c.PlanQuality == nil {
+		return nil
 	}
-	cfg := cachedConfig.Analyze
-	result := &AnalyzeConfig{
-		Enabled:              cfg.Enabled,
-		Comparison:           cfg.Comparison,
-		BufferThreshold:      cfg.BufferThreshold,
-		CostThreshold:        cfg.CostThreshold,
-		ImprovementThreshold: cfg.ImprovementThreshold,
-		QErrorRatio:          cfg.QErrorRatio,
-		QErrorFloor:          cfg.QErrorFloor,
-	}
-	if result.Comparison == "" {
-		result.Comparison = "auto"
-	}
-	if result.BufferThreshold == 0 {
-		result.BufferThreshold = 2.0
-	}
-	if result.CostThreshold == 0 {
-		result.CostThreshold = 10.0
-	}
-	if result.ImprovementThreshold == 0 {
-		result.ImprovementThreshold = 20.0
-	}
-	if result.QErrorRatio == 0 {
-		result.QErrorRatio = 2.0
-	}
-	if result.QErrorFloor == 0 {
-		result.QErrorFloor = 10.0
-	}
-	return result
+	return c.PlanQuality.IgnoreSeqScanTables
 }
 
-func mergeConfig(base, over config) config {
-	out := base
-	if over.Root != "" {
-		out.Root = over.Root
+func (c Config) CriticalTables() []string {
+	if c.Policies == nil {
+		return nil
 	}
-	if over.PgUri != "" {
-		out.PgUri = over.PgUri
-	}
-	if over.Timeout != "" {
-		out.Timeout = over.Timeout
-	}
-	out.Ignore = mergeStringSlice(base.Ignore, over.Ignore)
-	out.PlanQuality = mergePlanQuality(base.PlanQuality, over.PlanQuality)
-	out.DiffComparison = mergeDiffComparison(base.DiffComparison, over.DiffComparison)
-	out.Snapshot = mergeSnapshotConfig(base.Snapshot, over.Snapshot)
-	out.Analyze = mergeAnalyzeConfig(base.Analyze, over.Analyze)
-	out.Stats = mergeStatsConfig(base.Stats, over.Stats)
-	out.Policies = mergePoliciesConfig(base.Policies, over.Policies)
-	return out
+	return c.Policies.CriticalTables
 }
 
-func mergeStringSlice(a, b []string) []string {
-	if len(a) == 0 {
-		return b
-	}
-	if len(b) == 0 {
-		return a
-	}
-	seen := make(map[string]bool, len(a)+len(b))
-	out := make([]string, 0, len(a)+len(b))
-	for _, v := range a {
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	for _, v := range b {
-		if !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
+var defaultAnalyzeConfig = AnalyzeConfig{
+	Comparison:           "auto",
+	BufferThreshold:      2.0,
+	CostThreshold:        10.0,
+	ImprovementThreshold: 20.0,
+	QErrorRatio:          2.0,
+	QErrorFloor:          10.0,
 }
 
-func mergeStringMap(a, b map[string]string) map[string]string {
-	if len(a) == 0 {
-		return b
+// UnmarshalYAML starts a fresh section from the defaults, so a key left out
+// keeps its default while an explicit 0 stays 0. A section that already holds
+// values (a pack decoded earlier) is layered over instead.
+func (a *AnalyzeConfig) UnmarshalYAML(value *yaml.Node) error {
+	if *a == (AnalyzeConfig{}) {
+		*a = defaultAnalyzeConfig
 	}
-	if len(b) == 0 {
-		return a
-	}
-	out := make(map[string]string, len(a)+len(b))
-	for k, v := range a {
-		out[k] = v
-	}
-	for k, v := range b {
-		out[k] = v
-	}
-	return out
-}
-
-func mergePlanQuality(a, b *PlanQualityGlobal) *PlanQualityGlobal {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	return &PlanQualityGlobal{
-		IgnoreSeqScanTables: mergeStringSlice(a.IgnoreSeqScanTables, b.IgnoreSeqScanTables),
-	}
-}
-
-func mergePoliciesConfig(a, b *PoliciesConfig) *PoliciesConfig {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	return &PoliciesConfig{
-		CriticalTables: mergeStringSlice(a.CriticalTables, b.CriticalTables),
-		Severity:       mergeStringMap(a.Severity, b.Severity),
-		Reasons:        mergeStringMap(a.Reasons, b.Reasons),
-	}
-}
-
-func mergeDiffComparison(a, b *DiffComparisonGlobal) *DiffComparisonGlobal {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	out := *a
-	if b.FloatTolerance != 0 {
-		out.FloatTolerance = b.FloatTolerance
-	}
-	if b.MaxSamples != 0 {
-		out.MaxSamples = b.MaxSamples
-	}
-	return &out
-}
-
-func mergeSnapshotConfig(a, b *SnapshotConfig) *SnapshotConfig {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	out := *a
-	if b.Path != "" {
-		out.Path = b.Path
-	}
-	if b.Format != "" {
-		out.Format = b.Format
-	}
-	if b.Schema != "" {
-		out.Schema = b.Schema
-	}
-	if b.Migrations != "" {
-		out.Migrations = b.Migrations
-	}
-	if b.MigrationCommand != "" {
-		out.MigrationCommand = b.MigrationCommand
-	}
-	out.Fixtures = mergeStringSlice(a.Fixtures, b.Fixtures)
-	out.Fixturize = mergeStringSlice(a.Fixturize, b.Fixturize)
-	if b.RestoreDatabase != "" {
-		out.RestoreDatabase = b.RestoreDatabase
-	}
-	if b.ValidateSettings != "" {
-		out.ValidateSettings = b.ValidateSettings
-	}
-	return &out
-}
-
-func mergeAnalyzeConfig(a, b *AnalyzeConfig) *AnalyzeConfig {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	out := *a
-	if b.Enabled {
-		out.Enabled = true
-	}
-	if b.Comparison != "" {
-		out.Comparison = b.Comparison
-	}
-	if b.BufferThreshold != 0 {
-		out.BufferThreshold = b.BufferThreshold
-	}
-	if b.CostThreshold != 0 {
-		out.CostThreshold = b.CostThreshold
-	}
-	if b.ImprovementThreshold != 0 {
-		out.ImprovementThreshold = b.ImprovementThreshold
-	}
-	if b.QErrorRatio != 0 {
-		out.QErrorRatio = b.QErrorRatio
-	}
-	if b.QErrorFloor != 0 {
-		out.QErrorFloor = b.QErrorFloor
-	}
-	return &out
-}
-
-func mergeStatsConfig(a, b *StatsConfig) *StatsConfig {
-	if a == nil {
-		return b
-	}
-	if b == nil {
-		return a
-	}
-	out := *a
-	if b.Default != "" {
-		out.Default = b.Default
-	}
-	return &out
-}
-
-// GetStatementTimeout returns the default statement_timeout (0 = none).
-func GetStatementTimeout() time.Duration {
-	if cachedConfig == nil || cachedConfig.Timeout == "" {
-		return 0
-	}
-	d, err := time.ParseDuration(cachedConfig.Timeout)
-	if err != nil {
-		return 0
-	}
-	return d
-}
-
-func IsAnalyzeEnabled() bool {
-	return GetAnalyzeConfig().Enabled
-}
-
-func GetBufferThreshold() float64 {
-	return GetAnalyzeConfig().BufferThreshold
-}
-
-func GetCostThreshold() float64 {
-	return GetAnalyzeConfig().CostThreshold
-}
-
-func GetComparisonMode() string {
-	return GetAnalyzeConfig().Comparison
-}
-
-func GetImprovementThreshold() float64 {
-	return GetAnalyzeConfig().ImprovementThreshold
-}
-
-func GetQErrorRatio() float64 {
-	return GetAnalyzeConfig().QErrorRatio
-}
-
-func GetQErrorFloor() float64 {
-	return GetAnalyzeConfig().QErrorFloor
+	type plain AnalyzeConfig
+	return value.Decode((*plain)(a))
 }

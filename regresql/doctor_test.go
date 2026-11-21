@@ -9,16 +9,9 @@ import (
 	"testing"
 )
 
-func restoreGlobalConfig(t *testing.T) {
-	t.Helper()
-	old := cachedConfig
-	t.Cleanup(func() { cachedConfig = old })
-}
-
 func unreachableProject(t *testing.T) string {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "")
-	restoreGlobalConfig(t)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "regresql"), 0o755); err != nil {
 		t.Fatal(err)

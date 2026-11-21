@@ -39,9 +39,9 @@ func loadResultSet(filename string) (*ResultSet, error) {
 	return &rs, nil
 }
 
-func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []TestResult {
+func (p *Plan) CompareResultSetsToResults(cfg Config, regressDir, expectedDir string) []TestResult {
 	results := make([]TestResult, 0, len(p.ResultSets))
-	diffConfig := GetDiffConfig()
+	diffConfig := cfg.DiffConfig()
 
 	for i, actualRS := range p.ResultSets {
 		start := time.Now()
@@ -125,25 +125,26 @@ func (p *Plan) CompareResultSetsToResults(regressDir, expectedDir string) []Test
 	return results
 }
 
-func (p *Plan) CompareBaselinesToResults(ctx context.Context, baselineDir string, q Querier, thresholdPercent float64, policies *PoliciesConfig) []TestResult {
+func (p *Plan) CompareBaselinesToResults(ctx context.Context, cfg Config, baselineDir string, q Querier, thresholdPercent float64) []TestResult {
 	if len(p.Query.Args) == 0 {
-		return []TestResult{p.compareBaseline(ctx, baselineDir, "", nil, q, thresholdPercent, policies)}
+		return []TestResult{p.compareBaseline(ctx, cfg, baselineDir, "", nil, q, thresholdPercent)}
 	}
 
 	results := make([]TestResult, 0, len(p.Bindings))
 	for i, bindings := range p.Bindings {
-		result := p.compareBaseline(ctx, baselineDir, p.Names[i], bindings, q, thresholdPercent, policies)
+		result := p.compareBaseline(ctx, cfg, baselineDir, p.Names[i], bindings, q, thresholdPercent)
 		results = append(results, result)
 	}
 	return results
 }
 
-func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64, policies *PoliciesConfig) TestResult {
+func (p *Plan) compareBaseline(ctx context.Context, cfg Config, baselineDir, bindingName string, bindings map[string]any, q Querier, thresholdPercent float64) TestResult {
 	start := time.Now()
 	baselinePath := getBaselinePath(p.Query, baselineDir, bindingName)
 	testName := strings.TrimSuffix(filepath.Base(baselinePath), ".json") + ".cost"
 
 	planChoice := CurrentMode() == ModePlanChoice
+	analyze := cfg.AnalyzeConfig()
 
 	result := TestResult{
 		Name:       testName,
@@ -162,13 +163,13 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	}
 
 	// Warn if analyze.enabled but baseline lacks buffer data
-	if !planChoice && IsAnalyzeEnabled() && !baseline.AnalyzeMode {
+	if !planChoice && analyze.Enabled && !baseline.AnalyzeMode {
 		fmt.Fprintf(os.Stderr, "Warning: analyze.enabled=true but baseline '%s' lacks buffer data\n", baselinePath)
 	}
 
 	var useBufferComparison bool
 	if !planChoice {
-		useBufferComparison, err = getComparisonMode(baseline, baselinePath)
+		useBufferComparison, err = getComparisonMode(analyze.Comparison, baseline, baselinePath)
 		if err != nil {
 			result.Status = "failed"
 			result.Error = err.Error()
@@ -187,12 +188,12 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 
 	var isOk, bufferOk bool
 	var percentageIncrease float64
-	improvementThreshold := GetImprovementThreshold()
+	improvementThreshold := analyze.ImprovementThreshold
 
 	if useBufferComparison {
 		actualBuffers := explainPlan.Plan.SharedHitBlocks + explainPlan.Plan.SharedReadBlocks + explainPlan.Plan.LocalHitBlocks + explainPlan.Plan.LocalReadBlocks
 		baselineBuffers := baseline.Buffers.TotalBuffers
-		bufferThreshold := GetBufferThreshold()
+		bufferThreshold := analyze.BufferThreshold
 
 		isOk, percentageIncrease = CompareBuffers(actualBuffers, baselineBuffers, bufferThreshold)
 		bufferOk = isOk
@@ -226,7 +227,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		if baseline.Actuals != nil {
 			result.BaselineQError = baseline.Actuals.WorstQError
 		}
-		if IsQErrorRegression(result.ActualQError, result.BaselineQError, GetQErrorRatio(), GetQErrorFloor()) {
+		if IsQErrorRegression(result.ActualQError, result.BaselineQError, analyze.QErrorRatio, analyze.QErrorFloor) {
 			result.QErrorRegression = true
 			isOk = false
 		}
@@ -255,7 +256,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 	} else {
 		actualCost := explainPlan.Plan.TotalCost
 		baselineCost := toFloat64(baseline.Plan["total_cost"])
-		costThreshold := GetCostThreshold()
+		costThreshold := analyze.CostThreshold
 
 		isOk, percentageIncrease = CompareCost(actualCost, baselineCost, costThreshold)
 
@@ -285,7 +286,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 
 	opts := p.Query.GetRegressQLOptions()
 	costInfo := planCostInfo(&explainPlan.Plan, planChoice && !useBufferComparison)
-	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, GetIgnoredSeqScanTables(), GetCriticalTables(), costInfo)
+	result.PlanWarnings = DetectPlanQualityIssues(currentSig, opts, cfg.IgnoredSeqScanTables(), cfg.CriticalTables(), costInfo)
 	// before policies run, so a pack can remap it like any other warning
 	if planChoice && percentageIncrease > result.Threshold {
 		result.PlanWarnings = append(result.PlanWarnings, PlanWarning{
@@ -295,7 +296,7 @@ func (p *Plan) compareBaseline(ctx context.Context, baselineDir, bindingName str
 		})
 	}
 
-	isOk, notes := applyPoliciesThenGate(&result, policies, verdictInput{
+	isOk, notes := applyPoliciesThenGate(&result, cfg.Policies, verdictInput{
 		Mode:         CurrentMode(),
 		BranchOk:     isOk,
 		PlanChanged:  result.PlanChanged,
@@ -433,8 +434,7 @@ func hasFailingRegression(regressions []PlanRegression) bool {
 	return false
 }
 
-func getComparisonMode(baseline *Baseline, baselinePath string) (bool, error) {
-	mode := GetComparisonMode()
+func getComparisonMode(mode string, baseline *Baseline, baselinePath string) (bool, error) {
 	hasBuffers := baseline.AnalyzeMode && baseline.Buffers != nil
 
 	switch mode {

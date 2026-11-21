@@ -115,7 +115,7 @@ func snapshotMajor(meta *SnapshotMetadata) int {
 	return meta.Current.Server.MajorVersion()
 }
 
-func CollectEnv(pguri, statsFile string, cfg config, root string, verify bool) EnvStatus {
+func CollectEnv(pguri, statsFile string, cfg Config, root string, verify bool) EnvStatus {
 	e := EnvStatus{
 		Mode:       CurrentMode(),
 		PgRegresql: envUnknown,
@@ -124,7 +124,7 @@ func CollectEnv(pguri, statsFile string, cfg config, root string, verify bool) E
 		Detail:     []string{},
 	}
 
-	if e.Mode == ModePlanChoice && cfg.Analyze != nil && cfg.Analyze.Comparison == "buffers" {
+	if e.Mode == ModePlanChoice && cfg.AnalyzeConfig().Comparison == "buffers" {
 		e.Detail = append(e.Detail, "warning: analyze.comparison: buffers is ignored in plan choice mode")
 	}
 

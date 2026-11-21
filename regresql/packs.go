@@ -7,26 +7,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 //go:embed packs/*.yaml
 var bundledPacks embed.FS
-
-func resolveAndLoadPack(extends, baseDir string) (config, error) {
-	data, source, err := readPack(extends, baseDir)
-	if err != nil {
-		return config{}, err
-	}
-	var cfg config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return config{}, fmt.Errorf("parse pack %s: %w", source, err)
-	}
-	// Chained extends in packs is not supported in v1.
-	cfg.Extends = ""
-	return cfg, nil
-}
 
 func readPack(extends, baseDir string) ([]byte, string, error) {
 	if strings.ContainsAny(extends, "/\\") || filepath.IsAbs(extends) {

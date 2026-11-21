@@ -28,18 +28,6 @@ import (
 // *how long* to bound a query, plus the error-classification that gates the
 // whole "treat timeout as divergence" behaviour.
 
-// withGlobalTimeout installs a global config whose `timeout:` field is set to
-// the given raw value (e.g. "30s", "" for unset, "garbage" for invalid) and
-// restores the previous cached config when the test finishes. resolveTimeout
-// and GetStatementTimeout both read this process-global, so every test that
-// touches it must isolate itself this way to avoid leaking state into others.
-func withGlobalTimeout(t *testing.T, raw string) {
-	t.Helper()
-	prev := cachedConfig
-	t.Cleanup(func() { cachedConfig = prev })
-	SetGlobalConfig(config{Timeout: raw})
-}
-
 // queryWithMetadata writes a one-off .sql file containing the given metadata
 // header and parses it the same way the suite does. Metadata (`-- key: value`)
 // is only recognised by the file loader, not by NewQueryFromString, so tests
@@ -70,8 +58,8 @@ func TestResolveTimeout(t *testing.T) {
 	// impose a bound.
 	cases := []struct {
 		name          string
-		globalRaw     string        // config `timeout:` value
-		queryOverride string        // `-- regresql: timeout:...` value ("" = none)
+		globalRaw     string // config `timeout:` value
+		queryOverride string // `-- regresql: timeout:...` value ("" = none)
 		want          time.Duration
 	}{
 		{"neither set means unbounded", "", "", 0},
@@ -82,26 +70,23 @@ func TestResolveTimeout(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			withGlobalTimeout(t, tc.globalRaw)
-
 			sqlText := "-- name: q\nselect 1;\n"
 			if tc.queryOverride != "" {
 				sqlText = "-- name: q\n-- regresql: timeout:" + tc.queryOverride + "\nselect 1;\n"
 			}
 			q := queryWithMetadata(t, sqlText)
 
-			if got := resolveTimeout(q); got != tc.want {
+			if got := resolveTimeout(q, tc.globalRaw); got != tc.want {
 				t.Errorf("resolveTimeout() = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestGetStatementTimeout(t *testing.T) {
-	// GetStatementTimeout parses the config string into a duration. An invalid
-	// value must degrade to 0 (no timeout) rather than panicking or aborting the
-	// run: a typo in regress.yaml should never be the reason a test suite refuses
-	// to run.
+func TestResolveTimeoutParsesConfig(t *testing.T) {
+	// The config string is parsed on use. An invalid value must degrade to 0
+	// (no timeout) rather than panicking or aborting the run: a typo in
+	// regress.yaml should never be the reason a test suite refuses to run.
 	cases := []struct {
 		name string
 		raw  string
@@ -113,11 +98,11 @@ func TestGetStatementTimeout(t *testing.T) {
 		{"invalid falls back to none", "not-a-duration", 0},
 	}
 
+	q := queryWithMetadata(t, "-- name: q\nselect 1;\n")
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			withGlobalTimeout(t, tc.raw)
-			if got := GetStatementTimeout(); got != tc.want {
-				t.Errorf("GetStatementTimeout() = %v, want %v", got, tc.want)
+			if got := resolveTimeout(q, tc.raw); got != tc.want {
+				t.Errorf("resolveTimeout() = %v, want %v", got, tc.want)
 			}
 		})
 	}

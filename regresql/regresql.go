@@ -154,7 +154,7 @@ func Update(opts UpdateOptions) {
 		DryRun:      opts.DryRun,
 		Snapshot:    currentSnapshot,
 	}
-	if err := suite.createExpectedResults(config.PgUri, updateOpts); err != nil {
+	if err := suite.createExpectedResults(config, updateOpts); err != nil {
 		fmt.Print(err.Error())
 		os.Exit(12)
 	}
@@ -193,7 +193,7 @@ func progressWriter(format, outputPath string) io.Writer {
 // maybeRestore restores the snapshot if configured and not skipped.
 // snapshotOverride allows using a specific snapshot instead of the configured one.
 // sf is the resolved SQL stats file to apply instead of ANALYZE. Empty means ANALYZE.
-func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride string, sf string) {
+func maybeRestore(cfg Config, root string, noRestore bool, snapshotOverride string, sf string) {
 	if !restoreRuns(cfg, noRestore, snapshotOverride) {
 		return
 	}
@@ -250,7 +250,7 @@ func maybeRestore(cfg config, root string, noRestore bool, snapshotOverride stri
 }
 
 // restoreRuns reports whether maybeRestore will restore a snapshot.
-func restoreRuns(cfg config, noRestore bool, snapshotOverride string) bool {
+func restoreRuns(cfg Config, noRestore bool, snapshotOverride string) bool {
 	if noRestore {
 		return false
 	}
@@ -259,7 +259,7 @@ func restoreRuns(cfg config, noRestore bool, snapshotOverride string) bool {
 
 // dropUnappliedStats clears the stats file when no restore will apply it and
 // the database does not already carry injected stats.
-func dropUnappliedStats(cfg config, noRestore bool, snapshotOverride, sf string) string {
+func dropUnappliedStats(cfg Config, noRestore bool, snapshotOverride, sf string) string {
 	if sf == "" || restoreRuns(cfg, noRestore, snapshotOverride) {
 		return sf
 	}
@@ -274,7 +274,7 @@ func dropUnappliedStats(cfg config, noRestore bool, snapshotOverride, sf string)
 
 // useStatsFile resolves the stats file (flag > config default) and records
 // whether injection is in use.
-func useStatsFile(cfg config, root, flag string, warn io.Writer) string {
+func useStatsFile(cfg Config, root, flag string, warn io.Writer) string {
 	sf := flag
 	if sf == "" && cfg.Stats != nil && cfg.Stats.Default != "" {
 		sf = cfg.Stats.Default
@@ -292,7 +292,7 @@ func useStatsFile(cfg config, root, flag string, warn io.Writer) string {
 	return sf
 }
 
-func validateServerSettings(cfg config, root string) error {
+func validateServerSettings(cfg Config, root string) error {
 	mode := GetValidateSettings(cfg.Snapshot)
 	if mode == ValidateSettingsIgnore {
 		return nil
@@ -364,9 +364,6 @@ func Test(opts TestOptions) {
 		fmt.Fprintf(progress, "Error: %s\n", err)
 		os.Exit(3)
 	}
-
-	// Cache config for plan quality analysis
-	SetGlobalConfig(config)
 
 	// If specific snapshot requested, resolve and use it
 	var snapshotOverride string
@@ -467,7 +464,7 @@ func Test(opts TestOptions) {
 		})
 	}
 
-	summary, err := suite.testQueries(config.PgUri, formatter, opts.OutputPath, opts.Commit, opts.Generic, env)
+	summary, err := suite.testQueries(config, formatter, opts.OutputPath, opts.Commit, opts.Generic, env)
 	if err != nil {
 		fmt.Fprint(progress, err.Error())
 		switch {

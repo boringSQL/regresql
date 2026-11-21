@@ -256,10 +256,10 @@ func (s *Suite) Println() {
 }
 
 // createExpectedResults walks plan files and runs their queries, storing results in expected files
-func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) error {
-	db, err := openSessionDB(pguri)
+func (s *Suite) createExpectedResults(cfg Config, opts createExpectedOptions) error {
+	db, err := openSessionDB(cfg.PgUri)
 	if err != nil {
-		return fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
+		return fmt.Errorf("Failed to connect to '%s': %s\n", cfg.PgUri, err)
 	}
 	defer db.Close()
 	if injectedStats {
@@ -325,7 +325,7 @@ func (s *Suite) createExpectedResults(pguri string, opts createExpectedOptions) 
 		}
 
 		// Execute query and handle results
-		timeout := resolveTimeout(pq.Query)
+		timeout := resolveTimeout(pq.Query, cfg.Timeout)
 		var timedOut bool
 		var writtenFiles []string
 		if err := s.runInTransaction(db, opts.Commit, func(tx *sql.Tx) error {
@@ -421,10 +421,10 @@ func fileExists(path string) bool {
 }
 
 // testQueries walks plan files, executes queries, and compares results to expected output
-func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath string, commit, generic bool, env EnvStatus) (*TestSummary, error) {
-	db, err := openSessionDB(pguri)
+func (s *Suite) testQueries(cfg Config, formatter OutputFormatter, outputPath string, commit, generic bool, env EnvStatus) (*TestSummary, error) {
+	db, err := openSessionDB(cfg.PgUri)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to connect to '%s': %s\n", pguri, err)
+		return nil, fmt.Errorf("Failed to connect to '%s': %s\n", cfg.PgUri, err)
 	}
 	defer db.Close()
 	if injectedStats {
@@ -492,7 +492,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 			return nil, err
 		}
 
-		timeout := resolveTimeout(pq.Query)
+		timeout := resolveTimeout(pq.Query, cfg.Timeout)
 		var timedOut bool
 		if err := s.runInTransaction(db, commit, func(tx *sql.Tx) error {
 			if err := applyStatementTimeout(context.Background(), tx, timeout); err != nil {
@@ -510,8 +510,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 				return err
 			}
 
-			policies := GetPoliciesConfig()
-			for _, r := range pq.Plan.CompareResultSetsToResults(s.RegressDir, edir) {
+			for _, r := range pq.Plan.CompareResultSetsToResults(cfg, s.RegressDir, edir) {
 				summary.AddResult(r)
 				if err := formatter.AddResult(r, w); err != nil {
 					return err
@@ -519,7 +518,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 			}
 
 			if !opts.NoBaseline && hasBaselines(pq.Query, bdir, pq.Plan.Names) {
-				for _, r := range pq.Plan.CompareBaselinesToResults(context.Background(), bdir, tx, DefaultCostThresholdPercent, policies) {
+				for _, r := range pq.Plan.CompareBaselinesToResults(context.Background(), cfg, bdir, tx, DefaultCostThresholdPercent) {
 					summary.AddResult(r)
 					if err := formatter.AddResult(r, w); err != nil {
 						return err
@@ -546,7 +545,7 @@ func (s *Suite) testQueries(pguri string, formatter OutputFormatter, outputPath 
 		}
 
 		if generic && !opts.NoGeneric && len(pq.Query.Args) > 0 && !timedOut {
-			r, err := runGenericCheck(context.Background(), db, pq)
+			r, err := runGenericCheck(context.Background(), db, pq, cfg.Timeout)
 			if err != nil {
 				return nil, err
 			}

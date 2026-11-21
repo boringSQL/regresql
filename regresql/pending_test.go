@@ -98,7 +98,7 @@ func TestCompareResultSetsToResultsMissingExpectedFile(t *testing.T) {
 	}
 
 	// Run comparison - expected file doesn't exist
-	results := plan.CompareResultSetsToResults(regressDir, expectedDir)
+	results := plan.CompareResultSetsToResults(Config{}, regressDir, expectedDir)
 
 	if len(results) != 1 {
 		t.Fatalf("Expected 1 result, got %d", len(results))
@@ -160,7 +160,7 @@ func TestCompareResultSetsToResultsWithExpectedFile(t *testing.T) {
 		Bindings: []map[string]any{{}},
 	}
 
-	results := plan.CompareResultSetsToResults(regressDir, expectedDir)
+	results := plan.CompareResultSetsToResults(Config{}, regressDir, expectedDir)
 
 	if len(results) != 1 {
 		t.Fatalf("Expected 1 result, got %d", len(results))

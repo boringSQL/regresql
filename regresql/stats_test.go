@@ -79,20 +79,20 @@ func TestStripPsqlMetaKeepsLiteralContinuation(t *testing.T) {
 }
 
 func TestRestoreRuns(t *testing.T) {
-	withSnap := config{Snapshot: &SnapshotConfig{Path: "snap.dump"}}
+	withSnap := Config{Snapshot: &SnapshotConfig{Path: "snap.dump"}}
 	cases := []struct {
 		name     string
-		cfg      config
+		cfg      Config
 		noRest   bool
 		override string
 		want     bool
 	}{
-		{"no snapshot configured", config{}, false, "", false},
+		{"no snapshot configured", Config{}, false, "", false},
 		{"snapshot configured", withSnap, false, "", true},
-		{"snapshot section without path", config{Snapshot: &SnapshotConfig{}}, false, "", false},
+		{"snapshot section without path", Config{Snapshot: &SnapshotConfig{}}, false, "", false},
 		{"no-restore wins", withSnap, true, "", false},
-		{"override without config", config{}, false, "x.dump", true},
-		{"no-restore beats override", config{}, true, "x.dump", false},
+		{"override without config", Config{}, false, "x.dump", true},
+		{"no-restore beats override", Config{}, true, "x.dump", false},
 	}
 	for _, c := range cases {
 		if got := restoreRuns(c.cfg, c.noRest, c.override); got != c.want {
@@ -103,7 +103,7 @@ func TestRestoreRuns(t *testing.T) {
 
 func TestDropUnappliedStatsWithoutProbe(t *testing.T) {
 	t.Cleanup(func() { injectedStats = false })
-	cfg := config{PgUri: "postgres://127.0.0.1:1/none?sslmode=disable&connect_timeout=1"}
+	cfg := Config{PgUri: "postgres://127.0.0.1:1/none?sslmode=disable&connect_timeout=1"}
 
 	injectedStats = true
 	if got := dropUnappliedStats(cfg, true, "", ""); got != "" || !injectedStats {

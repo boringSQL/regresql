@@ -85,7 +85,7 @@ func TestLiveCollectEnv(t *testing.T) {
 	_, loadErr := plain.Exec("LOAD 'pg_regresql'")
 
 	setInjected(t, true)
-	env := CollectEnv(uri, "", config{PgUri: uri}, t.TempDir(), false)
+	env := CollectEnv(uri, "", Config{PgUri: uri}, t.TempDir(), false)
 	if !env.Connected {
 		t.Fatalf("not connected: %v", env.Detail)
 	}
@@ -97,7 +97,7 @@ func TestLiveCollectEnv(t *testing.T) {
 	}
 
 	injectedStats = false
-	if CollectEnv(uri, "", config{PgUri: uri}, t.TempDir(), false).Failed() {
+	if CollectEnv(uri, "", Config{PgUri: uri}, t.TempDir(), false).Failed() {
 		t.Error("buffers mode must not fail without the extension")
 	}
 }
@@ -182,7 +182,7 @@ func TestLiveDropUnappliedStats(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	cfg := config{PgUri: scratch}
+	cfg := Config{PgUri: scratch}
 	var buf bytes.Buffer
 	old := progress
 	progress = &buf

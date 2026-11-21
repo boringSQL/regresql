@@ -91,7 +91,7 @@ func TestLiveGenericRunsNothing(t *testing.T) {
 			q := liveQuery(t, "", body)
 			before := counters()
 
-			out, err := checkGeneric(ctx, db, q, []string{"1", "2", "3"}, ids(1, 2, 3))
+			out, err := checkGeneric(ctx, db, q, []string{"1", "2", "3"}, ids(1, 2, 3), "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func TestLiveGenericParamTypes(t *testing.T) {
 	bindings := []map[string]any{{"a": 1, "b": 2}}
 	body := `select * from gen_t where id = :a + :b`
 
-	out, err := checkGeneric(ctx, db, liveQuery(t, "", body), names, bindings)
+	out, err := checkGeneric(ctx, db, liveQuery(t, "", body), names, bindings, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestLiveGenericParamTypes(t *testing.T) {
 		t.Errorf("untyped: %+v", out)
 	}
 
-	out, err = checkGeneric(ctx, db, liveQuery(t, "-- paramtypes: int, int\n", body), names, bindings)
+	out, err = checkGeneric(ctx, db, liveQuery(t, "-- paramtypes: int, int\n", body), names, bindings, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestLiveGenericParamTypes(t *testing.T) {
 		t.Errorf("typed: %+v", out)
 	}
 
-	out, err = checkGeneric(ctx, db, liveQuery(t, "-- paramtypes: int\n", body), names, bindings)
+	out, err = checkGeneric(ctx, db, liveQuery(t, "-- paramtypes: int\n", body), names, bindings, "")
 	if err != nil || !out.Skipped || !strings.Contains(out.Message, "paramtypes") {
 		t.Errorf("count mismatch: %+v, %v", out, err)
 	}
@@ -155,7 +155,7 @@ func TestLiveGenericCleansUp(t *testing.T) {
 
 	t.Run("server error mid run", func(t *testing.T) {
 		q := liveQuery(t, "-- paramtypes: int\n", `select * from gen_t where id = :id`)
-		out, err := checkGeneric(ctx, db, q, []string{"1", "2"}, ids(1, "abc"))
+		out, err := checkGeneric(ctx, db, q, []string{"1", "2"}, ids(1, "abc"), "")
 		if err != nil || !out.Skipped {
 			t.Fatalf("outcome %+v, %v", out, err)
 		}
@@ -171,7 +171,7 @@ func TestLiveGenericCleansUp(t *testing.T) {
 		t.Cleanup(func() { _, _ = db.Exec(`DROP FUNCTION IF EXISTS gen_slow(int)`) })
 
 		q := liveQuery(t, "-- regresql: timeout:100ms\n", `select * from gen_t where id = gen_slow(:id)`)
-		out, err := checkGeneric(ctx, db, q, []string{"1"}, ids(1))
+		out, err := checkGeneric(ctx, db, q, []string{"1"}, ids(1), "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,7 +187,7 @@ func TestLiveGenericCleansUp(t *testing.T) {
 func TestLiveGenericOtherErrorsSurface(t *testing.T) {
 	db := liveGenericDB(t)
 	q := liveQuery(t, "", `select * from no_such_table where id = :id`)
-	_, err := checkGeneric(context.Background(), db, q, []string{"1"}, ids(1))
+	_, err := checkGeneric(context.Background(), db, q, []string{"1"}, ids(1), "")
 	if err == nil {
 		t.Fatal("missing table must surface as an error")
 	}
@@ -196,7 +196,7 @@ func TestLiveGenericOtherErrorsSurface(t *testing.T) {
 func TestLiveGenericNoParameters(t *testing.T) {
 	db := liveGenericDB(t)
 	q := liveQuery(t, "", `select * from gen_t`)
-	out, err := checkGeneric(context.Background(), db, q, []string{"1"}, ids(1))
+	out, err := checkGeneric(context.Background(), db, q, []string{"1"}, ids(1), "")
 	if err != nil || !out.Skipped {
 		t.Errorf("outcome %+v, %v", out, err)
 	}
@@ -215,7 +215,7 @@ func TestLiveGenericNeedsExtension(t *testing.T) {
 	defer db.Close()
 
 	q := liveQuery(t, "", `select * from pg_class where oid = :id`)
-	_, err = checkGeneric(context.Background(), db, q, []string{"1"}, ids(1))
+	_, err = checkGeneric(context.Background(), db, q, []string{"1"}, ids(1), "")
 	if !errors.Is(err, errGenericNoExtension) {
 		t.Errorf("err = %v", err)
 	}
@@ -318,7 +318,7 @@ func TestLiveGenericFlip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out, err := checkGeneric(ctx, db, q, tt.names, tt.bindings)
+			out, err := checkGeneric(ctx, db, q, tt.names, tt.bindings, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -345,7 +345,7 @@ func TestLiveRunGenericCheck(t *testing.T) {
 		return &PlannedQuery{Query: q, SQLPath: "big.sql", Plan: &Plan{Names: names[:len(bindings)], Bindings: bindings}}
 	}
 
-	r, err := runGenericCheck(context.Background(), db, pq(bind(1, 2, 1, 2, 1, 3)))
+	r, err := runGenericCheck(context.Background(), db, pq(bind(1, 2, 1, 2, 1, 3)), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestLiveRunGenericCheck(t *testing.T) {
 		t.Errorf("failed result %+v", r)
 	}
 
-	r, err = runGenericCheck(context.Background(), db, pq(bind(1, 2, 1)))
+	r, err = runGenericCheck(context.Background(), db, pq(bind(1, 2, 1)), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestLiveRunGenericCheck(t *testing.T) {
 	}
 
 	bad := []map[string]any{{"s": "abc"}}
-	r, err = runGenericCheck(context.Background(), db, &PlannedQuery{Query: liveQuery(t, "-- paramtypes: int\n", `select * from gen_big where status = :s`), Plan: &Plan{Names: []string{"1"}, Bindings: bad}})
+	r, err = runGenericCheck(context.Background(), db, &PlannedQuery{Query: liveQuery(t, "-- paramtypes: int\n", `select * from gen_big where status = :s`), Plan: &Plan{Names: []string{"1"}, Bindings: bad}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
